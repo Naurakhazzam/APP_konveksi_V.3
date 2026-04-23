@@ -58,6 +58,7 @@ export default function PrintSPKLayout({ bundles }: Props) {
           html, body {
             height: auto !important;
             overflow: visible !important;
+            background: white !important;
           }
 
           /* Sembunyikan semua elemen halaman */
@@ -72,6 +73,7 @@ export default function PrintSPKLayout({ bundles }: Props) {
             top: 0;
             left: 0;
             width: 100%;
+            background: white !important;
           }
 
           /* Table rules */
@@ -122,22 +124,22 @@ export default function PrintSPKLayout({ bundles }: Props) {
             {/* Tabel SPK */}
             <table className="w-full border-collapse text-[10px] mb-8">
               <thead>
-                <tr className="bg-black text-white">
-                  <th className="border border-black p-2 text-center w-8" rowSpan={2}>NO</th>
-                  <th className="border border-black p-2 text-left" rowSpan={2}>KODE BARCODE</th>
-                  <th className="border border-black p-2 text-left" rowSpan={2}>ARTIKEL</th>
-                  <th className="border border-black p-2 text-center w-10" rowSpan={2}>SIZE</th>
-                  <th className="border border-black p-2 text-center w-16" rowSpan={2}>WARNA</th>
-                  <th className="border border-black p-2 text-center" colSpan={2}>TARGET (GENERATE)</th>
-                  <th className="border border-black p-2 text-center" colSpan={2}>AKTUAL (KOSONGKAN)</th>
-                  <th className="border border-black p-2 text-center w-20" rowSpan={2}>PEMAKAIAN BAHAN</th>
-                  <th className="border border-black p-2 text-center w-20" rowSpan={2}>KETERANGAN</th>
+                <tr className="bg-white text-black">
+                  <th className="border-2 border-black p-2 text-center w-8 font-bold" rowSpan={2}>NO</th>
+                  <th className="border-2 border-black p-2 text-left font-bold" rowSpan={2}>KODE BARCODE</th>
+                  <th className="border-2 border-black p-2 text-left font-bold" rowSpan={2}>ARTIKEL</th>
+                  <th className="border-2 border-black p-2 text-center w-10 font-bold" rowSpan={2}>SIZE</th>
+                  <th className="border-2 border-black p-2 text-center w-16 font-bold" rowSpan={2}>WARNA</th>
+                  <th className="border-2 border-black p-2 text-center font-bold" colSpan={2}>TARGET (GENERATE)</th>
+                  <th className="border-2 border-black p-2 text-center font-bold" colSpan={2}>AKTUAL (KOSONGKAN)</th>
+                  <th className="border-2 border-black p-2 text-center w-20 font-bold" rowSpan={2}>PEMAKAIAN BAHAN</th>
+                  <th className="border-2 border-black p-2 text-center w-20 font-bold" rowSpan={2}>KETERANGAN</th>
                 </tr>
-                <tr className="bg-black text-white text-[9px]">
-                  <th className="border border-black p-1 text-center w-16">QTY ORDER</th>
-                  <th className="border border-black p-1 text-center w-12">BUNDLE</th>
-                  <th className="border border-black p-1 text-center w-16">QTY REAL</th>
-                  <th className="border border-black p-1 text-center w-12">BUNDLE</th>
+                <tr className="bg-white text-black text-[9px]">
+                  <th className="border-2 border-black p-1 text-center w-16 font-bold">QTY ORDER</th>
+                  <th className="border-2 border-black p-1 text-center w-12 font-bold">BUNDLE</th>
+                  <th className="border-2 border-black p-1 text-center w-16 font-bold">QTY REAL</th>
+                  <th className="border-2 border-black p-1 text-center w-12 font-bold">BUNDLE</th>
                 </tr>
               </thead>
               <tbody>

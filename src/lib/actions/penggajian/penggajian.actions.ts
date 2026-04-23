@@ -53,7 +53,7 @@ export async function getRekapGaji(
     .from('gaji_ledger')
     .select(`
       id, karyawan_id, tipe, total, tanggal,
-      karyawan:karyawan_id(nama, gaji_pokok, jabatan:jabatan_id(nama))
+      karyawan:karyawan_id(nama, gaji_pokok, jabatan)
     `)
     .eq('status', 'belum_lunas')
     .gte('tanggal', tanggal_dari)
@@ -80,7 +80,7 @@ export async function getRekapGaji(
       map[kid] = {
         karyawan_id: kid,
         karyawan_nama: row.karyawan?.nama || 'N/A',
-        jabatan: row.karyawan?.jabatan?.nama || 'N/A',
+        jabatan: row.karyawan?.jabatan || 'N/A',
         gaji_pokok: row.karyawan?.gaji_pokok || 0,
         total_upah_kotor: 0,
         total_potongan: 0,
