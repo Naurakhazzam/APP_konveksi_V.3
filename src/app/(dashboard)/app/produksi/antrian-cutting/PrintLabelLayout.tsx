@@ -65,22 +65,22 @@ export default function PrintLabelLayout({ bundles }: Props) {
           <div className="w-full mt-2 border-t border-black pt-2">
             <div className="flex justify-between items-end mb-1">
               <div>
-                <p className="text-[10px] uppercase font-bold text-gray-600 leading-none">Nomor PO</p>
+                <p className="text-[10px] uppercase font-bold text-black leading-none">Nomor PO</p>
                 <p className="text-sm font-bold leading-tight">{bundle.no_po}</p>
               </div>
               <div className="text-center">
-                <p className="text-[10px] uppercase font-bold text-gray-600 leading-none">Bundle</p>
+                <p className="text-[10px] uppercase font-bold text-black leading-none">Bundle</p>
                 <p className="text-sm font-bold leading-tight font-mono">{bundle.barcode.split('-')[3]}</p>
               </div>
               <div className="text-right">
-                <p className="text-[10px] uppercase font-bold text-gray-600 leading-none">No. Urut Global</p>
+                <p className="text-[10px] uppercase font-bold text-black leading-none">No. Urut Global</p>
                 <p className="text-lg font-black leading-none font-mono">{bundle.barcode.split('-')[2]}</p>
               </div>
             </div>
 
             <div className="flex justify-between items-center border-t border-dashed border-black pt-1 mt-1">
               <div className="flex-1">
-                <p className="text-[10px] uppercase font-bold text-gray-600 leading-none">Varian (Warna / Size)</p>
+                <p className="text-[10px] uppercase font-bold text-black leading-none">Varian (Warna / Size)</p>
                 <p className="text-xs font-medium truncate">{bundle.warna} / {bundle.size}</p>
               </div>
               <div className="text-right shrink-0 ml-2">

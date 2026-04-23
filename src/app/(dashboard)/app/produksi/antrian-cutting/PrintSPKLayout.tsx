@@ -85,14 +85,14 @@ export default function PrintSPKLayout({ bundles }: Props) {
             {/* Header */}
             <div className="flex justify-between items-start mb-6">
               <div>
-                <p className="text-xs font-bold tracking-widest uppercase text-gray-500">STITCHLYX.SYNCORE</p>
+                <p className="text-xs font-bold tracking-widest uppercase text-black">STITCHLYX.SYNCORE</p>
                 <h1 className="text-2xl font-black uppercase tracking-tight mt-1">
                   Surat Perintah Kerja (SPK) Cutting
                 </h1>
-                <p className="text-xs text-gray-500 mt-1">Tanggal: {formatDate(new Date().toISOString())}</p>
+                <p className="text-xs text-black mt-1">Tanggal: {formatDate(new Date().toISOString())}</p>
               </div>
               <div className="text-right">
-                <p className="text-xs text-gray-400">ID Dokumen:</p>
+                <p className="text-xs text-black">ID Dokumen:</p>
                 <p className="text-sm font-bold">{generateDocId()}</p>
               </div>
             </div>
@@ -100,15 +100,15 @@ export default function PrintSPKLayout({ bundles }: Props) {
             {/* Info PO */}
             <div className="grid grid-cols-3 gap-4 mb-4 text-sm">
               <div>
-                <p className="text-[10px] uppercase font-bold text-gray-400">Nomor PO</p>
+                <p className="text-[10px] uppercase font-bold text-black">Nomor PO</p>
                 <p className="font-black text-base">{group.no_po}</p>
               </div>
               <div>
-                <p className="text-[10px] uppercase font-bold text-gray-400">Klien</p>
+                <p className="text-[10px] uppercase font-bold text-black">Klien</p>
                 <p className="font-bold">{group.klien_nama}</p>
               </div>
               <div className="text-right">
-                <p className="text-[10px] uppercase font-bold text-gray-400">Target Selesai</p>
+                <p className="text-[10px] uppercase font-bold text-black">Target Selesai</p>
                 <p className="font-black">{formatDate(group.tanggal_target)}</p>
               </div>
             </div>
@@ -128,10 +128,10 @@ export default function PrintSPKLayout({ bundles }: Props) {
                   <th className="border border-black p-2 text-center w-20" rowSpan={2}>KETERANGAN</th>
                 </tr>
                 <tr className="bg-black text-white text-[9px]">
-                  <th className="border border-gray-700 p-1 text-center w-16">QTY ORDER</th>
-                  <th className="border border-gray-700 p-1 text-center w-12">BUNDLE</th>
-                  <th className="border border-gray-700 p-1 text-center w-16">QTY REAL</th>
-                  <th className="border border-gray-700 p-1 text-center w-12">BUNDLE</th>
+                  <th className="border border-black p-1 text-center w-16">QTY ORDER</th>
+                  <th className="border border-black p-1 text-center w-12">BUNDLE</th>
+                  <th className="border border-black p-1 text-center w-16">QTY REAL</th>
+                  <th className="border border-black p-1 text-center w-12">BUNDLE</th>
                 </tr>
               </thead>
               <tbody>
@@ -158,7 +158,7 @@ export default function PrintSPKLayout({ bundles }: Props) {
                 })}
               </tbody>
               <tfoot>
-                <tr className="bg-gray-100 font-bold text-[10px]">
+                <tr className="bg-white font-bold text-[10px]">
                   <td colSpan={5} className="border border-black p-2 text-right uppercase">Total</td>
                   <td className="border border-black p-2 text-center">{totalQty} pcs</td>
                   <td className="border border-black p-2 text-center">{totalBundle}</td>
@@ -173,14 +173,14 @@ export default function PrintSPKLayout({ bundles }: Props) {
                 <div key={label}>
                   <p className="mb-16">{label}</p>
                   <div className="border-t border-black pt-1">
-                    <p className="text-gray-400 font-mono">( _______________ )</p>
+                    <p className="text-black font-mono">( _______________ )</p>
                   </div>
                 </div>
               ))}
             </div>
 
             {/* Footer note */}
-            <p className="text-[9px] text-gray-400 italic mt-8">
+            <p className="text-[9px] text-black italic mt-8">
               Dicetak otomatis oleh Stitchlyx Syncore pada {new Date().toLocaleString('id-ID')}
             </p>
           </div>

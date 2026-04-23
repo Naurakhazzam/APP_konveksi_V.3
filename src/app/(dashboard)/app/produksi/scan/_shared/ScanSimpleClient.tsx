@@ -26,7 +26,7 @@ import {
     History,
     CheckCircle
 } from 'lucide-react';
-import { TAHAP_CONFIG, type TahapKey } from '@/modules/produksi/constants/tahap';
+import { TAHAP_CONFIG, getPrevTahap, type TahapKey } from '@/modules/produksi/constants/tahap';
 import ModalAlasanQty from '@/components/produksi/ModalAlasanQty';
 import ToastQtyLebih from '@/components/produksi/ToastQtyLebih';
 import RejectSection from '@/components/produksi/RejectSection';
@@ -66,6 +66,18 @@ export default function ScanSimpleClient({ tahap, tahapLabel }: Props) {
     setBarcode('');
     setQty(0);
   };
+  
+  const checkPrerequisite = (bundle: BundleForScan): boolean => {
+    const prevTahap = getPrevTahap(tahap);
+    if (!prevTahap) return true; // Cutting — tidak ada prasyarat
+    if (bundle.status_tahap?.[prevTahap]?.status !== 'selesai') {
+      const prevLabel = TAHAP_CONFIG[prevTahap].label;
+      toast.error(`Bundle belum selesai di tahap ${prevLabel}`);
+      setState({ phase: 'IDLE' });
+      return false;
+    }
+    return true;
+  };
 
   const handleScan = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -80,6 +92,7 @@ export default function ScanSimpleClient({ tahap, tahapLabel }: Props) {
           setState({ phase: 'IDLE' });
           return;
         }
+        if (!checkPrerequisite(exact)) return;
         setQty(exact.qty_per_bundle);
         setState({ phase: 'LOADED', bundle: exact });
         return;
@@ -92,6 +105,12 @@ export default function ScanSimpleClient({ tahap, tahapLabel }: Props) {
       } else if (results.length === 1) {
         const bundle = await getBundleForScan(results[0].barcode);
         if (bundle) {
+          if (bundle.status_tahap?.[tahap]?.status === 'selesai') {
+            toast.error(`Bundle ini sudah selesai di tahap ${tahapLabel}`);
+            setState({ phase: 'IDLE' });
+            return;
+          }
+          if (!checkPrerequisite(bundle)) return;
           setQty(bundle.qty_per_bundle);
           setState({ phase: 'LOADED', bundle });
         } else {
@@ -116,6 +135,7 @@ export default function ScanSimpleClient({ tahap, tahapLabel }: Props) {
           setState({ phase: 'IDLE' });
           return;
         }
+        if (!checkPrerequisite(bundle)) return;
         setQty(bundle.qty_per_bundle);
         setState({ phase: 'LOADED', bundle });
       } else {

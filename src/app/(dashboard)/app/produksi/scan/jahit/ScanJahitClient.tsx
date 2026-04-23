@@ -56,6 +56,16 @@ export default function ScanJahitClient({ karyawanList, inventoryItems }: Props)
     setQty(0);
   };
 
+  const checkPrerequisite = (bundle: BundleForScan): boolean => {
+    // Jahit membutuhkan cutting selesai
+    if (bundle.status_tahap?.['cutting']?.status !== 'selesai') {
+      toast.error('Bundle belum selesai di tahap Cutting');
+      setState({ phase: 'IDLE' });
+      return false;
+    }
+    return true;
+  };
+
   const handleScan = async () => {
     if (!barcode.trim()) return;
     setState({ phase: 'LOADING' });
@@ -68,6 +78,7 @@ export default function ScanJahitClient({ karyawanList, inventoryItems }: Props)
           setState({ phase: 'IDLE' });
           return;
         }
+        if (!checkPrerequisite(exact)) return;
         setQty(exact.qty_per_bundle);
         setState({ phase: 'LOADED', bundle: exact });
         return;
@@ -80,6 +91,12 @@ export default function ScanJahitClient({ karyawanList, inventoryItems }: Props)
       } else if (results.length === 1) {
         const bundle = await getBundleForScan(results[0].barcode);
         if (bundle) {
+          if (bundle.status_tahap?.['jahit']?.status === 'selesai') {
+            toast.error('Bundle ini sudah selesai di tahap Jahit');
+            setState({ phase: 'IDLE' });
+            return;
+          }
+          if (!checkPrerequisite(bundle)) return;
           setQty(bundle.qty_per_bundle);
           setState({ phase: 'LOADED', bundle });
         } else {
@@ -104,6 +121,7 @@ export default function ScanJahitClient({ karyawanList, inventoryItems }: Props)
           setState({ phase: 'IDLE' });
           return;
         }
+        if (!checkPrerequisite(bundle)) return;
         setQty(bundle.qty_per_bundle);
         setState({ phase: 'LOADED', bundle });
       } else {
