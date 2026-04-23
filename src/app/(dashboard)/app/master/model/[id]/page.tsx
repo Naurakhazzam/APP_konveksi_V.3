@@ -46,6 +46,6 @@ export default async function ModelDetailPage({ params }: PageProps) {
     );
   } catch (error) {
     console.error('Error fetching model detail:', error);
-    redirect('/app/master/produk');
+    throw error;
   }
 }
