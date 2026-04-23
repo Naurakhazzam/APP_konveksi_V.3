@@ -1,0 +1,444 @@
+'use client';
+
+import React, { useState, useRef, useEffect } from 'react';
+import { toast } from 'sonner';
+import { 
+    getBundleForScan, 
+    searchBundlesByBarcode,
+    type BundleForScan,
+    type BundleSearchResult
+} from '@/lib/actions/produksi/scan.actions';
+import { 
+    scanTerimaGeneric, 
+    scanSelesai 
+} from '@/lib/actions/produksi/scan-mutations.actions';
+import { 
+    Search, 
+    Loader2, 
+    Hash, 
+    ChevronRight, 
+    CheckCircle2, 
+    RefreshCcw,
+    AlertCircle,
+    Info,
+    ArrowRight,
+    Package,
+    History,
+    CheckCircle
+} from 'lucide-react';
+import { TAHAP_CONFIG, type TahapKey } from '@/modules/produksi/constants/tahap';
+import ModalAlasanQty from '@/components/produksi/ModalAlasanQty';
+import ToastQtyLebih from '@/components/produksi/ToastQtyLebih';
+import RejectSection from '@/components/produksi/RejectSection';
+
+type ScanState =
+  | { phase: 'IDLE' }
+  | { phase: 'LOADING' }
+  | { phase: 'SEARCH_RESULTS'; results: BundleSearchResult[] }
+  | { phase: 'LOADED'; bundle: BundleForScan }
+  | { phase: 'CONFIRM_TERIMA'; bundle: BundleForScan }
+  | { phase: 'SUBMITTING'; bundle: BundleForScan }
+  | { phase: 'RESULT'; gajiLedgerId: string | null; upah: number };
+
+interface Props {
+  tahap: TahapKey;
+  tahapLabel: string;
+}
+
+export default function ScanSimpleClient({ tahap, tahapLabel }: Props) {
+  const [state, setState] = useState<ScanState>({ phase: 'IDLE' });
+  const [barcode, setBarcode] = useState('');
+  const [qty, setQty] = useState(0);
+  const [showModalAlasan, setShowModalAlasan] = useState(false);
+  const [showToastQtyLebih, setShowToastQtyLebih] = useState(false);
+  const [pendingAlasanCallback, setPendingAlasanCallback] = useState<((id: string) => void) | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Auto-focus input on mount and after reset
+  useEffect(() => {
+    if (state.phase === 'IDLE' || state.phase === 'RESULT') {
+        inputRef.current?.focus();
+    }
+  }, [state.phase]);
+
+  const resetToIdle = () => {
+    setState({ phase: 'IDLE' });
+    setBarcode('');
+    setQty(0);
+  };
+
+  const handleScan = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!barcode.trim()) return;
+    
+    setState({ phase: 'LOADING' });
+    try {
+      const exact = await getBundleForScan(barcode.trim());
+      if (exact) {
+        setQty(exact.qty_per_bundle);
+        setState({ phase: 'LOADED', bundle: exact });
+        return;
+      }
+      
+      const results = await searchBundlesByBarcode(barcode.trim());
+      if (results.length === 0) {
+        toast.error('Barcode tidak ditemukan');
+        setState({ phase: 'IDLE' });
+      } else if (results.length === 1) {
+        const bundle = await getBundleForScan(results[0].barcode);
+        if (bundle) {
+          setQty(bundle.qty_per_bundle);
+          setState({ phase: 'LOADED', bundle });
+        } else {
+            setState({ phase: 'IDLE' });
+        }
+      } else {
+        setState({ phase: 'SEARCH_RESULTS', results });
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Gagal scan barcode');
+      setState({ phase: 'IDLE' });
+    }
+  };
+
+  const handleSelectBundle = async (itemBarcode: string) => {
+    setState({ phase: 'LOADING' });
+    try {
+      const bundle = await getBundleForScan(itemBarcode);
+      if (bundle) {
+        setQty(bundle.qty_per_bundle);
+        setState({ phase: 'LOADED', bundle });
+      } else {
+        toast.error('Gagal memuat bundle');
+        setState({ phase: 'IDLE' });
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Error loading bundle');
+      setState({ phase: 'IDLE' });
+    }
+  };
+
+  const reloadBundle = async (itemBarcode: string) => {
+    try {
+      const bundle = await getBundleForScan(itemBarcode);
+      if (bundle) {
+        setQty(bundle.qty_per_bundle);
+        setState({ phase: 'LOADED', bundle });
+      }
+    } catch (e) {
+        resetToIdle();
+    }
+  };
+
+  const handleTerima = async () => {
+    if (state.phase !== 'LOADED') return;
+    const bundle = state.bundle;
+    setState({ phase: 'SUBMITTING', bundle });
+    try {
+      await scanTerimaGeneric({
+        barcode: bundle.barcode,
+        tahap: tahap,
+        karyawan_id: null,
+        qty: qty,
+        tenant_id: 'STX-001'
+      });
+      toast.success(`Bundle diterima di tahap ${tahapLabel}`);
+      // Reload to show "Selesaikan"
+      await reloadBundle(bundle.barcode);
+    } catch (err: any) {
+      toast.error(err.message || 'Gagal proses penerimaan');
+      setState({ phase: 'LOADED', bundle });
+    }
+  };
+
+  async function handleSelesai(alasan_qty_id?: string) {
+    if (state.phase !== 'LOADED') return;
+    const bundle = state.bundle;
+    const qtyTerima = bundle.status_tahap?.[tahap]?.qty_terima ?? bundle.qty_per_bundle;
+    
+    // Jika qty kurang dan belum ada alasan → tampilkan modal
+    if (qty < qtyTerima && !alasan_qty_id) {
+      setShowModalAlasan(true);
+      return;
+    }
+    
+    setState({ phase: 'SUBMITTING', bundle });
+    try {
+      const result = await scanSelesai({
+        barcode: bundle.barcode,
+        tahap: tahap,
+        karyawan_id: null,
+        qty: qty,
+        catatan: undefined,
+        alasan_qty_id: alasan_qty_id ?? null,
+        tenant_id: 'STX-001'
+      });
+      
+      if (result.is_qty_lebih) {
+        setState({ phase: 'RESULT', gajiLedgerId: result.gaji_entry_id, upah: result.upah_nominal });
+        setShowToastQtyLebih(true);
+      } else {
+        toast.success(`Pengerjaan ${tahapLabel} selesai`);
+        setState({ phase: 'RESULT', gajiLedgerId: result.gaji_entry_id, upah: result.upah_nominal });
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Gagal proses penyelesaian');
+      setState({ phase: 'LOADED', bundle });
+    }
+  }
+
+  // UI Components
+  const BundleInfoDisplay = ({ bundle }: { bundle: BundleForScan }) => (
+    <div className="bg-[#1A1D1F] border border-[#2A2D31] rounded-2xl overflow-hidden mb-6">
+      <div className="bg-[#2A2D31]/50 px-6 py-4 flex items-center justify-between border-b border-[#2A2D31]">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-[#e5c17b]/10 flex items-center justify-center">
+            <Package className="w-4 h-4 text-[#e5c17b]" />
+          </div>
+          <div>
+            <div className="text-[10px] text-[#9aa0a6] uppercase font-bold tracking-wider">Detail Bundle</div>
+            <div className="text-sm font-bold text-[#e8eaed]">{bundle.barcode}</div>
+          </div>
+        </div>
+        <div className="px-3 py-1 bg-[#1A1D1F] rounded-full border border-[#2A2D31] text-[10px] font-bold text-[#e5c17b] tracking-wide">
+          ACTIVE
+        </div>
+      </div>
+      
+      <div className="p-6 grid grid-cols-2 md:grid-cols-3 gap-6">
+        <InfoItem label="No. PO" value={bundle.no_po} color="#e5c17b" />
+        <InfoItem label="Model" value={bundle.model_nama ?? '-'} />
+        <InfoItem label="Warna" value={bundle.warna} />
+        <InfoItem label="Size" value={bundle.size} />
+        <InfoItem label="QTY Target" value={`${bundle.qty_per_bundle} pcs`} highlight />
+        <InfoItem label="Waktu Scan" value={new Date().toLocaleDateString('id-ID')} />
+      </div>
+    </div>
+  );
+
+  const InfoItem = ({ label, value, color, highlight }: { label: string, value: string, color?: string, highlight?: boolean }) => (
+    <div className="space-y-1">
+      <div className="text-[11px] text-[#9aa0a6] font-medium uppercase tracking-tight">{label}</div>
+      <div className={`text-sm font-bold ${highlight ? 'text-[#e5c17b]' : 'text-[#e8eaed]'}`} style={color ? { color } : {}}>
+        {value}
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="max-w-4xl mx-auto">
+      {/* Search Section */}
+      {(state.phase === 'IDLE' || state.phase === 'LOADING') && (
+        <div className="bg-[#1A1D1F] border border-[#2A2D31] rounded-3xl p-8 mb-8 shadow-xl">
+          <div className="flex items-center gap-4 mb-6">
+            <div className="w-12 h-12 rounded-2xl bg-[#e5c17b]/10 flex items-center justify-center ring-1 ring-[#e5c17b]/20">
+              <Search className="text-[#e5c17b] w-6 h-6" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-[#e8eaed]">Scan Barcode</h2>
+              <p className="text-[#9aa0a6] text-sm">Ketuk kolom di bawah untuk mulai scan ({tahapLabel})</p>
+            </div>
+          </div>
+
+          <form onSubmit={handleScan} className="relative group">
+            <input
+              ref={inputRef}
+              type="text"
+              value={barcode}
+              onChange={(e) => setBarcode(e.target.value)}
+              placeholder="Masukkan barcode bundle..."
+              disabled={state.phase === 'LOADING'}
+              className="w-full bg-[#0D0E10] border-2 border-[#2A2D31] rounded-2xl py-4 px-14 text-lg font-bold text-[#e8eaed] placeholder:text-[#9aa0a6]/30 focus:border-[#e5c17b] focus:ring-4 focus:ring-[#e5c17b]/5 outline-none transition-all"
+            />
+            <div className="absolute left-5 top-1/2 -translate-y-1/2 text-[#9aa0a6]/50 group-focus-within:text-[#e5c17b] transition-colors">
+              <Hash size={20} />
+            </div>
+            {state.phase === 'LOADING' ? (
+              <div className="absolute right-5 top-1/2 -translate-y-1/2">
+                <Loader2 className="w-6 h-6 text-[#e5c17b] animate-spin" />
+              </div>
+            ) : (
+              <button
+                type="submit"
+                className="absolute right-3 top-1/2 -translate-y-1/2 bg-[#e5c17b] hover:bg-[#d4b16a] text-[#0D0E10] px-4 py-2 rounded-xl text-xs font-black shadow-lg transition-transform active:scale-95"
+              >
+                PROSES
+              </button>
+            )}
+          </form>
+        </div>
+      )}
+
+      {/* Search Results Picker */}
+      {state.phase === 'SEARCH_RESULTS' && (
+        <div className="bg-[#1A1D1F] border border-[#2A2D31] rounded-3xl p-8 mb-8 shadow-xl">
+           <div className="flex items-center gap-4 mb-6">
+            <div className="w-12 h-12 rounded-2xl bg-[#e5c17b]/10 flex items-center justify-center">
+              <Info className="text-[#e5c17b] w-6 h-6" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-[#e8eaed]">Ditemukan {state.results.length} Bundle</h2>
+              <p className="text-[#9aa0a6] text-sm">Barcode '{barcode}' merujuk ke beberapa bundle, silakan pilih salah satu:</p>
+            </div>
+          </div>
+
+          <div className="grid gap-3">
+            {state.results.map((res) => (
+              <button
+                key={res.barcode}
+                onClick={() => handleSelectBundle(res.barcode)}
+                className="flex items-center justify-between p-4 bg-[#0D0E10] border border-[#2A2D31] hover:border-[#e5c17b]/30 rounded-2xl transition-all group hover:bg-[#e5c17b]/5"
+              >
+                 <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 rounded-xl bg-[#2A2D31] flex items-center justify-center text-xs font-bold text-[#e8eaed] group-hover:bg-[#e5c17b] group-hover:text-[#0D0E10]">
+                        {res.barcode.slice(-3)}
+                    </div>
+                    <div className="text-left">
+                        <div className="text-xs text-[#9aa0a6] font-bold uppercase">{res.no_po}</div>
+                        <div className="text-sm font-bold text-[#e8eaed] group-hover:text-[#e5c17b]">{res.warna} / {res.size}</div>
+                    </div>
+                 </div>
+                 <ChevronRight className="w-5 h-5 text-[#2A2D31] group-hover:text-[#e5c17b]" />
+              </button>
+            ))}
+          </div>
+
+          <button
+            onClick={resetToIdle}
+            className="w-full mt-6 py-4 rounded-2xl border-2 border-[#2A2D31] text-sm font-bold text-[#9aa0a6] hover:bg-[#2A2D31]/30 transition-all"
+          >
+            BATAL & SCAN ULANG
+          </button>
+        </div>
+      )}
+
+      {/* Loaded Content */}
+      {state.phase === 'LOADED' && (
+        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+           <BundleInfoDisplay bundle={state.bundle} />
+
+           <div className="bg-[#1A1D1F] border border-[#2A2D31] rounded-3xl p-8 shadow-xl">
+             <div className="flex flex-col md:flex-row items-center gap-6">
+                {/* Status Indicator */}
+                <div className="flex-1 w-full">
+                    <div className="text-[11px] text-[#9aa0a6] font-bold uppercase tracking-wider mb-2">Status Saat Ini</div>
+                    {state.bundle.status_tahap?.[tahap]?.status === 'terima' ? (
+                        <div className="flex items-center gap-3 p-4 bg-[#e5c17b]/10 border border-[#e5c17b]/20 rounded-2xl">
+                           <div className="w-10 h-10 rounded-full bg-[#e5c17b] flex items-center justify-center shadow-lg">
+                              <History className="w-5 h-5 text-[#0D0E10]" />
+                           </div>
+                           <div>
+                              <div className="text-xs font-bold text-[#e5c17b] uppercase">BUNDLE SEDANG DIPROSES</div>
+                              <div className="text-[10px] text-[#9aa0a6]">Diterima: {new Date(state.bundle.status_tahap[tahap].waktu_terima).toLocaleTimeString()}</div>
+                           </div>
+                        </div>
+                    ) : (
+                        <div className="flex items-center gap-3 p-4 bg-[#2A2D31]/50 border border-[#2A2D31] rounded-2xl opacity-60">
+                           <div className="w-10 h-10 rounded-full bg-[#1A1D1F] border border-[#2A2D31] flex items-center justify-center">
+                              <Info className="w-5 h-5 text-[#9aa0a6]" />
+                           </div>
+                           <div>
+                               <div className="text-xs font-bold text-[#9aa0a6] uppercase">MENUNGGU PENERIMAAN</div>
+                               <div className="text-[10px] text-[#9aa0a6]/50">Siap untuk diproses di tahap {tahapLabel}</div>
+                           </div>
+                        </div>
+                    )}
+                </div>
+
+                <div className="w-full flex flex-col gap-2 bg-[#0D0E10]/50 p-4 rounded-2xl border border-[#2A2D31]">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-bold text-[#9aa0a6] uppercase tracking-wider">QTY Selesai</label>
+                    <span className="text-[10px] text-[#5f6368]">Default: {state.bundle.qty_per_bundle} pcs</span>
+                  </div>
+                  <input 
+                    type="number" 
+                    value={qty} 
+                    onChange={(e) => setQty(Number(e.target.value))}
+                    min={1}
+                    className="bg-[#0D0E10] border border-[#2A2D31] rounded-xl px-4 py-2 text-[#e8eaed] w-full text-center text-lg font-bold focus:border-[#e5c17b] focus:ring-1 focus:ring-[#e5c17b] outline-none"
+                  />
+                </div>
+
+                <div className="w-full md:w-auto flex flex-col md:flex-row gap-3">
+                    <button
+                        onClick={resetToIdle}
+                        className="px-6 py-4 rounded-2xl bg-[#2A2D31] hover:bg-[#32363a] text-[#e8eaed] text-xs font-bold tracking-wide transition-all"
+                    >
+                        Batal
+                    </button>
+                    {state.bundle.status_tahap?.[tahap]?.status === 'terima' ? (
+                         <button
+                            onClick={() => handleSelesai()}
+                            className="px-10 py-4 rounded-2xl bg-[#e5c17b] hover:bg-[#d4b16a] text-[#0D0E10] text-xs font-black uppercase tracking-widest shadow-xl shadow-[#e5c17b]/10 transition-all flex items-center justify-center gap-2"
+                         >
+                            <CheckCircle2 className="w-4 h-4" />
+                            Selesaikan {tahapLabel}
+                         </button>
+                    ) : (
+                        <button
+                            onClick={handleTerima}
+                            className="px-10 py-4 rounded-2xl bg-[#e5c17b] hover:bg-[#d4b16a] text-[#0D0E10] text-xs font-black uppercase tracking-widest shadow-xl shadow-[#e5c17b]/10 transition-all flex items-center justify-center gap-2"
+                        >
+                            <ArrowRight className="w-4 h-4" />
+                            Terima {tahapLabel}
+                        </button>
+                    )}
+                </div>
+             </div>
+           </div>
+        </div>
+      )}
+
+      {/* Submitting Screen */}
+      {state.phase === 'SUBMITTING' && (
+        <div className="bg-[#1A1D1F] border border-[#2A2D31] rounded-3xl p-12 shadow-xl flex flex-col items-center text-center">
+          <div className="relative w-20 h-20 mb-6">
+            <div className="absolute inset-0 rounded-full border-4 border-[#e5c17b]/10"></div>
+            <div className="absolute inset-0 rounded-full border-4 border-[#e5c17b] border-t-transparent animate-spin"></div>
+            <div className="absolute inset-0 flex items-center justify-center">
+               <RefreshCcw className="w-8 h-8 text-[#e5c17b] animate-pulse" />
+            </div>
+          </div>
+          <h2 className="text-2xl font-bold text-[#e8eaed] mb-2">Memproses Data...</h2>
+          <p className="text-[#9aa0a6] text-sm max-w-xs mx-auto">Sistem sedang memperbarui status bundle dan mencatat log aktivitas.</p>
+        </div>
+      )}
+
+      {/* Result Screen */}
+      {state.phase === 'RESULT' && (
+        <div className="bg-[#1A1D1F] border border-[#2A2D31] rounded-3xl p-12 shadow-xl flex flex-col items-center text-center animate-in zoom-in-95 duration-300">
+          <div className="w-24 h-24 rounded-full bg-[#e5c17b]/10 flex items-center justify-center mb-6 ring-2 ring-[#e5c17b]/20">
+            <CheckCircle className="w-12 h-12 text-[#e5c17b]" />
+          </div>
+          <h2 className="text-3xl font-bold text-[#e8eaed] mb-2">Berhasil Disimpan!</h2>
+          <p className="text-[#9aa0a6] text-sm mb-4">Data pengerjaan telah tercatat ke dalam sistem produksi.</p>
+
+          {/* Reject Section — hanya muncul jika scan selesai (ada gaji entry) */}
+          <div className="w-full max-w-sm mb-6">
+            <RejectSection
+              gajiLedgerId={state.gajiLedgerId}
+              upahNominal={state.upah}
+              onDone={() => {}}
+            />
+          </div>
+
+          <button
+            onClick={resetToIdle}
+            className="bg-[#e5c17b] hover:bg-[#d4b16a] text-[#0D0E10] px-12 py-4 rounded-2xl text-sm font-black uppercase tracking-widest shadow-xl shadow-[#e5c17b]/10 transition-all hover:scale-105 active:scale-95"
+          >
+            Scan Barcode Lain
+          </button>
+        </div>
+      )}
+      {/* Extras */}
+      <ModalAlasanQty
+        isOpen={showModalAlasan}
+        qtyTerima={state.phase === 'LOADED' ? (state.bundle.status_tahap?.[tahap]?.qty_terima ?? state.bundle.qty_per_bundle) : 0}
+        qtyInput={qty}
+        onConfirm={(id) => { setShowModalAlasan(false); handleSelesai(id); }}
+        onCancel={() => setShowModalAlasan(false)}
+      />
+      <ToastQtyLebih show={showToastQtyLebih} onClose={() => setShowToastQtyLebih(false)} />
+    </div>
+  );
+}

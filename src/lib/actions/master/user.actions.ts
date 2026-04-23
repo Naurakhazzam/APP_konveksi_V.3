@@ -1,0 +1,129 @@
+'use server';
+
+import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
+import { getCurrentUserProfile, permissions, type UserRole } from '@/lib/auth/permissions';
+import { revalidatePath } from 'next/cache';
+
+const TENANT_ID = 'STX-001';
+
+async function requireOwner() {
+  const profile = await getCurrentUserProfile();
+  if (!profile || !permissions.canEditMasterData(profile.role)) {
+    throw new Error('Unauthorized: Hanya owner yang dapat mengelola user.');
+  }
+  return profile;
+}
+
+export async function getUsers() {
+  const admin = createAdminClient();
+  
+  // 1. Ambil semua profile
+  const { data: profiles, error: profileError } = await admin
+    .from('user_profile')
+    .select('*')
+    .eq('tenant_id', TENANT_ID)
+    .order('created_at', { ascending: false });
+
+  if (profileError) throw new Error(profileError.message);
+
+  // 2. Ambil data email dari auth (menggunakan admin client)
+  const { data: { users }, error: authError } = await admin.auth.admin.listUsers();
+  
+  if (authError) throw new Error(authError.message);
+
+  // 3. Gabungkan data
+  const userMap = new Map(users.map(u => [u.id, u.email]));
+  
+  return profiles.map(p => ({
+    ...p,
+    email: userMap.get(p.id) || 'N/A'
+  }));
+}
+
+export async function updateUserRole(userId: string, newRole: UserRole) {
+  const currentUser = await requireOwner();
+  
+  if (currentUser.id === userId) {
+    throw new Error('Tidak dapat mengubah role diri sendiri.');
+  }
+
+  const admin = createAdminClient();
+
+  // Ambil data user lama untuk audit log
+  const { data: oldProfile } = await admin
+    .from('user_profile')
+    .select('nama, role')
+    .eq('id', userId)
+    .single();
+
+  const { error } = await admin
+    .from('user_profile')
+    .update({ role: newRole })
+    .eq('id', userId)
+    .eq('tenant_id', TENANT_ID);
+
+  if (error) throw new Error(error.message);
+
+  // Catat Audit Log
+  await admin.from('audit_log').insert({
+    user_id: currentUser.id,
+    modul: 'user-management',
+    aksi: 'Update Role',
+    target: userId,
+    metadata: {
+      user_target: oldProfile?.nama || userId,
+      old_role: oldProfile?.role,
+      new_role: newRole
+    },
+    tenant_id: TENANT_ID
+  });
+
+  revalidatePath('/app/master/users');
+  return { success: true };
+}
+
+export async function toggleUserAktif(userId: string) {
+  const currentUser = await requireOwner();
+
+  if (currentUser.id === userId) {
+    throw new Error('Tidak dapat menonaktifkan diri sendiri.');
+  }
+
+  const admin = createAdminClient();
+
+  // Ambil status saat ini
+  const { data: profile, error: getError } = await admin
+    .from('user_profile')
+    .select('nama, aktif')
+    .eq('id', userId)
+    .single();
+
+  if (getError || !profile) throw new Error('User tidak ditemukan.');
+
+  const newStatus = !profile.aktif;
+
+  const { error } = await admin
+    .from('user_profile')
+    .update({ aktif: newStatus })
+    .eq('id', userId)
+    .eq('tenant_id', TENANT_ID);
+
+  if (error) throw new Error(error.message);
+
+  // Catat Audit Log
+  await admin.from('audit_log').insert({
+    user_id: currentUser.id,
+    modul: 'user-management',
+    aksi: newStatus ? 'Aktifkan User' : 'Nonaktifkan User',
+    target: userId,
+    metadata: {
+      user_target: profile.nama,
+      status: newStatus ? 'aktif' : 'nonaktif'
+    },
+    tenant_id: TENANT_ID
+  });
+
+  revalidatePath('/app/master/users');
+  return { success: true };
+}

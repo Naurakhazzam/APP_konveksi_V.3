@@ -1,0 +1,318 @@
+'use server';
+
+import { createClient } from '@/lib/supabase/server';
+import { getCurrentUserProfile } from '@/lib/auth/permissions';
+
+const TENANT_ID = 'STX-001';
+
+async function resolveUserId() {
+  const supabase = await createClient();
+  const { data: { user }, error } = await supabase.auth.getUser();
+  if (error || !user) {
+    throw new Error('User tidak terautentikasi');
+  }
+  return user.id;
+}
+
+// --- INTERFACES ---
+
+export interface InventoryOverviewItem {
+  id: string;
+  nama: string;
+  satuan: string;
+  stok_aktual: number;
+  stok_minimum: number;
+  status: 'normal' | 'low' | 'minus';
+  batch_count: number;
+  warna_id: string | null;
+  warna_nama: string | null;
+}
+
+export interface InventoryBatch {
+  id: string;
+  qty_awal: number;
+  qty_sisa: number;
+  harga_satuan: number;
+  tanggal_masuk: string;
+  no_faktur: string | null;
+}
+
+export interface TransaksiKeluar {
+  id: string;
+  tipe: 'bahan' | 'aksesori';
+  inventory_item_id: string;
+  inventory_item_nama: string;
+  satuan: string;
+  qty_pakai: number;
+  bundle_barcode: string;
+  no_po: string;
+  tahap: string;
+  created_at: string;
+}
+
+export interface StokMasukInput {
+  inventory_item_id: string;
+  qty: number;
+  harga_satuan: number;
+  tanggal_masuk: string;  // format: YYYY-MM-DD
+  no_faktur?: string;
+  keterangan?: string;
+  kategori_trx_id: string;
+}
+
+export interface TambahItemInput {
+  nama: string;
+  satuan: string;
+  stok_minimum: number;
+  warna_id?: string | null;
+}
+
+// --- FUNCTIONS ---
+
+/**
+ * 1. Mendapatkan ringkasan stok seluruh item inventory
+ */
+export async function getInventoryOverview(): Promise<InventoryOverviewItem[]> {
+  const supabase = await createClient();
+
+  // A. Fetch items
+  const { data: items, error: itemError } = await supabase
+    .from('inventory_item')
+    .select('id, nama, satuan, stok_aktual, stok_minimum, warna_id, warna:warna_id(nama)')
+    .eq('tenant_id', TENANT_ID)
+    .order('nama');
+
+  if (itemError) throw new Error(itemError.message);
+
+  // B. Fetch batch counts (hanya yang masih ada sisa)
+  const { data: batches, error: batchError } = await supabase
+    .from('inventory_batch')
+    .select('inventory_item_id')
+    .eq('tenant_id', TENANT_ID)
+    .gt('qty_sisa', 0);
+
+  if (batchError) throw new Error(batchError.message);
+
+  const batchCountMap: Record<string, number> = {};
+  batches?.forEach(b => {
+    batchCountMap[b.inventory_item_id] = (batchCountMap[b.inventory_item_id] || 0) + 1;
+  });
+
+  // C. Map to final structure
+  return (items || []).map(item => {
+    const status = item.stok_aktual < 0 ? 'minus' : (item.stok_aktual <= item.stok_minimum ? 'low' : 'normal');
+    return {
+      ...item,
+      warna_id: item.warna_id ?? null,
+      warna_nama: (item.warna as any)?.nama ?? null,
+      status,
+      batch_count: batchCountMap[item.id] ?? 0
+    };
+  });
+}
+
+/**
+ * 2. Mendapatkan daftar batch untuk satu item spesifik
+ */
+export async function getInventoryBatches(item_id: string): Promise<InventoryBatch[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from('inventory_batch')
+    .select('id, qty_awal, qty_sisa, harga_satuan, tanggal_masuk, jurnal_entry:jurnal_entry_id(no_faktur)')
+    .eq('inventory_item_id', item_id)
+    .eq('tenant_id', TENANT_ID)
+    .order('tanggal_masuk', { ascending: false });
+
+  if (error) throw new Error(error.message);
+
+  return (data || []).map((b: any) => ({
+    id: b.id,
+    qty_awal: b.qty_awal,
+    qty_sisa: b.qty_sisa,
+    harga_satuan: b.harga_satuan,
+    tanggal_masuk: b.tanggal_masuk,
+    no_faktur: b.jurnal_entry?.no_faktur ?? null
+  }));
+}
+
+/**
+ * 3. Mendapatkan riwayat transaksi keluar (pemakaian)
+ */
+export async function getTransaksiKeluar(page: number, pageSize: number, item_id?: string): Promise<{ data: TransaksiKeluar[], total: number }> {
+  const supabase = await createClient();
+
+  // BAGIAN A - pemakaian_bahan
+  let queryBahan = supabase
+    .from('pemakaian_bahan')
+    .select('id, qty_pakai, created_at, inventory_item:inventory_item_id(nama, satuan), bundle:bundle_id(barcode, po:po_id(no_po))', { count: 'exact' })
+    .eq('tenant_id', TENANT_ID);
+  
+  if (item_id) queryBahan = queryBahan.eq('inventory_item_id', item_id);
+  const { data: dataBahan, count: countBahan } = await queryBahan.order('created_at', { ascending: false });
+
+  // BAGIAN B - pemakaian_aksesori
+  let queryAksesori = supabase
+    .from('pemakaian_aksesori')
+    .select('id, qty_pakai, tahap, created_at, inventory_item:inventory_item_id(nama, satuan), bundle:bundle_id(barcode, po:po_id(no_po))', { count: 'exact' })
+    .eq('tenant_id', TENANT_ID);
+
+  if (item_id) queryAksesori = queryAksesori.eq('inventory_item_id', item_id);
+  const { data: dataAksesori, count: countAksesori } = await queryAksesori.order('created_at', { ascending: false });
+
+  // Merge dan Transform
+  const resultBahan: TransaksiKeluar[] = (dataBahan || []).map((b: any) => ({
+    id: b.id,
+    tipe: 'bahan',
+    inventory_item_id: item_id || '',
+    inventory_item_nama: b.inventory_item?.nama || '',
+    satuan: b.inventory_item?.satuan || '',
+    qty_pakai: b.qty_pakai,
+    bundle_barcode: b.bundle?.barcode || '',
+    no_po: b.bundle?.po?.no_po || '',
+    tahap: 'Cutting', // Pemakaian bahan selalu di cutting
+    created_at: b.created_at
+  }));
+
+  const resultAksesori: TransaksiKeluar[] = (dataAksesori || []).map((a: any) => ({
+    id: a.id,
+    tipe: 'aksesori',
+    inventory_item_id: item_id || '',
+    inventory_item_nama: a.inventory_item?.nama || '',
+    satuan: a.inventory_item?.satuan || '',
+    qty_pakai: a.qty_pakai,
+    bundle_barcode: a.bundle?.barcode || '',
+    no_po: a.bundle?.po?.no_po || '',
+    tahap: a.tahap || '',
+    created_at: a.created_at
+  }));
+
+  const allData = [...resultBahan, ...resultAksesori].sort((a, b) => 
+    new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  );
+
+  const start = (page - 1) * pageSize;
+  const slicedData = allData.slice(start, start + pageSize);
+
+  return {
+    data: slicedData,
+    total: (countBahan || 0) + (countAksesori || 0)
+  };
+}
+
+/**
+ * 4. Mendapatkan item yang perlu perhatian (stok rendah atau minus)
+ */
+export async function getAlertItems(): Promise<InventoryOverviewItem[]> {
+  const allItems = await getInventoryOverview();
+  return allItems
+    .filter(item => item.status !== 'normal')
+    .sort((a, b) => {
+      if (a.status === 'minus' && b.status !== 'minus') return -1;
+      if (a.status !== 'minus' && b.status === 'minus') return 1;
+      return 0;
+    });
+}
+
+/**
+ * 5. Menambah stok masuk via RPC stok_masuk
+ */
+export async function addStokMasuk(input: StokMasukInput): Promise<{ batch_id: string; stok_baru: number }> {
+  const supabase = await createClient();
+  const userId = await resolveUserId();
+
+  const { data, error } = await supabase.rpc('stok_masuk', {
+    p_inventory_item_id: input.inventory_item_id,
+    p_qty:               input.qty,
+    p_harga_satuan:      input.harga_satuan,
+    p_tanggal_masuk:     input.tanggal_masuk,
+    p_no_faktur:         input.no_faktur ?? null,
+    p_kategori_trx_id:   input.kategori_trx_id,
+    p_keterangan:        input.keterangan ?? null,
+    p_user_id:           userId,
+    p_tenant_id:         TENANT_ID
+  });
+
+  if (error) throw new Error(error.message);
+  return { batch_id: data.batch_id, stok_baru: data.stok_baru };
+}
+
+/**
+ * 6. Membuat item inventory baru via RPC tambah_inventory_item
+ */
+export async function tambahInventoryItem(input: TambahItemInput): Promise<string> {
+  const supabase = await createClient();
+  const userId = await resolveUserId();
+
+  const { data, error } = await supabase.rpc('tambah_inventory_item', {
+    p_nama:         input.nama,
+    p_satuan:       input.satuan,
+    p_stok_minimum: input.stok_minimum,
+    p_warna_id:     input.warna_id ?? null,
+    p_user_id:      userId,
+    p_tenant_id:    TENANT_ID
+  });
+
+  if (error) throw new Error(error.message);
+  return data.id;
+}
+
+/**
+ * 7. Mendapatkan kategori transaksi untuk bahan (direct_bahan)
+ */
+export async function getKategoriTrxBahan(): Promise<{ id: string; nama: string }[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from('kategori_trx')
+    .select('id, nama')
+    .eq('jenis', 'direct_bahan')
+    .eq('tenant_id', TENANT_ID)
+    .eq('aktif', true)
+    .order('nama');
+
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}
+
+/**
+ * 8. Update stok minimum suatu item
+ */
+export async function updateStokMinimum(item_id: string, stok_minimum: number): Promise<void> {
+  const supabase = await createClient();
+
+  const { error } = await supabase
+    .from('inventory_item')
+    .update({ stok_minimum })
+    .eq('id', item_id)
+    .eq('tenant_id', TENANT_ID);
+
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * 9. Update informasi dasar item inventory
+ */
+export interface UpdateItemInput {
+  nama: string;
+  satuan: string;
+  stok_minimum: number;
+  warna_id?: string | null;
+}
+
+export async function updateInventoryItem(item_id: string, input: UpdateItemInput): Promise<void> {
+  const supabase = await createClient();
+
+  const { error } = await supabase
+    .from('inventory_item')
+    .update({
+      nama: input.nama,
+      satuan: input.satuan,
+      stok_minimum: input.stok_minimum,
+      warna_id: input.warna_id ?? null,
+    })
+    .eq('id', item_id)
+    .eq('tenant_id', TENANT_ID);
+
+  if (error) throw new Error(error.message);
+}
