@@ -37,7 +37,6 @@ export async function getModelAksesori(model_id: string): Promise<ModelAksesori[
       inventory_item_id,
       qty_per_pcs,
       tahap_pakai,
-      warna_id,
       inventory_item:inventory_item_id (nama, satuan)
     `)
     .eq('model_id', model_id)
@@ -112,7 +111,6 @@ export async function getAksesoriForBundle(
       inventory_item_id,
       qty_per_pcs,
       tahap_pakai,
-      warna_id,
       inventory_item:inventory_item_id (nama, satuan)
     `)
     .eq('tahap_pakai', tahap)
