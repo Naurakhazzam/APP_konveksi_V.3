@@ -8,6 +8,7 @@ import {
     type BundleForScan,
     type BundleSearchResult
 } from '@/lib/actions/produksi/scan.actions';
+import { getAksesoriForBundle, type ModelAksesori } from '@/lib/actions/produksi/model-aksesori.actions';
 import { 
     scanTerimaGeneric, 
     scanSelesai 
@@ -38,11 +39,11 @@ type ScanState =
 
 interface Props {
   karyawanList: { id: string; nama: string }[];
-  inventoryItems: { id: string; nama: string; satuan: string }[];
 }
 
-export default function ScanJahitClient({ karyawanList, inventoryItems }: Props) {
+export default function ScanJahitClient({ karyawanList }: Props) {
   const [state, setState] = useState<ScanState>({ phase: 'IDLE' });
+  const [aksesori, setAksesori] = useState<ModelAksesori[]>([]);
   const [barcode, setBarcode] = useState('');
   const [karyawanId, setKaryawanId] = useState('');
   const [qty, setQty] = useState(0);
@@ -81,6 +82,8 @@ export default function ScanJahitClient({ karyawanList, inventoryItems }: Props)
         if (!checkPrerequisite(exact)) return;
         setQty(exact.qty_per_bundle);
         setState({ phase: 'LOADED', bundle: exact });
+        const aksesoriData = await getAksesoriForBundle(exact.po_item_id, 'jahit');
+        setAksesori(aksesoriData);
         return;
       }
       // 2. Partial search
@@ -99,6 +102,8 @@ export default function ScanJahitClient({ karyawanList, inventoryItems }: Props)
           if (!checkPrerequisite(bundle)) return;
           setQty(bundle.qty_per_bundle);
           setState({ phase: 'LOADED', bundle });
+          const aksesoriData = await getAksesoriForBundle(bundle.po_item_id, 'jahit');
+          setAksesori(aksesoriData);
         } else {
             setState({ phase: 'IDLE' });
         }
@@ -124,6 +129,8 @@ export default function ScanJahitClient({ karyawanList, inventoryItems }: Props)
         if (!checkPrerequisite(bundle)) return;
         setQty(bundle.qty_per_bundle);
         setState({ phase: 'LOADED', bundle });
+        const aksesoriData = await getAksesoriForBundle(bundle.po_item_id, 'jahit');
+        setAksesori(aksesoriData);
       } else {
         toast.error('Gagal memuat bundle');
         setState({ phase: 'IDLE' });
@@ -405,7 +412,7 @@ export default function ScanJahitClient({ karyawanList, inventoryItems }: Props)
             onOpenChange={(open) => !open && setState({ phase: 'LOADED', bundle: state.bundle })}
             bundle={state.bundle}
             karyawanNama={karyawanList.find(k => k.id === karyawanId)?.nama ?? ''}
-            inventoryItems={inventoryItems}
+            aksesori={aksesori}
             onApprove={handleApproveTerima}
             disabled={state.phase === 'SUBMITTING'}
           />

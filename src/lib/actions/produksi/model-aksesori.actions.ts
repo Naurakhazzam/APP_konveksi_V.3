@@ -83,3 +83,54 @@ export async function deleteModelAksesori(id: string): Promise<void> {
 
   if (error) throw new Error(error.message);
 }
+
+/**
+ * Ambil aksesori untuk bundle tertentu berdasarkan po_item_id + tahap
+ * Dipakai di Modal Serah Terima untuk tampilkan aksesori yang harus diserahkan
+ */
+export async function getAksesoriForBundle(
+  po_item_id: string,
+  tahap: string
+): Promise<ModelAksesori[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from('model_aksesori')
+    .select(`
+      id,
+      model_id,
+      inventory_item_id,
+      qty_per_pcs,
+      tahap_pakai,
+      inventory_item:inventory_item_id (nama, satuan)
+    `)
+    .eq('tahap_pakai', tahap)
+    .eq('tenant_id', TENANT_ID);
+
+  if (error) throw new Error(error.message);
+  if (!data || data.length === 0) return [];
+
+  // Filter: hanya aksesori untuk model yang dipakai po_item ini
+  const { data: poItemData, error: poItemError } = await supabase
+    .from('po_item')
+    .select('produk:produk_id(model_id)')
+    .eq('id', po_item_id)
+    .single();
+
+  if (poItemError || !poItemData) return [];
+
+  const modelId = (poItemData.produk as any)?.model_id;
+  if (!modelId) return [];
+
+  return data
+    .filter((item: any) => item.model_id === modelId)
+    .map((item: any) => ({
+      id: item.id,
+      model_id: item.model_id,
+      inventory_item_id: item.inventory_item_id,
+      inventory_item_nama: item.inventory_item?.nama ?? '',
+      satuan: item.inventory_item?.satuan ?? '',
+      qty_per_pcs: Number(item.qty_per_pcs),
+      tahap_pakai: item.tahap_pakai,
+    }));
+}

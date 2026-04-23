@@ -1,9 +1,12 @@
-export default function RiwayatKirimPage() {
+import { getSuratJalanList } from '@/lib/actions/pengiriman/surat-jalan.actions';
+import { PageWrapper } from '@/components/ui/PageWrapper';
+import RiwayatClient from './RiwayatClient';
+
+export default async function RiwayatSuratJalanPage() {
+  const riwayatList = await getSuratJalanList();
   return (
-    <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
-      <div className="text-6xl">🚧</div>
-      <h1 className="text-2xl font-bold text-[#e8eaed]">Riwayat Kirim</h1>
-      <p className="text-[#9aa0a6] text-sm">Sedang dalam pengerjaan</p>
-    </div>
+    <PageWrapper title="Riwayat Surat Jalan" subtitle="Semua surat jalan yang sudah dibuat.">
+      <RiwayatClient initialData={riwayatList} />
+    </PageWrapper>
   );
 }
