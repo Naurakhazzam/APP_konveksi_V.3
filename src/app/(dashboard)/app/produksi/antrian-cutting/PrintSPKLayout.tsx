@@ -49,6 +49,13 @@ export default function PrintSPKLayout({ bundles }: Props) {
         @media print {
           @page { margin: 1.5cm; size: A4 portrait; }
 
+          * {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+            color-adjust: exact !important;
+            color: black !important;
+          }
+
           html, body {
             height: auto !important;
             overflow: visible !important;
