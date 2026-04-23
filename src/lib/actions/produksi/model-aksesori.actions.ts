@@ -39,7 +39,7 @@ export async function getModelAksesori(model_id: string): Promise<ModelAksesori[
       tahap_pakai,
       warna_id,
       inventory_item:inventory_item_id (nama, satuan),
-      warna:warna_id (nama)
+      warna!warna_id(nama)
     `)
     .eq('model_id', model_id)
     .eq('tenant_id', TENANT_ID)
@@ -115,7 +115,7 @@ export async function getAksesoriForBundle(
       tahap_pakai,
       warna_id,
       inventory_item:inventory_item_id (nama, satuan),
-      warna:warna_id (nama)
+      warna!warna_id(nama)
     `)
     .eq('tahap_pakai', tahap)
     .eq('tenant_id', TENANT_ID);
@@ -181,7 +181,7 @@ export async function getWarnaAksesori(warna_id?: string): Promise<WarnaAksesori
       inventory_item_id,
       qty_per_pcs,
       tahap_pakai,
-      warna:warna_id (nama),
+      warna!warna_id(nama),
       inventory_item:inventory_item_id (nama, satuan)
     `)
     .eq('tenant_id', TENANT_ID)
