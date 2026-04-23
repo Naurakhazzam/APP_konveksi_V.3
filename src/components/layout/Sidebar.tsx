@@ -128,13 +128,23 @@ const NAV_MENU = [
 interface SidebarProps {
   profile: UserProfile;
   allowedNavIds: string[];
+  allowedPaths: string[];
 }
 
-export function Sidebar({ profile, allowedNavIds }: SidebarProps) {
+export function Sidebar({ profile, allowedNavIds, allowedPaths }: SidebarProps) {
   const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
 
-  const navItems = NAV_MENU.filter((item) => allowedNavIds.includes(item.id));
+  const navItems = NAV_MENU
+    .filter((item) => allowedNavIds.includes(item.id))
+    .map((item) => {
+      if (!item.children) return item;
+      // Filter children berdasarkan allowedPaths
+      const allowedChildren = item.children.filter(child =>
+        allowedPaths.some(p => p === child.path || child.path.startsWith(p))
+      );
+      return { ...item, children: allowedChildren.length > 0 ? allowedChildren : item.children };
+    });
 
   const SidebarContent = () => (
     <div className="flex h-full flex-col bg-[#0D0E10] text-[#e8eaed]">

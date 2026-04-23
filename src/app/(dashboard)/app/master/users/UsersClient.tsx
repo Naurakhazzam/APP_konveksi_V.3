@@ -30,6 +30,8 @@ import { Shield, UserX, UserCheck, ChevronDown, Loader2, UserPlus } from 'lucide
 import { updateUserRole, toggleUserAktif, createUser } from '@/lib/actions/master/user.actions';
 import type { UserRole } from '@/lib/auth/permissions';
 import { toast } from 'sonner';
+import PermissionMatrix from './PermissionMatrix';
+import type { RolePermissionMap } from '@/lib/actions/master/permission.actions';
 
 interface UserData {
   id: string;
@@ -43,6 +45,7 @@ interface UserData {
 interface UsersClientProps {
   initialUsers: UserData[];
   currentUserId: string;
+  initialPermissions: RolePermissionMap;
 }
 
 const ROLES: { value: UserRole; label: string }[] = [
@@ -53,8 +56,9 @@ const ROLES: { value: UserRole; label: string }[] = [
   { value: 'mandor', label: 'Mandor' },
 ];
 
-export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
+export function UsersClient({ initialUsers, currentUserId, initialPermissions }: UsersClientProps) {
   const router = useRouter();
+  const [activeTab, setActiveTab] = useState<'users' | 'permissions'>('users');
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [userToToggle, setUserToToggle] = useState<UserData | null>(null);
@@ -64,7 +68,7 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
     email: '',
     password: '',
     nama: '',
-    role: 'operator' as UserRole,
+    role: 'mandor' as UserRole,
   });
 
   const handleRoleChange = async (userId: string, newRole: UserRole) => {
@@ -106,7 +110,7 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
       await createUser(createForm);
       toast.success(`User ${createForm.nama} berhasil dibuat`);
       setCreateOpen(false);
-      setCreateForm({ email: '', password: '', nama: '', role: 'operator' as UserRole });
+      setCreateForm({ email: '', password: '', nama: '', role: 'mandor' as UserRole });
       router.refresh();
     } catch (err: any) {
       toast.error(err.message || 'Gagal membuat user');
@@ -132,8 +136,30 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
 
   return (
     <div className="space-y-4">
-      {/* Tombol Tambah User */}
-      <div className="flex justify-end">
+      {/* Tab Navigation */}
+      <div className="flex gap-1 border-b border-[#2A2D31] pb-0">
+        {[
+          { id: 'users', label: 'Daftar User' },
+          { id: 'permissions', label: 'Hak Akses per Role' },
+        ].map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id as any)}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+              activeTab === tab.id
+                ? 'border-[#e5c17b] text-[#e5c17b]'
+                : 'border-transparent text-[#9aa0a6] hover:text-[#e8eaed]'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === 'users' && (
+        <div className="space-y-4">
+          {/* Tombol Tambah User */}
+          <div className="flex justify-end">
         <Button
           onClick={() => setCreateOpen(true)}
           className="bg-[#e5c17b] text-[#0D0E10] hover:bg-[#d4b06a] font-bold text-xs uppercase tracking-widest h-9 px-4"
@@ -226,6 +252,12 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
           </TableBody>
         </Table>
       </div>
+      </div>
+      )}
+
+      {activeTab === 'permissions' && (
+        <PermissionMatrix initialPermissions={initialPermissions} />
+      )}
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="bg-[#16181A] border-[#2A2D31] text-[#e8eaed]">

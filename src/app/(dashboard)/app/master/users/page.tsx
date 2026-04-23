@@ -1,4 +1,5 @@
 import { getUsers } from '@/lib/actions/master/user.actions';
+import { getAllRolePermissions } from '@/lib/actions/master/permission.actions';
 import { getCurrentUserProfile } from '@/lib/auth/permissions';
 import { PageWrapper } from '@/components/ui/PageWrapper';
 import { UsersClient } from './UsersClient';
@@ -16,7 +17,10 @@ export default async function MasterUsersPage() {
     redirect('/app/dashboard');
   }
 
-  const users = await getUsers();
+  const [users, allPermissions] = await Promise.all([
+    getUsers(),
+    getAllRolePermissions(),
+  ]);
 
   return (
     <PageWrapper
@@ -26,6 +30,7 @@ export default async function MasterUsersPage() {
       <UsersClient 
         initialUsers={JSON.parse(JSON.stringify(users))} 
         currentUserId={profile.id} 
+        initialPermissions={allPermissions}
       />
     </PageWrapper>
   );
