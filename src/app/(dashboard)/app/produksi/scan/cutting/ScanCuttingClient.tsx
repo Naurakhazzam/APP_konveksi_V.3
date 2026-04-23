@@ -53,6 +53,11 @@ export default function ScanCuttingClient({ karyawanList, inventoryItems }: Prop
       setState({ phase: 'IDLE' });
       return;
     }
+    if (bundle.status_tahap?.['cutting']?.status === 'selesai') {
+      toast.error('Bundle ini sudah selesai di tahap Cutting');
+      setState({ phase: 'IDLE' });
+      return;
+    }
     setQty(bundle.qty_per_bundle);
     setState({ phase: 'LOADED', bundle });
   };
@@ -64,12 +69,17 @@ export default function ScanCuttingClient({ karyawanList, inventoryItems }: Prop
       // 1. Coba exact match dulu
       const exact = await getBundleForScan(barcode.trim());
       if (exact) {
+        if (exact.status_tahap?.['cutting']?.status === 'selesai') {
+          toast.error('Bundle ini sudah selesai di tahap Cutting');
+          setState({ phase: 'IDLE' });
+          return;
+        }
         setQty(exact.qty_per_bundle);
         setState({ phase: 'LOADED', bundle: exact });
         return;
       }
       // 2. Partial search jika tidak ketemu
-      const results = await searchBundlesByBarcode(barcode.trim());
+      const results = await searchBundlesByBarcode(barcode.trim(), 'cutting');
       if (results.length === 0) {
         toast.error('Barcode tidak ditemukan');
         setState({ phase: 'IDLE' });
@@ -138,6 +148,11 @@ export default function ScanCuttingClient({ karyawanList, inventoryItems }: Prop
     if (qty < qtyTerima && !alasan_qty_id) {
       setPendingSelesaiBundle(bundle);
       setShowModalAlasan(true);
+      return;
+    }
+
+    if (qty > qtyTerima) {
+      toast.error(`QTY tidak boleh melebihi yang diterima (${qtyTerima} pcs)`);
       return;
     }
 

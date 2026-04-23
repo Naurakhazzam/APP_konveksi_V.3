@@ -63,12 +63,17 @@ export default function ScanJahitClient({ karyawanList, inventoryItems }: Props)
       // 1. Exact match
       const exact = await getBundleForScan(barcode.trim());
       if (exact) {
+        if (exact.status_tahap?.['jahit']?.status === 'selesai') {
+          toast.error('Bundle ini sudah selesai di tahap Jahit');
+          setState({ phase: 'IDLE' });
+          return;
+        }
         setQty(exact.qty_per_bundle);
         setState({ phase: 'LOADED', bundle: exact });
         return;
       }
       // 2. Partial search
-      const results = await searchBundlesByBarcode(barcode.trim());
+      const results = await searchBundlesByBarcode(barcode.trim(), 'jahit');
       if (results.length === 0) {
         toast.error('Barcode tidak ditemukan');
         setState({ phase: 'IDLE' });
@@ -94,6 +99,11 @@ export default function ScanJahitClient({ karyawanList, inventoryItems }: Props)
     try {
       const bundle = await getBundleForScan(itemBarcode);
       if (bundle) {
+        if (bundle.status_tahap?.['jahit']?.status === 'selesai') {
+          toast.error('Bundle ini sudah selesai di tahap Jahit');
+          setState({ phase: 'IDLE' });
+          return;
+        }
         setQty(bundle.qty_per_bundle);
         setState({ phase: 'LOADED', bundle });
       } else {
@@ -141,6 +151,11 @@ export default function ScanJahitClient({ karyawanList, inventoryItems }: Props)
 
     if (qty < qtyTerima && !alasan_qty_id) {
       setShowModalAlasan(true);
+      return;
+    }
+
+    if (qty > qtyTerima) {
+      toast.error(`QTY tidak boleh melebihi yang diterima (${qtyTerima} pcs)`);
       return;
     }
 
@@ -288,22 +303,24 @@ export default function ScanJahitClient({ karyawanList, inventoryItems }: Props)
 
           <div className="bg-[#1A1D1F] border border-[#2A2D31] rounded-2xl p-6 shadow-2xl space-y-5">
              <div className="flex flex-col md:flex-row gap-4">
-                {/* Employee Selector */}
-                <div className="flex-1 space-y-2">
-                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[#e5c17b] flex items-center gap-2">
-                        <User size={12} /> Karyawan Penjahit
-                    </label>
-                    <select
-                        value={karyawanId}
-                        onChange={(e) => setKaryawanId(e.target.value)}
-                        className="w-full bg-[#16181A] border border-[#2A2D31] rounded-xl px-4 py-3 text-[#e8eaed] focus:ring-1 focus:ring-[#e5c17b] outline-none transition-all text-sm"
-                    >
-                        <option value="">Pilih Penjahit...</option>
-                        {karyawanList.map(k => (
-                            <option key={k.id} value={k.id}>{k.nama}</option>
-                        ))}
-                    </select>
-                </div>
+                {/* Employee Selector — HANYA tampil saat bundle belum diterima (fase terima) */}
+                {state.bundle.status_tahap?.['jahit']?.status !== 'terima' && (
+                  <div className="flex-1 space-y-2">
+                      <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[#e5c17b] flex items-center gap-2">
+                          <User size={12} /> Karyawan Penjahit
+                      </label>
+                      <select
+                          value={karyawanId}
+                          onChange={(e) => setKaryawanId(e.target.value)}
+                          className="w-full bg-[#16181A] border border-[#2A2D31] rounded-xl px-4 py-3 text-[#e8eaed] focus:ring-1 focus:ring-[#e5c17b] outline-none transition-all text-sm"
+                      >
+                          <option value="">Pilih Penjahit...</option>
+                          {karyawanList.map(k => (
+                              <option key={k.id} value={k.id}>{k.nama}</option>
+                          ))}
+                      </select>
+                  </div>
+                )}
 
                 {/* Qty Input */}
                 <div className="w-full md:w-32 space-y-2">

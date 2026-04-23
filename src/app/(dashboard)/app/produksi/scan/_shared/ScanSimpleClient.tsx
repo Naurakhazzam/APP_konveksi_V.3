@@ -75,12 +75,17 @@ export default function ScanSimpleClient({ tahap, tahapLabel }: Props) {
     try {
       const exact = await getBundleForScan(barcode.trim());
       if (exact) {
+        if (exact.status_tahap?.[tahap]?.status === 'selesai') {
+          toast.error(`Bundle ini sudah selesai di tahap ${tahapLabel}`);
+          setState({ phase: 'IDLE' });
+          return;
+        }
         setQty(exact.qty_per_bundle);
         setState({ phase: 'LOADED', bundle: exact });
         return;
       }
       
-      const results = await searchBundlesByBarcode(barcode.trim());
+      const results = await searchBundlesByBarcode(barcode.trim(), tahap);
       if (results.length === 0) {
         toast.error('Barcode tidak ditemukan');
         setState({ phase: 'IDLE' });
@@ -106,6 +111,11 @@ export default function ScanSimpleClient({ tahap, tahapLabel }: Props) {
     try {
       const bundle = await getBundleForScan(itemBarcode);
       if (bundle) {
+        if (bundle.status_tahap?.[tahap]?.status === 'selesai') {
+          toast.error(`Bundle ini sudah selesai di tahap ${tahapLabel}`);
+          setState({ phase: 'IDLE' });
+          return;
+        }
         setQty(bundle.qty_per_bundle);
         setState({ phase: 'LOADED', bundle });
       } else {
@@ -159,6 +169,11 @@ export default function ScanSimpleClient({ tahap, tahapLabel }: Props) {
     // Jika qty kurang dan belum ada alasan → tampilkan modal
     if (qty < qtyTerima && !alasan_qty_id) {
       setShowModalAlasan(true);
+      return;
+    }
+
+    if (qty > qtyTerima) {
+      toast.error(`QTY tidak boleh melebihi yang diterima (${qtyTerima} pcs)`);
       return;
     }
     
