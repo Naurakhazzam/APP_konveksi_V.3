@@ -30,6 +30,7 @@ import {
   getWarnaAksesori,
 } from '@/lib/actions/produksi/model-aksesori.actions';
 import { getInventoryItems, InventoryItem } from '@/lib/actions/inventory/item.actions';
+import { getWarna } from '@/lib/actions/master/detail.actions';
 
 interface AksesoriWarnaClientProps {
   initialData: WarnaAksesori[];
@@ -48,17 +49,6 @@ const tahapPakaiOptions = [
   { value: 'qc', label: 'QC' },
 ];
 
-// Fallback fetch warna dari tabel warna
-async function fetchWarnaList(): Promise<{ id: string; nama: string }[]> {
-  const { createClient } = await import('@/lib/supabase/server');
-  const supabase = await createClient();
-  const { data } = await supabase
-    .from('warna')
-    .select('id, nama')
-    .eq('tenant_id', 'STX-001')
-    .order('nama');
-  return data ?? [];
-}
 
 export default function AksesoriWarnaClient({ initialData }: AksesoriWarnaClientProps) {
   const [data, setData] = useState<WarnaAksesori[]>(initialData);
@@ -80,7 +70,7 @@ export default function AksesoriWarnaClient({ initialData }: AksesoriWarnaClient
       try {
         const [items, warnas] = await Promise.all([
           getInventoryItems(),
-          fetchWarnaList(),
+          getWarna(),
         ]);
         setInventoryItems(items);
         setWarnaList(warnas);
