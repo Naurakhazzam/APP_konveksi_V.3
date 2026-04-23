@@ -38,8 +38,7 @@ export async function getModelAksesori(model_id: string): Promise<ModelAksesori[
       qty_per_pcs,
       tahap_pakai,
       warna_id,
-      inventory_item:inventory_item_id (nama, satuan),
-      warna!warna_id(nama)
+      inventory_item:inventory_item_id (nama, satuan)
     `)
     .eq('model_id', model_id)
     .eq('tenant_id', TENANT_ID)
@@ -55,8 +54,8 @@ export async function getModelAksesori(model_id: string): Promise<ModelAksesori[
     satuan: item.inventory_item?.satuan ?? '',
     qty_per_pcs: Number(item.qty_per_pcs),
     tahap_pakai: item.tahap_pakai,
-    warna_id: item.warna_id ?? null,
-    warna_nama: item.warna?.nama ?? null,
+    warna_id: null,
+    warna_nama: null,
   }));
 }
 
@@ -114,8 +113,7 @@ export async function getAksesoriForBundle(
       qty_per_pcs,
       tahap_pakai,
       warna_id,
-      inventory_item:inventory_item_id (nama, satuan),
-      warna!warna_id(nama)
+      inventory_item:inventory_item_id (nama, satuan)
     `)
     .eq('tahap_pakai', tahap)
     .eq('tenant_id', TENANT_ID);
@@ -144,8 +142,8 @@ export async function getAksesoriForBundle(
       satuan: item.inventory_item?.satuan ?? '',
       qty_per_pcs: Number(item.qty_per_pcs),
       tahap_pakai: item.tahap_pakai,
-      warna_id: item.warna_id ?? null,
-      warna_nama: item.warna?.nama ?? null,
+      warna_id: null,
+      warna_nama: null,
     }));
 }
 
