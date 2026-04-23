@@ -28,9 +28,9 @@ export default async function ModelDetailPage({ params }: PageProps) {
     return (
       <PageWrapper
         title={model.nama}
-        subtitle={`Detail model dan manajemen kebutuhan aksesori.`}
+        subtitle={"Detail model dan manajemen kebutuhan aksesori."}
         actions={
-          <Link 
+          <Link
             href="/app/master/produk"
             className="flex items-center gap-2 text-sm text-[#9aa0a6] hover:text-[#e8eaed] transition-colors"
           >
@@ -46,6 +46,6 @@ export default async function ModelDetailPage({ params }: PageProps) {
     );
   } catch (error) {
     console.error('Error fetching model detail:', error);
-    throw error;
+    redirect('/app/master/produk');
   }
 }
