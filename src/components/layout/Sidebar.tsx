@@ -85,7 +85,8 @@ const NAV_MENU = [
       { label: 'Satuan (UOM)', path: '/app/master/satuan' },
       { label: 'Jenis & Alasan Reject', path: '/app/master/reject' },
       { label: 'Kategori Transaksi', path: '/app/master/kategori-trx' },
-      { label: 'Komponen HPP', path: '/app/master/komponen-hpp' },
+      { label: 'Komponen HPP',   path: '/app/master/komponen-hpp' },
+      { label: 'Aksesori Warna',  path: '/app/master/aksesori-warna' },
       { label: 'User & Role', path: '/app/master/users' },
       { label: 'Reset Factory', path: '/app/master/reset' },
     ]

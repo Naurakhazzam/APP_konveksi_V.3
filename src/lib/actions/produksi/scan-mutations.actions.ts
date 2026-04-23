@@ -31,7 +31,6 @@ export interface ScanSelesaiResult {
   approval_request_id: string | null;
 }
 
-// Ambil user_id dari session aktif
 async function resolveUserId(): Promise<string> {
   const supabase = await createClient();
   const { data: { user }, error } = await supabase.auth.getUser();
@@ -107,6 +106,39 @@ export async function scanSelesai(
     approval_request_id: result.approval_request_id ?? null,
   };
 }
+
+// 3. scanJahitTerima
+export interface ScanJahitTerimaResult {
+  scan_log_id: string;
+  stok_warnings: StokWarning[];
+}
+
+export async function scanJahitTerima(input: {
+  barcode: string;
+  karyawan_id: string;
+  qty: number;
+}): Promise<ScanJahitTerimaResult> {
+  const user_id  = await resolveUserId();
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.rpc('scan_jahit_terima', {
+    p_barcode:     input.barcode,
+    p_karyawan_id: input.karyawan_id,
+    p_qty:         input.qty,
+    p_user_id:     user_id,
+    p_tenant_id:   TENANT_ID,
+  });
+
+  if (error) throw new Error(error.message);
+
+  const result = data as { scan_log_id: string; stok_warnings: StokWarning[] };
+  return {
+    scan_log_id:   result.scan_log_id,
+    stok_warnings: result.stok_warnings ?? [],
+  };
+}
+
+// 4. scanTerimaGeneric
 export interface ScanTerimaGenericResult {
   scan_log_id: string;
 }

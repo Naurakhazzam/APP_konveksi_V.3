@@ -9,9 +9,9 @@ import {
     type BundleSearchResult
 } from '@/lib/actions/produksi/scan.actions';
 import { getAksesoriForBundle, type ModelAksesori } from '@/lib/actions/produksi/model-aksesori.actions';
-import { 
-    scanTerimaGeneric, 
-    scanSelesai 
+import {
+    scanJahitTerima,
+    scanSelesai
 } from '@/lib/actions/produksi/scan-mutations.actions';
 import ModalSerahTerima from './ModalSerahTerima';
 import ModalAlasanQty from '@/components/produksi/ModalAlasanQty';
@@ -154,14 +154,17 @@ export default function ScanJahitClient({ karyawanList }: Props) {
     const bundle = (state as { bundle: BundleForScan }).bundle;
     setState({ phase: 'SUBMITTING', bundle });
     try {
-      await scanTerimaGeneric({
-        barcode: bundle.barcode,
-        tahap: 'jahit',
+      const result = await scanJahitTerima({
+        barcode:     bundle.barcode,
         karyawan_id: karyawanId,
-        qty: qty,
-        tenant_id: 'STX-001'
+        qty:         qty,
       });
       toast.success('Bundle diterima di tahap Jahit');
+      if (result.stok_warnings && result.stok_warnings.length > 0) {
+        result.stok_warnings.forEach(w => {
+          toast.warning(`Stok kurang: ${w.item_nama} (kurang ${w.qty_kurang}, sisa ${w.sisa_stok})`);
+        });
+      }
       setState({ phase: 'RESULT' });
     } catch (err: any) {
       toast.error(err.message || 'Gagal submit penerimaan');

@@ -1,12 +1,12 @@
 'use client';
 
 import React from 'react';
-import { 
-  Dialog, 
-  DialogContent, 
-  DialogHeader, 
-  DialogTitle, 
-  DialogFooter 
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Printer, CheckCircle, XCircle, Info, Tag } from 'lucide-react';
@@ -32,7 +32,7 @@ export default function ModalSerahTerima({
   onApprove,
   disabled
 }: Props) {
-  
+
   const formatDate = (date: Date) => {
     return date.toLocaleDateString('id-ID', {
       day: '2-digit',

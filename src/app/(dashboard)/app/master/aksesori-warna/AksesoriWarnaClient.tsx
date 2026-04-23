@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { Plus, Trash2, Loader2, Info } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -23,17 +23,16 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
-import { 
-  ModelAksesori, 
-  addModelAksesori, 
-  deleteModelAksesori,
-  getModelAksesori
+import {
+  WarnaAksesori,
+  addWarnaAksesori,
+  deleteWarnaAksesori,
+  getWarnaAksesori,
 } from '@/lib/actions/produksi/model-aksesori.actions';
 import { getInventoryItems, InventoryItem } from '@/lib/actions/inventory/item.actions';
 
-interface AksesoriTabProps {
-  modelId: string;
-  initialData: ModelAksesori[];
+interface AksesoriWarnaClientProps {
+  initialData: WarnaAksesori[];
 }
 
 const selectCls =
@@ -49,7 +48,7 @@ const tahapPakaiOptions = [
   { value: 'qc', label: 'QC' },
 ];
 
-// Fallback fetch warna langsung dari tabel warna
+// Fallback fetch warna dari tabel warna
 async function fetchWarnaList(): Promise<{ id: string; nama: string }[]> {
   const { createClient } = await import('@/lib/supabase/server');
   const supabase = await createClient();
@@ -61,22 +60,22 @@ async function fetchWarnaList(): Promise<{ id: string; nama: string }[]> {
   return data ?? [];
 }
 
-export default function AksesoriTab({ modelId, initialData }: AksesoriTabProps) {
-  const [aksesoris, setAksesoris] = useState<ModelAksesori[]>(initialData);
+export default function AksesoriWarnaClient({ initialData }: AksesoriWarnaClientProps) {
+  const [data, setData] = useState<WarnaAksesori[]>(initialData);
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
   const [warnaList, setWarnaList] = useState<{ id: string; nama: string }[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isLoadingItems, setIsLoadingItems] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Form State
+  // Form state
+  const [selectedWarnaId, setSelectedWarnaId] = useState('');
   const [selectedItemId, setSelectedItemId] = useState('');
   const [qtyPerPcs, setQtyPerPcs] = useState('1');
   const [tahapPakai, setTahapPakai] = useState('jahit');
-  const [selectedWarnaId, setSelectedWarnaId] = useState('');
 
   useEffect(() => {
-    async function loadItems() {
+    async function loadDeps() {
       setIsLoadingItems(true);
       try {
         const [items, warnas] = await Promise.all([
@@ -85,90 +84,112 @@ export default function AksesoriTab({ modelId, initialData }: AksesoriTabProps) 
         ]);
         setInventoryItems(items);
         setWarnaList(warnas);
-      } catch (error) {
-        console.error('Failed to load inventory items or warna:', error);
+      } catch (err) {
+        console.error('Gagal memuat data:', err);
       } finally {
         setIsLoadingItems(false);
       }
     }
-    loadItems();
+    loadDeps();
   }, []);
 
   const handleReload = async () => {
     try {
-      const data = await getModelAksesori(modelId);
-      setAksesoris(data);
-    } catch (error) {
-      console.error('Failed to reload accessories:', error);
+      const fresh = await getWarnaAksesori();
+      setData(fresh);
+    } catch (err) {
+      console.error('Gagal reload:', err);
     }
   };
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedItemId || !qtyPerPcs || !tahapPakai) {
+    if (!selectedWarnaId || !selectedItemId || !qtyPerPcs || !tahapPakai) {
       toast.error('Mohon lengkapi semua field');
       return;
     }
-
     setIsSubmitting(true);
     try {
-      await addModelAksesori({
-        model_id: modelId,
+      await addWarnaAksesori({
+        warna_id: selectedWarnaId,
         inventory_item_id: selectedItemId,
         qty_per_pcs: parseFloat(qtyPerPcs),
         tahap_pakai: tahapPakai,
-        warna_id: selectedWarnaId || null,
       });
-      toast.success('Aksesori berhasil ditambahkan');
+      toast.success('Aksesori warna berhasil ditambahkan');
       setIsDialogOpen(false);
+      setSelectedWarnaId('');
       setSelectedItemId('');
       setQtyPerPcs('1');
-      setSelectedWarnaId('');
+      setTahapPakai('jahit');
       await handleReload();
-    } catch (error: any) {
-      toast.error(error.message || 'Gagal menambahkan aksesori');
+    } catch (err: any) {
+      toast.error(err.message || 'Gagal menambahkan aksesori warna');
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Hapus aksesori ini dari model?')) return;
-
+    if (!confirm('Hapus aksesori warna ini?')) return;
     try {
-      await deleteModelAksesori(id);
-      toast.success('Aksesori dihapus');
+      await deleteWarnaAksesori(id);
+      toast.success('Aksesori warna dihapus');
       await handleReload();
-    } catch (error: any) {
-      toast.error(error.message || 'Gagal menghapus aksesori');
+    } catch (err: any) {
+      toast.error(err.message || 'Gagal menghapus');
     }
   };
+
+  // Group by warna_nama
+  const grouped = useMemo(() => {
+    return data.reduce((acc, item) => {
+      const key = item.warna_nama || 'Tanpa Warna';
+      if (!acc[key]) acc[key] = [];
+      acc[key].push(item);
+      return acc;
+    }, {} as Record<string, WarnaAksesori[]>);
+  }, [data]);
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-lg font-medium text-[#e8eaed]">Daftar Aksesori Model</h3>
-          <p className="text-xs text-[#9aa0a6] mt-1">
-            Kebutuhan per 1 pcs produk. Stok akan dideduksi otomatis saat tahap produksi dicapai.
+          <p className="text-xs text-[#9aa0a6]">
+            Data aksesori yang berbeda per warna (contoh: benang jahit hitam untuk warna hitam).
           </p>
         </div>
-
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <Button
             onClick={() => setIsDialogOpen(true)}
             className="bg-[#e5c17b] hover:bg-[#d4b06a] text-black gap-2"
           >
             <Plus className="h-4 w-4" />
-            Tambah Aksesori
+            Tambah Aksesori Warna
           </Button>
-          <DialogContent className="bg-[#16181A] border-[#2A2D31] text-[#e8eaed] sm:max-w-[425px]">
+          <DialogContent className="bg-[#16181A] border-[#2A2D31] text-[#e8eaed] sm:max-w-[450px]">
             <DialogHeader>
-              <DialogTitle>Tambah Kebutuhan Aksesori</DialogTitle>
+              <DialogTitle>Tambah Aksesori Per Warna</DialogTitle>
             </DialogHeader>
             <form onSubmit={handleAdd} className="space-y-4 py-4">
               <div className="space-y-2">
-                <Label htmlFor="item">Nama Barang Inventory</Label>
+                <Label htmlFor="warna">Warna <span className="text-red-400">*</span></Label>
+                <select
+                  id="warna"
+                  className={selectCls}
+                  value={selectedWarnaId}
+                  onChange={(e) => setSelectedWarnaId(e.target.value)}
+                  disabled={isLoadingItems || isSubmitting}
+                >
+                  <option value="">-- Pilih Warna --</option>
+                  {warnaList.map((w) => (
+                    <option key={w.id} value={w.id}>{w.nama}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="item">Nama Barang Inventory <span className="text-red-400">*</span></Label>
                 <select
                   id="item"
                   className={selectCls}
@@ -210,38 +231,16 @@ export default function AksesoriTab({ modelId, initialData }: AksesoriTabProps) 
                     disabled={isSubmitting}
                   >
                     {tahapPakaiOptions.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
                     ))}
                   </select>
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="warna">Khusus Warna <span className="text-[#9aa0a6] font-normal">(opsional)</span></Label>
-                <select
-                  id="warna"
-                  className={selectCls}
-                  value={selectedWarnaId}
-                  onChange={(e) => setSelectedWarnaId(e.target.value)}
-                  disabled={isSubmitting}
-                >
-                  <option value="">-- Semua Warna --</option>
-                  {warnaList.map((w) => (
-                    <option key={w.id} value={w.id}>{w.nama}</option>
-                  ))}
-                </select>
-                <p className="text-[10px] text-[#9aa0a6]">
-                  Isi hanya jika aksesori ini berbeda tergantung warna produk (contoh: sleting saku Neck).
-                </p>
-              </div>
-
               <div className="rounded-md bg-[#e5c17b]/5 border border-[#e5c17b]/20 p-3 flex gap-3">
                 <Info className="h-4 w-4 text-[#e5c17b] shrink-0 mt-0.5" />
                 <p className="text-[10px] text-[#9aa0a6] leading-relaxed">
-                  Contoh: Jika model butuh 5 kancing, isi 5. Jika butuh kain 0.8 meter, isi 0.8.
-                  Sistem akan mengalikan nilai ini dengan jumlah bundle saat discan.
+                  Data ini akan dipakai untuk aksesori yang spesifik per warna. Contoh: benang hitam untuk produk warna hitam.
                 </p>
               </div>
 
@@ -258,7 +257,7 @@ export default function AksesoriTab({ modelId, initialData }: AksesoriTabProps) 
                 <Button
                   type="submit"
                   className="bg-[#e5c17b] hover:bg-[#d4b06a] text-black"
-                  disabled={isSubmitting || !selectedItemId}
+                  disabled={isSubmitting || !selectedWarnaId || !selectedItemId}
                 >
                   {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Simpan'}
                 </Button>
@@ -272,52 +271,59 @@ export default function AksesoriTab({ modelId, initialData }: AksesoriTabProps) 
         <Table>
           <TableHeader className="bg-[#1A1C1E]">
             <TableRow className="border-[#2A2D31] hover:bg-transparent">
-              <TableHead className="text-[#9aa0a6]">Nama Aksesori</TableHead>
-              <TableHead className="text-[#9aa0a6]">Qty / Pcs</TableHead>
-              <TableHead className="text-[#9aa0a6]">Unit</TableHead>
-              <TableHead className="text-[#9aa0a6]">Dipakai Pada Tahap</TableHead>
               <TableHead className="text-[#9aa0a6]">Warna</TableHead>
-              <TableHead className="text-[#9aa0a6] w-[100px] text-right">Aksi</TableHead>
+              <TableHead className="text-[#9aa0a6]">Aksesori</TableHead>
+              <TableHead className="text-[#9aa0a6]">Qty / Pcs</TableHead>
+              <TableHead className="text-[#9aa0a6]">Satuan</TableHead>
+              <TableHead className="text-[#9aa0a6]">Tahap</TableHead>
+              <TableHead className="text-[#9aa0a6] w-[80px] text-right">Aksi</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {aksesoris.length === 0 ? (
+            {data.length === 0 ? (
               <TableRow className="hover:bg-transparent border-[#2A2D31]">
                 <TableCell colSpan={6} className="h-32 text-center text-[#5f6368]">
-                  Belum ada aksesori yang ditambahkan untuk model ini.
+                  Belum ada aksesori per warna. Klik &quot;Tambah Aksesori Warna&quot; untuk memulai.
                 </TableCell>
               </TableRow>
             ) : (
-              aksesoris.map((item) => (
-                <TableRow key={item.id} className="border-[#2A2D31] hover:bg-[#1A1C1E]/50 group">
-                  <TableCell className="font-medium text-[#e8eaed]">{item.inventory_item_nama}</TableCell>
-                  <TableCell className="text-[#e8eaed]">{item.qty_per_pcs}</TableCell>
-                  <TableCell className="text-[#9aa0a6]">{item.satuan}</TableCell>
-                  <TableCell>
-                    <span className="inline-flex items-center rounded-full bg-[#e5c17b]/10 px-2.5 py-0.5 text-xs font-medium text-[#e5c17b] capitalize">
-                      {item.tahap_pakai.replace('_', ' ')}
-                    </span>
-                  </TableCell>
-                  <TableCell className="text-[#9aa0a6] text-sm">
-                    {item.warna_nama ? (
-                      <span className="inline-flex items-center rounded-full bg-blue-500/10 px-2 py-0.5 text-xs text-blue-300">
-                        {item.warna_nama}
+              Object.entries(grouped).map(([warnaNama, items]) => (
+                <React.Fragment key={`group-${warnaNama}`}>
+                  <TableRow className="bg-[#1A1C1E] hover:bg-[#1A1C1E]">
+                    <TableCell colSpan={6} className="py-1.5 px-4 border-b border-[#2A2D31]">
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-[#e5c17b]">
+                        {warnaNama}
                       </span>
-                    ) : (
-                      <span className="text-[#5f6368] text-xs italic">Semua warna</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleDelete(item.id)}
-                      className="text-[#9aa0a6] hover:text-red-400 hover:bg-red-400/10 transition-colors"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </TableCell>
-                </TableRow>
+                    </TableCell>
+                  </TableRow>
+                  {items.map((item) => (
+                    <TableRow key={item.id} className="border-[#2A2D31] hover:bg-[#1A1C1E]/50 group">
+                      <TableCell className="text-[#9aa0a6] text-sm pl-8">
+                        <span className="inline-flex items-center rounded-full bg-blue-500/10 px-2 py-0.5 text-xs text-blue-300">
+                          {item.warna_nama}
+                        </span>
+                      </TableCell>
+                      <TableCell className="font-medium text-[#e8eaed]">{item.inventory_item_nama}</TableCell>
+                      <TableCell className="text-[#e8eaed]">{item.qty_per_pcs}</TableCell>
+                      <TableCell className="text-[#9aa0a6]">{item.satuan}</TableCell>
+                      <TableCell>
+                        <span className="inline-flex items-center rounded-full bg-[#e5c17b]/10 px-2.5 py-0.5 text-xs font-medium text-[#e5c17b] capitalize">
+                          {item.tahap_pakai.replace('_', ' ')}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleDelete(item.id)}
+                          className="text-[#9aa0a6] hover:text-red-400 hover:bg-red-400/10 transition-colors"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </React.Fragment>
               ))
             )}
           </TableBody>
