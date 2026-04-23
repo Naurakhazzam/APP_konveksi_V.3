@@ -26,8 +26,8 @@ import {
   DropdownMenuItem, 
   DropdownMenuTrigger 
 } from '@/components/ui/dropdown-menu';
-import { Shield, UserX, UserCheck, ChevronDown, Loader2 } from 'lucide-react';
-import { updateUserRole, toggleUserAktif } from '@/lib/actions/master/user.actions';
+import { Shield, UserX, UserCheck, ChevronDown, Loader2, UserPlus } from 'lucide-react';
+import { updateUserRole, toggleUserAktif, createUser } from '@/lib/actions/master/user.actions';
 import type { UserRole } from '@/lib/auth/permissions';
 import { toast } from 'sonner';
 
@@ -58,6 +58,14 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [userToToggle, setUserToToggle] = useState<UserData | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createLoading, setCreateLoading] = useState(false);
+  const [createForm, setCreateForm] = useState({
+    email: '',
+    password: '',
+    nama: '',
+    role: 'operator' as UserRole,
+  });
 
   const handleRoleChange = async (userId: string, newRole: UserRole) => {
     if (userId === currentUserId) return;
@@ -91,6 +99,22 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
     }
   };
 
+  const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCreateLoading(true);
+    try {
+      await createUser(createForm);
+      toast.success(`User ${createForm.nama} berhasil dibuat`);
+      setCreateOpen(false);
+      setCreateForm({ email: '', password: '', nama: '', role: 'operator' as UserRole });
+      router.refresh();
+    } catch (err: any) {
+      toast.error(err.message || 'Gagal membuat user');
+    } finally {
+      setCreateLoading(false);
+    }
+  };
+
   const getRoleBadge = (role: UserRole) => {
     const styles: Record<UserRole, string> = {
       owner: 'bg-red-500/10 text-red-500 border-red-500/20',
@@ -108,6 +132,17 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
 
   return (
     <div className="space-y-4">
+      {/* Tombol Tambah User */}
+      <div className="flex justify-end">
+        <Button
+          onClick={() => setCreateOpen(true)}
+          className="bg-[#e5c17b] text-[#0D0E10] hover:bg-[#d4b06a] font-bold text-xs uppercase tracking-widest h-9 px-4"
+        >
+          <UserPlus className="h-4 w-4 mr-2" />
+          Tambah User
+        </Button>
+      </div>
+
       <div className="rounded-xl border border-[#2A2D31] bg-[#1A1D1F] overflow-hidden shadow-lg">
         <Table>
           <TableHeader className="bg-[#2A2D31]/30">
@@ -191,6 +226,87 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
           </TableBody>
         </Table>
       </div>
+
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="bg-[#16181A] border-[#2A2D31] text-[#e8eaed]">
+          <DialogHeader>
+            <DialogTitle>Tambah User Baru</DialogTitle>
+            <DialogDescription className="text-[#9aa0a6]">
+              User akan langsung bisa login setelah dibuat. Bagikan email dan password kepada pengguna baru.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleCreateUser} className="space-y-4 mt-2">
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold text-[#9aa0a6] uppercase tracking-widest">Nama Lengkap</label>
+              <input
+                type="text"
+                required
+                value={createForm.nama}
+                onChange={(e) => setCreateForm(f => ({ ...f, nama: e.target.value }))}
+                className="w-full h-10 px-3 rounded-lg bg-[#16181A] border border-[#2A2D31] text-sm text-[#e8eaed] focus:ring-1 focus:ring-[#e5c17b] outline-none"
+                placeholder="contoh: Budi Santoso"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold text-[#9aa0a6] uppercase tracking-widest">Email</label>
+              <input
+                type="email"
+                required
+                value={createForm.email}
+                onChange={(e) => setCreateForm(f => ({ ...f, email: e.target.value }))}
+                className="w-full h-10 px-3 rounded-lg bg-[#16181A] border border-[#2A2D31] text-sm text-[#e8eaed] focus:ring-1 focus:ring-[#e5c17b] outline-none"
+                placeholder="contoh: budi@email.com"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold text-[#9aa0a6] uppercase tracking-widest">Password Sementara</label>
+              <input
+                type="text"
+                required
+                minLength={6}
+                value={createForm.password}
+                onChange={(e) => setCreateForm(f => ({ ...f, password: e.target.value }))}
+                className="w-full h-10 px-3 rounded-lg bg-[#16181A] border border-[#2A2D31] text-sm text-[#e8eaed] focus:ring-1 focus:ring-[#e5c17b] outline-none font-mono"
+                placeholder="min. 6 karakter"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold text-[#9aa0a6] uppercase tracking-widest">Role</label>
+              <select
+                value={createForm.role}
+                onChange={(e) => setCreateForm(f => ({ ...f, role: e.target.value as UserRole }))}
+                className="w-full h-10 px-3 rounded-lg bg-[#16181A] border border-[#2A2D31] text-sm text-[#e8eaed] focus:ring-1 focus:ring-[#e5c17b] outline-none"
+              >
+                <option value="owner">Owner</option>
+                <option value="admin_produksi">Admin Produksi</option>
+                <option value="admin_keuangan">Admin Keuangan</option>
+                <option value="supervisor">Supervisor</option>
+                <option value="mandor">Mandor</option>
+                <option value="operator">Operator</option>
+              </select>
+            </div>
+            <DialogFooter className="gap-2 sm:gap-0 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setCreateOpen(false)}
+                className="border-[#2A2D31] bg-transparent text-[#e8eaed]"
+                disabled={createLoading}
+              >
+                Batal
+              </Button>
+              <Button
+                type="submit"
+                disabled={createLoading}
+                className="bg-[#e5c17b] text-[#0D0E10] hover:bg-[#d4b06a] font-bold"
+              >
+                {createLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                {createLoading ? 'Membuat...' : 'Buat User'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <DialogContent className="bg-[#16181A] border-[#2A2D31] text-[#e8eaed]">

@@ -127,3 +127,44 @@ export async function toggleUserAktif(userId: string) {
   revalidatePath('/app/master/users');
   return { success: true };
 }
+
+export async function createUser(input: {
+  email: string;
+  password: string;
+  nama: string;
+  role: UserRole;
+}) {
+  await requireOwner();
+
+  const admin = createAdminClient();
+
+  // 1. Buat auth user via Supabase Admin
+  const { data: newUser, error: createError } = await admin.auth.admin.createUser({
+    email: input.email,
+    password: input.password,
+    email_confirm: true,
+    user_metadata: {
+      nama: input.nama,
+      role: input.role,
+    },
+  });
+
+  if (createError) throw new Error(createError.message);
+  if (!newUser.user) throw new Error('Gagal membuat user.');
+
+  // 2. Upsert ke user_profile (jaga-jaga jika trigger belum jalan)
+  const { error: profileError } = await admin
+    .from('user_profile')
+    .upsert({
+      id: newUser.user.id,
+      nama: input.nama,
+      role: input.role,
+      aktif: true,
+      tenant_id: TENANT_ID,
+    }, { onConflict: 'id' });
+
+  if (profileError) throw new Error(profileError.message);
+
+  revalidatePath('/app/master/users');
+  return { success: true };
+}
