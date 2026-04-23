@@ -100,6 +100,7 @@ export default function InventoryOverviewClient({ items, kategoriTrxList, warnaL
       const newItem: InventoryOverviewItem = {
         id: newId,
         ...input,
+        warna_id: input.warna_id ?? null,
         stok_aktual: 0,
         status: 'low', // Karena stok 0 dan min >= 0
         batch_count: 0,
@@ -182,7 +183,7 @@ export default function InventoryOverviewClient({ items, kategoriTrxList, warnaL
       const selectedWarna = warnaList.find(w => w.id === editWarnaId);
       setLocalItems(prev => prev.map(item =>
         item.id === editingItem.id
-          ? { ...item, ...input, warna_nama: selectedWarna?.nama ?? null }
+          ? { ...item, ...input, warna_id: input.warna_id ?? null, warna_nama: selectedWarna?.nama ?? null }
           : item
       ));
       setShowEditItem(false);
