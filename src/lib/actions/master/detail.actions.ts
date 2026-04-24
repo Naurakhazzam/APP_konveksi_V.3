@@ -208,3 +208,14 @@ export async function deleteWarna(id: string) {
   }
   return { success: true };
 }
+
+export async function getModelList() {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('model_produk')
+    .select('id, nama, kategori_produk:kategori_produk_id(nama)')
+    .eq('tenant_id', 'STX-001')
+    .order('nama');
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}

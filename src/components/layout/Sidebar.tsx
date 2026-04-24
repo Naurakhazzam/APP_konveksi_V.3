@@ -79,6 +79,7 @@ const NAV_MENU = [
     children: [
       { label: 'Master Detail', path: '/app/master/detail' },
       { label: 'Produk & HPP', path: '/app/master/produk' },
+      { label: 'Setup Model',  path: '/app/master/model' },
       { label: 'Karyawan', path: '/app/master/karyawan' },
       { label: 'Jabatan', path: '/app/master/jabatan' },
       { label: 'Klien', path: '/app/master/klien' },
