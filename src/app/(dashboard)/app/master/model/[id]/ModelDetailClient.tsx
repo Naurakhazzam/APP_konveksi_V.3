@@ -40,7 +40,7 @@ export default function ModelDetailClient({ model, initialAksesoris }: ModelDeta
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <Card className="border-[#2A2D31] bg-[#16181A]">
                 <CardHeader>
-                  <CardTitle className="text-lg flex items-center gap-2">
+                  <CardTitle className="text-lg flex items-center gap-2 text-[#e8eaed]">
                     <Tag size={18} className="text-[#e5c17b]" />
                     Informasi Dasar
                   </CardTitle>
@@ -59,7 +59,7 @@ export default function ModelDetailClient({ model, initialAksesoris }: ModelDeta
 
               <Card className="border-[#2A2D31] bg-[#16181A]">
                 <CardHeader>
-                  <CardTitle className="text-lg flex items-center gap-2">
+                  <CardTitle className="text-lg flex items-center gap-2 text-[#e8eaed]">
                     <Layout size={18} className="text-[#e5c17b]" />
                     Produksi
                   </CardTitle>
