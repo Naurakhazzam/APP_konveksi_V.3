@@ -163,12 +163,27 @@ export async function createUser(input: {
     .upsert({
       id: newUser.user.id,
       nama: input.nama,
-      role: input.role,
-      aktif: true,
+      role:      input.role,
       tenant_id: TENANT_ID,
-    }, { onConflict: 'id' });
+    });
 
   if (profileError) return { success: false, error: profileError.message };
+
+  revalidatePath('/app/master/users');
+  return { success: true };
+}
+
+export async function deleteUser(userId: string) {
+  await requireOwner();
+
+  const admin = createAdminClient();
+
+  // 1. Hapus dari auth
+  const { error: deleteError } = await admin.auth.admin.deleteUser(userId);
+  if (deleteError) return { success: false, error: deleteError.message };
+
+  // 2. Hapus dari user_profile (cascade seharusnya sudah handle, tapi jaga-jaga)
+  await admin.from('user_profile').delete().eq('id', userId);
 
   revalidatePath('/app/master/users');
   return { success: true };

@@ -32,3 +32,7 @@ export default async function ScanLubangKancingPage() {
     </PageWrapper>
   );
 }
+
+    </PageWrapper>
+  );
+}

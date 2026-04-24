@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   FileText,
@@ -23,13 +23,9 @@ import PrintKartuKerjaLayout from './PrintKartuKerjaLayout';
 import type { AksesoriItem, KartuBundle } from './PrintKartuKerjaLayout';
 import ModalSelesaiCutting from './ModalSelesaiCutting';
 
-// ─── PROPS ───────────────────────────────────────────────────────────────────
-
 interface Props {
   poList: POCuttingItem[];
 }
-
-// ─── HELPERS ─────────────────────────────────────────────────────────────────
 
 type TabKey = 'menunggu' | 'progress' | 'selesai';
 
@@ -61,8 +57,6 @@ const StatusBadge = ({ status }: { status: POCuttingItem['status'] }) => {
   );
 };
 
-// ─── COMPONENT ───────────────────────────────────────────────────────────────
-
 export default function AntrianCuttingClient({ poList }: Props) {
   const router = useRouter();
 
@@ -75,13 +69,10 @@ export default function AntrianCuttingClient({ poList }: Props) {
   const [spkBundles, setSpkBundles]         = useState<AntrianBundle[]>([]);
   const [kartuBundles, setKartuBundles]     = useState<KartuBundle[]>([]);
 
-  // ─── DATA PER TAB ─────────────────────────────────────────────────────────
   const tabData = poList.filter(p => p.status === activeTab);
 
-  // Reset selection ketika tab berganti
   useEffect(() => { setSelectedPoIds(new Set()); }, [activeTab]);
 
-  // ─── AFTERPRINT ───────────────────────────────────────────────────────────
   useEffect(() => {
     if (printMode !== null) {
       const t = setTimeout(() => window.print(), 200);
@@ -95,7 +86,6 @@ export default function AntrianCuttingClient({ poList }: Props) {
     return () => window.removeEventListener('afterprint', fn);
   }, []);
 
-  // ─── SELECTION ────────────────────────────────────────────────────────────
   const togglePO = (id: string) => {
     setSelectedPoIds(prev => {
       const next = new Set(prev);
@@ -114,7 +104,6 @@ export default function AntrianCuttingClient({ poList }: Props) {
 
   const allSelected = tabData.length > 0 && selectedPoIds.size === tabData.length;
 
-  // ─── HANDLER: MULAI CUTTING ───────────────────────────────────────────────
   const handleMulaiCutting = async () => {
     setIsLoadingMulai(true);
     const result = await mulaiCuttingBatch(Array.from(selectedPoIds));
@@ -128,7 +117,6 @@ export default function AntrianCuttingClient({ poList }: Props) {
     }
   };
 
-  // ─── HANDLER: CETAK SPK ──────────────────────────────────────────────────
   const handleCetakSPK = async () => {
     setIsLoadingPrint(true);
     try {
@@ -145,7 +133,6 @@ export default function AntrianCuttingClient({ poList }: Props) {
     }
   };
 
-  // ─── HANDLER: CETAK LABEL ────────────────────────────────────────────────
   const handleCetakLabel = async () => {
     setIsLoadingPrint(true);
     try {
@@ -162,7 +149,6 @@ export default function AntrianCuttingClient({ poList }: Props) {
     }
   };
 
-  // ─── HANDLER: CETAK KARTU KERJA ──────────────────────────────────────────
   const handleCetakKartu = async () => {
     setIsLoadingPrint(true);
     try {
@@ -171,7 +157,7 @@ export default function AntrianCuttingClient({ poList }: Props) {
       const filtered = allBundles.filter(b => selectedPoIds.has(b.po_id));
       if (!filtered.length) { toast.error('Tidak ada bundle ditemukan untuk PO terpilih'); return; }
 
-      const SEMUA_TAHAP = ['cutting', 'jahit', 'buang_benang', 'lubang_kancing', 'qc', 'steam', 'packing'];
+      const SEMUA_TAHAP = ['cutting', 'jahit', 'lubang_kancing', 'buang_benang', 'qc', 'steam', 'packing'];
 
       const kartuData: KartuBundle[] = await Promise.all(
         filtered.map(async (bundle) => {
@@ -202,13 +188,11 @@ export default function AntrianCuttingClient({ poList }: Props) {
     }
   };
 
-  const hasSelection    = selectedPoIds.size > 0;
-  const printLoading    = isLoadingPrint;
-  const isProgressTab   = activeTab === 'progress';
-  const isMenungguTab   = activeTab === 'menunggu';
-  const isSelesaiTab    = activeTab === 'selesai';
+  const hasSelection  = selectedPoIds.size > 0;
+  const isProgressTab = activeTab === 'progress';
+  const isMenungguTab = activeTab === 'menunggu';
+  const isSelesaiTab  = activeTab === 'selesai';
 
-  // ─── RENDER ──────────────────────────────────────────────────────────────
   return (
     <div className="space-y-6">
 
@@ -239,21 +223,17 @@ export default function AntrianCuttingClient({ poList }: Props) {
 
         {/* Action Buttons */}
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Mulai Cutting — hanya tab Menunggu */}
           {isMenungguTab && (
             <button
               disabled={!hasSelection || isLoadingMulai}
               onClick={handleMulaiCutting}
               className="flex items-center gap-2 px-4 h-10 rounded-md bg-[#e5c17b] text-[#0D0E10] text-sm font-semibold hover:bg-[#d4b06a] disabled:opacity-30 disabled:cursor-not-allowed transition-all"
             >
-              {isLoadingMulai
-                ? <Loader2 className="w-4 h-4 animate-spin" />
-                : <Scissors className="w-4 h-4" />}
+              {isLoadingMulai ? <Loader2 className="w-4 h-4 animate-spin" /> : <Scissors className="w-4 h-4" />}
               {isLoadingMulai ? 'Memproses...' : 'Mulai Cutting'}
             </button>
           )}
 
-          {/* Selesai Cutting — hanya tab Progress */}
           {isProgressTab && (
             <button
               disabled={!hasSelection}
@@ -265,32 +245,28 @@ export default function AntrianCuttingClient({ poList }: Props) {
             </button>
           )}
 
-          {/* Print buttons — Menunggu & Progress */}
           {!isSelesaiTab && (
             <>
               <button
-                disabled={!hasSelection || printLoading}
+                disabled={!hasSelection || isLoadingPrint}
                 onClick={handleCetakKartu}
                 className="flex items-center gap-2 px-4 h-10 rounded-md border border-[#2A2D31] text-[#e8eaed] text-sm font-medium hover:bg-[#2A2D31] disabled:opacity-30 disabled:cursor-not-allowed transition-all"
               >
-                {printLoading && printMode === null ? <Loader2 className="w-4 h-4 animate-spin" /> : <ClipboardList className="w-4 h-4" />}
-                Cetak Kartu
+                <ClipboardList className="w-4 h-4" /> Cetak Kartu
               </button>
               <button
-                disabled={!hasSelection || printLoading}
+                disabled={!hasSelection || isLoadingPrint}
                 onClick={handleCetakSPK}
                 className="flex items-center gap-2 px-4 h-10 rounded-md border border-[#2A2D31] text-[#e8eaed] text-sm font-medium hover:bg-[#2A2D31] disabled:opacity-30 disabled:cursor-not-allowed transition-all"
               >
-                <FileText className="w-4 h-4" />
-                Cetak SPK
+                <FileText className="w-4 h-4" /> Cetak SPK
               </button>
               <button
-                disabled={!hasSelection || printLoading}
+                disabled={!hasSelection || isLoadingPrint}
                 onClick={handleCetakLabel}
                 className="flex items-center gap-2 px-4 h-10 rounded-md border border-[#2A2D31] text-[#e8eaed] text-sm font-medium hover:bg-[#2A2D31] disabled:opacity-30 disabled:cursor-not-allowed transition-all"
               >
-                <BarcodeIcon className="w-4 h-4" />
-                Cetak Label
+                <BarcodeIcon className="w-4 h-4" /> Cetak Label
               </button>
             </>
           )}
@@ -305,11 +281,10 @@ export default function AntrianCuttingClient({ poList }: Props) {
       )}
 
       {/* Tabel */}
-      <div className="print:hidden rounded-xl border border-[#2A2D31] overflow-hidden">
+      <div className="print:hidden rounded-xl border border-[#2A2D31] bg-[#1A1D1F] overflow-hidden">
         <table className="w-full text-sm border-collapse">
           <thead>
-            <tr className="bg-[#1A1C1E] border-b border-[#2A2D31]">
-              {/* Checkbox all — hanya tab bukan selesai */}
+            <tr className="bg-[#16181A] border-b border-[#2A2D31]">
               {!isSelesaiTab && (
                 <th className="w-10 px-4 py-3 text-center">
                   <input
@@ -331,14 +306,14 @@ export default function AntrianCuttingClient({ poList }: Props) {
               )}
             </tr>
           </thead>
-          <tbody>
+          <tbody className="divide-y divide-[#2A2D31]">
             {tabData.length === 0 ? (
               <tr>
                 <td
                   colSpan={isSelesaiTab ? 6 : isProgressTab ? 8 : 7}
-                  className="px-4 py-12 text-center text-[#5f6368] text-sm"
+                  className="px-4 py-12 text-center text-[#9aa0a6] text-sm bg-[#1A1D1F]"
                 >
-                  Tidak ada data
+                  Tidak ada data di tab ini
                 </td>
               </tr>
             ) : (
@@ -347,12 +322,13 @@ export default function AntrianCuttingClient({ poList }: Props) {
                 return (
                   <tr
                     key={po.po_id}
-                    className={'border-b border-[#2A2D31] transition-colors ' +
-                      (isSelected ? 'bg-[#e5c17b]/5' : 'hover:bg-[#1A1C1E]/50')}
+                    onClick={() => !isSelesaiTab && togglePO(po.po_id)}
+                    className={'transition-colors ' +
+                      (!isSelesaiTab ? 'cursor-pointer ' : '') +
+                      (isSelected ? 'bg-[#e5c17b]/5' : 'bg-[#1A1D1F] hover:bg-[#1E2124]')}
                   >
-                    {/* Checkbox */}
                     {!isSelesaiTab && (
-                      <td className="px-4 py-3 text-center">
+                      <td className="px-4 py-3 text-center" onClick={e => e.stopPropagation()}>
                         <input
                           type="checkbox"
                           checked={isSelected}
@@ -361,11 +337,13 @@ export default function AntrianCuttingClient({ poList }: Props) {
                         />
                       </td>
                     )}
-                    <td className="px-4 py-3 font-bold text-[#e8eaed] font-mono">{po.no_po}</td>
+                    <td className="px-4 py-3 font-mono font-bold text-[#e5c17b]">{po.no_po}</td>
                     <td className="px-4 py-3 text-[#9aa0a6]">{po.klien_nama}</td>
                     <td className="px-4 py-3 text-[#e8eaed]">{po.model_nama ?? '-'}</td>
                     <td className="px-4 py-3 text-center font-semibold text-[#e8eaed]">{po.total_bundle}</td>
-                    <td className="px-4 py-3 text-center font-semibold text-[#e8eaed]">{po.total_qty} <span className="text-[#9aa0a6] font-normal text-xs">pcs</span></td>
+                    <td className="px-4 py-3 text-center font-mono text-[#e8eaed]">
+                      {po.total_qty} <span className="text-[#9aa0a6] font-normal text-xs">pcs</span>
+                    </td>
                     <td className="px-4 py-3"><StatusBadge status={po.status} /></td>
                     {isProgressTab && (
                       <td className="px-4 py-3 text-xs text-[#9aa0a6]">

@@ -32,3 +32,7 @@ export default async function ScanSteamPage() {
     </PageWrapper>
   );
 }
+
+    </PageWrapper>
+  );
+}
