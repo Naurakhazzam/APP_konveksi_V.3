@@ -120,16 +120,19 @@ export async function getSelesaiPerTahap(tahap: TahapKey, page: number, pageSize
 
   const nextStage = STAGE_ORDER[stageIndex + 1];
 
-  // Logic: this_stage == 'selesai' AND next_stage IS NULL
+  // Logic: this_stage == 'selesai' AND next_stage belum dimulai (status != 'terima' dan != 'selesai')
   query = query.eq(`status_tahap->${tahap}->>status`, 'selesai');
-  
+
   if (nextStage) {
-    query = query.filter(`status_tahap->${nextStage}`, 'is', null);
+    // Gunakan neq — lebih aman dari .filter(is.null) untuk JSONB path di PostgREST
+    // neq('terima') akan menyertakan null (belum dimulai) dan mengecualikan yg sudah masuk tahap berikutnya
+    query = query.neq(`status_tahap->${nextStage}->>status`, 'selesai')
+                 .neq(`status_tahap->${nextStage}->>status`, 'terima');
   }
 
   const { data, count, error } = await query
     .range(offset, offset + pageSize - 1)
-    .order(`status_tahap->${tahap}->>waktu_selesai`, { ascending: false });
+    .order(`status_tahap->${tahap}->>end_time`, { ascending: false });
 
   if (error) throw new Error(`Gagal ambil data selesai ${tahap}: ${error.message}`);
 
