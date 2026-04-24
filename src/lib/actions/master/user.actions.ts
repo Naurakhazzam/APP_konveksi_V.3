@@ -28,9 +28,10 @@ export async function getUsers() {
   if (profileError) throw new Error(profileError.message);
 
   // 2. Ambil data email dari auth (menggunakan admin client)
-  const { data: { users }, error: authError } = await admin.auth.admin.listUsers();
-  
+  const { data: authData, error: authError } = await admin.auth.admin.listUsers();
+
   if (authError) throw new Error(authError.message);
+  const users = authData?.users ?? [];
 
   // 3. Gabungkan data
   const userMap = new Map(users.map(u => [u.id, u.email]));

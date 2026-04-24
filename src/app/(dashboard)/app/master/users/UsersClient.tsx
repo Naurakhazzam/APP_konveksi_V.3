@@ -314,7 +314,6 @@ export function UsersClient({ initialUsers, currentUserId, initialPermissions }:
                 <option value="admin_keuangan">Admin Keuangan</option>
                 <option value="supervisor">Supervisor</option>
                 <option value="mandor">Mandor</option>
-                <option value="operator">Operator</option>
               </select>
             </div>
             <DialogFooter className="gap-2 sm:gap-0 pt-2">
