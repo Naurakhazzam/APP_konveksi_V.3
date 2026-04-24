@@ -38,7 +38,7 @@ export async function getModelAksesori(model_id: string): Promise<ModelAksesori[
       qty_per_pcs,
       tahap_pakai,
       warna_id,
-      inventory_item:inventory_item_id (nama, satuan),
+      inventory_item:inventory_item_id (nama, satuan)
     `)
     .eq('model_id', model_id)
     .eq('tenant_id', TENANT_ID)
