@@ -7,39 +7,16 @@ import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 
 interface PageProps {
-  params: {
-    id: string;
-  };
+  params: Promise<{ id: string }>;
 }
 
 export default async function ModelDetailPage({ params }: PageProps) {
-  const { id } = params;
+  const { id } = await params;
 
-  let model: any = null;
-  let aksesoris: any[] = [];
-  let errorMsg: string | null = null;
-
-  try {
-    const results = await Promise.all([
-      getModelById(id),
-      getModelAksesori(id)
-    ]);
-    model = results[0];
-    aksesoris = results[1];
-  } catch (err: any) {
-    errorMsg = err?.message ?? String(err);
-  }
-
-  if (errorMsg) {
-    return (
-      <div style={{ padding: '40px', fontFamily: 'monospace' }}>
-        <h2 style={{ color: 'red' }}>DEBUG ERROR</h2>
-        <pre style={{ background: '#1a1a1a', color: '#ff6b6b', padding: '20px', borderRadius: '8px', whiteSpace: 'pre-wrap' }}>
-          {errorMsg}
-        </pre>
-      </div>
-    );
-  }
+  const [model, aksesoris] = await Promise.all([
+    getModelById(id),
+    getModelAksesori(id)
+  ]);
 
   if (!model) {
     notFound();
