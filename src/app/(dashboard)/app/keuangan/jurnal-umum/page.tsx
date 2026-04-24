@@ -1,9 +1,34 @@
-export default function JurnalUmumPage() {
-  return (
-    <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
-      <div className="text-6xl">🚧</div>
-      <h1 className="text-2xl font-bold text-[#e8eaed]">Jurnal Umum</h1>
-      <p className="text-[#9aa0a6] text-sm">Sedang dalam pengerjaan</p>
-    </div>
-  );
+import { getJurnalEntries, getKategoriTrxList } from '@/lib/actions/keuangan/jurnal.actions';
+import { PageWrapper } from '@/components/ui/PageWrapper';
+import JurnalClient from './JurnalClient';
+
+export const metadata = {
+  title: 'Jurnal Umum | Stitchlyx',
+};
+
+export default async function JurnalUmumPage() {
+  try {
+    const [entries, kategoriList] = await Promise.all([
+      getJurnalEntries(),
+      getKategoriTrxList(),
+    ]);
+
+    return (
+      <PageWrapper
+        title="Jurnal Umum"
+        subtitle="Catatan semua transaksi keuangan perusahaan."
+      >
+        <JurnalClient
+          initialEntries={entries}
+          kategoriList={kategoriList}
+        />
+      </PageWrapper>
+    );
+  } catch (e) {
+    return (
+      <div className="p-8 text-red-400">
+        Error memuat data jurnal: {String(e)}
+      </div>
+    );
+  }
 }
