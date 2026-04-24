@@ -37,7 +37,9 @@ export async function getModelAksesori(model_id: string): Promise<ModelAksesori[
       inventory_item_id,
       qty_per_pcs,
       tahap_pakai,
-      inventory_item:inventory_item_id (nama, satuan)
+      warna_id,
+      inventory_item:inventory_item_id (nama, satuan),
+      warna!warna_id(nama)
     `)
     .eq('model_id', model_id)
     .eq('tenant_id', TENANT_ID)
@@ -53,8 +55,8 @@ export async function getModelAksesori(model_id: string): Promise<ModelAksesori[
     satuan: item.inventory_item?.satuan ?? '',
     qty_per_pcs: Number(item.qty_per_pcs),
     tahap_pakai: item.tahap_pakai,
-    warna_id: null,
-    warna_nama: null,
+    warna_id: item.warna_id ?? null,
+    warna_nama: item.warna?.nama ?? null,
   }));
 }
 
