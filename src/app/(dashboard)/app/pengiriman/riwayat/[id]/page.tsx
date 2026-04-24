@@ -5,8 +5,9 @@ import PrintButton from './PrintButton';
 import PrintSuratJalanLayout from './PrintSuratJalanLayout';
 import Link from 'next/link';
 
-export default async function DetailSuratJalanPage({ params }: { params: { id: string } }) {
-  const detail = await getSuratJalanDetail(params.id);
+export default async function DetailSuratJalanPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const detail = await getSuratJalanDetail(id);
 
   if (!detail) {
     redirect('/app/pengiriman/riwayat');
@@ -21,10 +22,9 @@ export default async function DetailSuratJalanPage({ params }: { params: { id: s
         title={`Detail Surat Jalan ${detail.nomor_sj}`}
         subtitle="Rincian informasi pengiriman dan bundle yang dikirim."
       >
-        {/* Konten UI normal (Screen) */}
         <div className="space-y-6 print:hidden">
           <div className="flex justify-between items-center">
-            <Link 
+            <Link
               href="/app/pengiriman/riwayat"
               className="text-[#9aa0a6] hover:text-[#e8eaed] text-sm font-medium transition-colors"
             >
@@ -97,7 +97,6 @@ export default async function DetailSuratJalanPage({ params }: { params: { id: s
         </div>
       </PageWrapper>
 
-      {/* Komponen Print khusus */}
       <PrintSuratJalanLayout detail={detail} />
     </>
   );
