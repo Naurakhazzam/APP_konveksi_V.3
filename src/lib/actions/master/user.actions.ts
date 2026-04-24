@@ -160,13 +160,13 @@ export async function createUser(input: {
   // 2. Upsert ke user_profile (jaga-jaga jika trigger belum jalan)
   const { error: profileError } = await admin
     .from('user_profile')
-    .upsert({
+    .insert({
       id: newUser.user.id,
       nama: input.nama,
       role: input.role,
       aktif: true,
       tenant_id: TENANT_ID,
-    }, { onConflict: 'id' });
+    });
 
   if (profileError) return { success: false, error: profileError.message };
 
