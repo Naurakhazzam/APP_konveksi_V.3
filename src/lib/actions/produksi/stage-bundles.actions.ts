@@ -53,16 +53,15 @@ export async function getAntrianPerTahap(tahap: TahapKey, page: number, pageSize
   if (stageIndex === -1) throw new Error(`Tahap ${tahap} tidak valid`);
 
   if (tahap === 'cutting') {
-    // cutting: status != 'selesai' (null atau 'terima')
-    // Karena .not('column', 'eq', 'selesai') mungkin mengecualikan null di beberapa env, 
-    // kita gunakan pendekatan filter yang aman.
-    query = query.or(`status_tahap->cutting->>status.is.null,status_tahap->cutting->>status.neq.selesai`);
+    // cutting: belum selesai (null atau 'terima')
+    // .neq() di PostgREST menyertakan NULL — lebih aman dari .or() dengan JSONB path
+    query = query.neq(`status_tahap->cutting->>status`, 'selesai');
   } else {
-    // Tahap lainnya: prev_stage == 'selesai' AND (this_stage == null OR this_stage == 'terima')
+    // Tahap lainnya: prev_stage == 'selesai' AND this_stage != 'selesai' (termasuk null & 'terima')
     const prevStage = STAGE_ORDER[stageIndex - 1];
     query = query
       .eq(`status_tahap->${prevStage}->>status`, 'selesai')
-      .or(`status_tahap->${tahap}->>status.is.null,status_tahap->${tahap}->>status.neq.selesai`);
+      .neq(`status_tahap->${tahap}->>status`, 'selesai');
   }
 
   const { data, count, error } = await query
