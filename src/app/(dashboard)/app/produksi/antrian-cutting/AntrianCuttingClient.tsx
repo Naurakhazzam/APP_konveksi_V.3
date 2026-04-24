@@ -10,10 +10,12 @@ import {
   CheckCircle2,
   Loader2,
   Clock,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import type { POCuttingItem } from '@/lib/actions/produksi/cutting.actions';
-import { mulaiCuttingBatch } from '@/lib/actions/produksi/cutting.actions';
+import type { POCuttingItem, BundleDetailItem } from '@/lib/actions/produksi/cutting.actions';
+import { mulaiCuttingBatch, getBundlesForPO } from '@/lib/actions/produksi/cutting.actions';
 import { getAntrianData } from '@/lib/actions/produksi/antrian.actions';
 import type { AntrianBundle } from '@/lib/actions/produksi/antrian.actions';
 import { getAksesoriForBundle } from '@/lib/actions/produksi/model-aksesori.actions';
@@ -69,6 +71,10 @@ export default function AntrianCuttingClient({ poList }: Props) {
   const [spkBundles, setSpkBundles]         = useState<AntrianBundle[]>([]);
   const [kartuBundles, setKartuBundles]     = useState<KartuBundle[]>([]);
 
+  const [expandedPoId, setExpandedPoId] = useState<string | null>(null);
+  const [bundleCache, setBundleCache] = useState<Record<string, BundleDetailItem[]>>({});
+  const [loadingDetail, setLoadingDetail] = useState<string | null>(null);
+
   const tabData = poList.filter(p => p.status === activeTab);
 
   useEffect(() => { setSelectedPoIds(new Set()); }, [activeTab]);
@@ -85,6 +91,19 @@ export default function AntrianCuttingClient({ poList }: Props) {
     window.addEventListener('afterprint', fn);
     return () => window.removeEventListener('afterprint', fn);
   }, []);
+
+  const handleExpandPO = async (po_id: string) => {
+    if (expandedPoId === po_id) { setExpandedPoId(null); return; }
+    setExpandedPoId(po_id);
+    if (bundleCache[po_id]) return; // sudah di-cache
+    setLoadingDetail(po_id);
+    try {
+      const bundles = await getBundlesForPO(po_id);
+      setBundleCache(prev => ({ ...prev, [po_id]: bundles }));
+    } finally {
+      setLoadingDetail(null);
+    }
+  };
 
   const togglePO = (id: string) => {
     setSelectedPoIds(prev => {
@@ -320,9 +339,9 @@ export default function AntrianCuttingClient({ poList }: Props) {
               tabData.map(po => {
                 const isSelected = selectedPoIds.has(po.po_id);
                 return (
-                  <tr
-                    key={po.po_id}
-                    onClick={() => !isSelesaiTab && togglePO(po.po_id)}
+                  <React.Fragment key={po.po_id}>
+                    <tr
+                      onClick={() => !isSelesaiTab && togglePO(po.po_id)}
                     className={'transition-colors ' +
                       (!isSelesaiTab ? 'cursor-pointer ' : '') +
                       (isSelected ? 'bg-[#e5c17b]/5' : 'bg-[#1A1D1F] hover:bg-[#1E2124]')}
@@ -344,7 +363,17 @@ export default function AntrianCuttingClient({ poList }: Props) {
                     <td className="px-4 py-3 text-center font-mono text-[#e8eaed]">
                       {po.total_qty} <span className="text-[#9aa0a6] font-normal text-xs">pcs</span>
                     </td>
-                    <td className="px-4 py-3"><StatusBadge status={po.status} /></td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center">
+                        <StatusBadge status={po.status} />
+                        <button onClick={e => { e.stopPropagation(); handleExpandPO(po.po_id); }}
+                          className="ml-2 text-[#9aa0a6] hover:text-[#e5c17b] transition-colors">
+                          {expandedPoId === po.po_id
+                            ? <ChevronDown className="w-4 h-4" />
+                            : <ChevronRight className="w-4 h-4" />}
+                        </button>
+                      </div>
+                    </td>
                     {isProgressTab && (
                       <td className="px-4 py-3 text-xs text-[#9aa0a6]">
                         <span className="flex items-center gap-1">
@@ -354,8 +383,62 @@ export default function AntrianCuttingClient({ poList }: Props) {
                       </td>
                     )}
                   </tr>
-                );
-              })
+                  {expandedPoId === po.po_id && (
+                    <tr key={`${po.po_id}-expanded`}>
+                      <td colSpan={isSelesaiTab ? 6 : isProgressTab ? 8 : 7}
+                          className="bg-[#16181A] px-4 py-4 border-b border-[#2A2D31]">
+
+                        {loadingDetail === po.po_id && (
+                          <div className="flex items-center gap-2 text-[#9aa0a6] text-sm py-2">
+                            <Loader2 className="w-4 h-4 animate-spin" /> Memuat detail...
+                          </div>
+                        )}
+
+                        {bundleCache[po.po_id] && (
+                          <div>
+                            {/* Ringkasan */}
+                            <p className="text-[10px] text-[#9aa0a6] uppercase font-bold tracking-widest mb-3">
+                              {bundleCache[po.po_id].length} Bundle
+                              · {[...new Set(bundleCache[po.po_id].map(b => b.warna))].length} Warna
+                              · {[...new Set(bundleCache[po.po_id].map(b => b.size))].length} Size
+                            </p>
+                            {/* Tabel bundle */}
+                            <table className="w-full text-xs border-collapse">
+                              <thead>
+                                <tr className="border-b border-[#2A2D31]">
+                                  <th className="text-left py-1.5 px-2 text-[#9aa0a6] font-bold uppercase tracking-wider">Barcode</th>
+                                  <th className="text-left py-1.5 px-2 text-[#9aa0a6] font-bold uppercase tracking-wider">Warna</th>
+                                  <th className="text-left py-1.5 px-2 text-[#9aa0a6] font-bold uppercase tracking-wider">Size</th>
+                                  <th className="text-center py-1.5 px-2 text-[#9aa0a6] font-bold uppercase tracking-wider">QTY</th>
+                                  <th className="text-left py-1.5 px-2 text-[#9aa0a6] font-bold uppercase tracking-wider">Cutting</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {bundleCache[po.po_id].map(bundle => (
+                                  <tr key={bundle.id} className="border-b border-[#2A2D31]/50 hover:bg-[#1A1D1F]">
+                                    <td className="py-1.5 px-2 font-mono text-[#e5c17b]">{bundle.barcode}</td>
+                                    <td className="py-1.5 px-2 text-[#e8eaed]">{bundle.warna}</td>
+                                    <td className="py-1.5 px-2 text-[#e8eaed]">{bundle.size}</td>
+                                    <td className="py-1.5 px-2 text-center text-[#e8eaed]">{bundle.qty_per_bundle}</td>
+                                    <td className="py-1.5 px-2">
+                                      {bundle.cutting_status === 'selesai'
+                                        ? <span className="text-green-400 font-bold">Selesai</span>
+                                        : bundle.cutting_status === 'terima'
+                                        ? <span className="text-[#e5c17b] font-bold">Dipotong</span>
+                                        : <span className="text-[#9aa0a6]">Menunggu</span>}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              );
+            })
             )}
           </tbody>
         </table>

@@ -319,3 +319,57 @@ export async function getBahanUntukCutting(
 
   return result;
 }
+
+// ─── FUNGSI 5: getBundlesForPO ───────────────────────────────────────────────
+
+export interface BundleDetailItem {
+  id: string;
+  barcode: string;
+  warna: string;
+  size: string;
+  qty_per_bundle: number;
+  cutting_status: string | null;
+}
+
+export async function getBundlesForPO(po_id: string): Promise<BundleDetailItem[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from('bundle')
+    .select(`
+      id,
+      barcode,
+      status_tahap,
+      po_item:po_item_id (
+        warna,
+        size,
+        qty_per_bundle
+      )
+    `)
+    .eq('po_id', po_id)
+    .eq('tenant_id', TENANT_ID);
+
+  if (error) throw new Error(`Gagal fetch bundle detail: ${error.message}`);
+
+  const result: BundleDetailItem[] = (data ?? []).map((b: any) => {
+    const poItem = Array.isArray(b.po_item) ? b.po_item[0] : b.po_item;
+    const cuttingStatus = b.status_tahap?.cutting?.status ?? null;
+
+    return {
+      id: b.id,
+      barcode: b.barcode,
+      warna: poItem?.warna ?? '-',
+      size: poItem?.size ?? '-',
+      qty_per_bundle: poItem?.qty_per_bundle ?? 0,
+      cutting_status: cuttingStatus,
+    };
+  });
+
+  // Urutkan: warna ASC, size ASC
+  result.sort((a, b) => {
+    if (a.warna !== b.warna) return a.warna.localeCompare(b.warna);
+    return a.size.localeCompare(b.size);
+  });
+
+  return result;
+}
