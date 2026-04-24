@@ -134,8 +134,12 @@ export async function createUser(input: {
   password: string;
   nama: string;
   role: UserRole;
-}) {
-  await requireOwner();
+}): Promise<{ success: boolean; error?: string }> {
+  try {
+    await requireOwner();
+  } catch {
+    return { success: false, error: 'Unauthorized: Hanya owner yang dapat mengelola user.' };
+  }
 
   const admin = createAdminClient();
 
@@ -150,8 +154,8 @@ export async function createUser(input: {
     },
   });
 
-  if (createError) throw new Error(createError.message);
-  if (!newUser.user) throw new Error('Gagal membuat user.');
+  if (createError) return { success: false, error: createError.message };
+  if (!newUser.user) return { success: false, error: 'Gagal membuat user.' };
 
   // 2. Upsert ke user_profile (jaga-jaga jika trigger belum jalan)
   const { error: profileError } = await admin
@@ -164,7 +168,7 @@ export async function createUser(input: {
       tenant_id: TENANT_ID,
     }, { onConflict: 'id' });
 
-  if (profileError) throw new Error(profileError.message);
+  if (profileError) return { success: false, error: profileError.message };
 
   revalidatePath('/app/master/users');
   return { success: true };

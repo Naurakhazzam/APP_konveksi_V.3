@@ -17,21 +17,25 @@ export default async function MasterUsersPage() {
     redirect('/app/dashboard');
   }
 
-  const [users, allPermissions] = await Promise.all([
-    getUsers(),
-    getAllRolePermissions(),
-  ]);
+  try {
+    const [users, allPermissions] = await Promise.all([
+      getUsers(),
+      getAllRolePermissions(),
+    ]);
 
-  return (
-    <PageWrapper
-      title="Manajemen User & Role"
-      subtitle="Kelola akses dan jabatan staf kantor. Role menentukan menu dan aksi yang dapat diakses."
-    >
-      <UsersClient 
-        initialUsers={JSON.parse(JSON.stringify(users))} 
-        currentUserId={profile.id} 
-        initialPermissions={allPermissions}
-      />
-    </PageWrapper>
-  );
+    return (
+      <PageWrapper
+        title="Manajemen User & Role"
+        subtitle="Kelola akses dan jabatan staf kantor. Role menentukan menu dan aksi yang dapat diakses."
+      >
+        <UsersClient 
+          initialUsers={JSON.parse(JSON.stringify(users))} 
+          currentUserId={profile.id} 
+          initialPermissions={allPermissions}
+        />
+      </PageWrapper>
+    );
+  } catch (e) {
+    return <div className="p-8 text-red-400">Error memuat data: {String(e)}</div>;
+  }
 }

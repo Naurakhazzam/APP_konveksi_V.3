@@ -107,7 +107,8 @@ export function UsersClient({ initialUsers, currentUserId, initialPermissions }:
     e.preventDefault();
     setCreateLoading(true);
     try {
-      await createUser(createForm);
+      const result = await createUser(createForm);
+      if (!result.success) throw new Error(result.error);
       toast.success(`User ${createForm.nama} berhasil dibuat`);
       setCreateOpen(false);
       setCreateForm({ email: '', password: '', nama: '', role: 'mandor' as UserRole });
