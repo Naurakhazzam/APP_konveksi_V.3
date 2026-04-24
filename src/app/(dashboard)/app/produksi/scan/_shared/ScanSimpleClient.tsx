@@ -10,7 +10,8 @@ import {
 } from '@/lib/actions/produksi/scan.actions';
 import { 
     scanTerimaGeneric, 
-    scanSelesai 
+    scanSelesai,
+    scanLanjutTahap 
 } from '@/lib/actions/produksi/scan-mutations.actions';
 import { 
     Search, 
@@ -37,15 +38,19 @@ type ScanState =
   | { phase: 'SEARCH_RESULTS'; results: BundleSearchResult[] }
   | { phase: 'LOADED'; bundle: BundleForScan }
   | { phase: 'CONFIRM_TERIMA'; bundle: BundleForScan }
+  | { phase: 'CONFIRM_LANJUT'; bundle: BundleForScan }
   | { phase: 'SUBMITTING'; bundle: BundleForScan }
   | { phase: 'RESULT'; gajiLedgerId: string | null; upah: number };
 
 interface Props {
   tahap: TahapKey;
   tahapLabel: string;
+  mode?: 'lanjut' | 'standard';
 }
 
-export default function ScanSimpleClient({ tahap, tahapLabel }: Props) {
+export default function ScanSimpleClient({ tahap, tahapLabel, mode = 'lanjut' }: Props) {
+  const isLanjutMode = mode === 'lanjut';
+  const isStandardMode = mode === 'standard';
   const [state, setState] = useState<ScanState>({ phase: 'IDLE' });
   const [barcode, setBarcode] = useState('');
   const [qty, setQty] = useState(0);
@@ -70,6 +75,17 @@ export default function ScanSimpleClient({ tahap, tahapLabel }: Props) {
   const checkPrerequisite = (bundle: BundleForScan): boolean => {
     const prevTahap = getPrevTahap(tahap);
     if (!prevTahap) return true; // Cutting — tidak ada prasyarat
+    // Mode lanjut: prev tahap cukup status 'terima' (akan di-close otomatis oleh RPC)
+    if (isLanjutMode) {
+      const prevStatus = bundle.status_tahap?.[prevTahap]?.status;
+      if (!prevStatus || (prevStatus !== 'selesai' && prevStatus !== 'terima')) {
+        const prevLabel = TAHAP_CONFIG[prevTahap].label;
+        toast.error(`Bundle belum diterima di tahap ${prevLabel}`);
+        setState({ phase: 'IDLE' });
+        return false;
+      }
+      return true;
+    }
     if (bundle.status_tahap?.[prevTahap]?.status !== 'selesai') {
       const prevLabel = TAHAP_CONFIG[prevTahap].label;
       toast.error(`Bundle belum selesai di tahap ${prevLabel}`);
@@ -165,18 +181,46 @@ export default function ScanSimpleClient({ tahap, tahapLabel }: Props) {
     const bundle = state.bundle;
     setState({ phase: 'SUBMITTING', bundle });
     try {
-      await scanTerimaGeneric({
-        barcode: bundle.barcode,
-        tahap: tahap,
-        karyawan_id: null,
-        qty: qty,
-        tenant_id: 'STX-001'
-      });
+      // Packing standard mode: terima via scanLanjutTahap (auto-tutup Steam)
+      if (isStandardMode) {
+        await scanLanjutTahap({
+          barcode: bundle.barcode,
+          tahap_baru: tahap,
+          karyawan_id: '',
+          qty: qty,
+        });
+      } else {
+        await scanTerimaGeneric({
+          barcode: bundle.barcode,
+          tahap: tahap,
+          karyawan_id: null,
+          qty: qty,
+          tenant_id: 'STX-001'
+        });
+      }
       toast.success(`Bundle diterima di tahap ${tahapLabel}`);
-      // Reload to show "Selesaikan"
       await reloadBundle(bundle.barcode);
     } catch (err: any) {
       toast.error(err.message || 'Gagal proses penerimaan');
+      setState({ phase: 'LOADED', bundle });
+    }
+  };
+
+  const handleLanjut = async () => {
+    if (state.phase !== 'LOADED') return;
+    const bundle = state.bundle;
+    setState({ phase: 'SUBMITTING', bundle });
+    try {
+      const result = await scanLanjutTahap({
+        barcode: bundle.barcode,
+        tahap_baru: tahap,
+        karyawan_id: '',
+        qty: qty,
+      });
+      toast.success(`Proses ${tahapLabel} dicatat`);
+      setState({ phase: 'RESULT', gajiLedgerId: result.gaji_entry_id, upah: result.upah_nominal });
+    } catch (err: any) {
+      toast.error(err.message || 'Gagal proses');
       setState({ phase: 'LOADED', bundle });
     }
   };
@@ -401,7 +445,15 @@ export default function ScanSimpleClient({ tahap, tahapLabel }: Props) {
                     >
                         Batal
                     </button>
-                    {state.bundle.status_tahap?.[tahap]?.status === 'terima' ? (
+                    {isLanjutMode ? (
+                        <button
+                            onClick={handleLanjut}
+                            className="px-10 py-4 rounded-2xl bg-[#e5c17b] hover:bg-[#d4b16a] text-[#0D0E10] text-xs font-black uppercase tracking-widest shadow-xl shadow-[#e5c17b]/10 transition-all flex items-center justify-center gap-2"
+                        >
+                            <CheckCircle2 className="w-4 h-4" />
+                            Proses {tahapLabel}
+                        </button>
+                    ) : state.bundle.status_tahap?.[tahap]?.status === 'terima' ? (
                          <button
                             onClick={() => handleSelesai()}
                             className="px-10 py-4 rounded-2xl bg-[#e5c17b] hover:bg-[#d4b16a] text-[#0D0E10] text-xs font-black uppercase tracking-widest shadow-xl shadow-[#e5c17b]/10 transition-all flex items-center justify-center gap-2"

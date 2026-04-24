@@ -21,6 +21,7 @@ export default async function ScanBuangBenangPage() {
         <ScanSimpleClient
           tahap="buang_benang"
           tahapLabel="Buang Benang"
+          mode="lanjut"
         />
         <StageListSectionContainer
           tahap="buang_benang"

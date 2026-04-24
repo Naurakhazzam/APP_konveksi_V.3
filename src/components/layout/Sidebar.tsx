@@ -36,7 +36,6 @@ const NAV_MENU = [
     children: [
       { label: 'Input PO',        path: '/app/produksi/input-po' },
       { label: 'Antrian Cutting', path: '/app/produksi/antrian-cutting' },
-      { label: 'Cutting',         path: '/app/produksi/scan/cutting' },
       { label: 'Jahit',           path: '/app/produksi/scan/jahit' },
       { label: 'Lubang Kancing',  path: '/app/produksi/scan/lubang-kancing' },
       { label: 'Buang Benang',    path: '/app/produksi/scan/buang-benang' },

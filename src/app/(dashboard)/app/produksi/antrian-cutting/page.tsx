@@ -1,19 +1,16 @@
-import { getAntrianData } from '@/lib/actions/produksi/antrian.actions';
+import { getPOCuttingList } from '@/lib/actions/produksi/cutting.actions';
 import { PageWrapper } from '@/components/ui/PageWrapper';
 import AntrianCuttingClient from './AntrianCuttingClient';
 
 export default async function AntrianCuttingPage() {
-  const data = await getAntrianData();
+  const poList = await getPOCuttingList();
 
   return (
     <PageWrapper
-      title="Antrian Cutting"
-      subtitle="Daftar bundle yang menunggu proses pemotongan"
+      title="Cutting"
+      subtitle="Kelola proses cutting per Purchase Order"
     >
-      <AntrianCuttingClient
-        antrianBundles={data.antrian}
-        dipotongBundles={data.dipotong}
-      />
+      <AntrianCuttingClient poList={poList} />
     </PageWrapper>
   );
 }

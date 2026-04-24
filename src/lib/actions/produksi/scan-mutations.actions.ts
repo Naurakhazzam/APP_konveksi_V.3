@@ -163,3 +163,38 @@ export async function scanTerimaGeneric(
   const result = data as { scan_log_id: string };
   return { scan_log_id: result.scan_log_id };
 }
+
+// 5. scanLanjutTahap — 1 scan auto-tutup tahap sebelumnya + buka tahap baru
+export interface ScanLanjutTahapResult {
+  scan_log_id: string;
+  gaji_entry_id: string | null;
+  upah_nominal: number;
+}
+
+export async function scanLanjutTahap(input: {
+  barcode: string;
+  tahap_baru: string;
+  karyawan_id: string;
+  qty: number;
+}): Promise<ScanLanjutTahapResult> {
+  const user_id  = await resolveUserId();
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.rpc('scan_lanjut_tahap', {
+    p_barcode:     input.barcode,
+    p_tahap_baru:  input.tahap_baru,
+    p_qty:         input.qty,
+    p_user_id:     user_id,
+    p_karyawan_id: input.karyawan_id || null, // null untuk tahap borongan (bukan UUID kosong)
+    p_tenant_id:   TENANT_ID,
+  });
+
+  if (error) throw new Error(error.message);
+
+  const result = data as ScanLanjutTahapResult;
+  return {
+    scan_log_id:   result.scan_log_id,
+    gaji_entry_id: result.gaji_entry_id ?? null,
+    upah_nominal:  result.upah_nominal ?? 0,
+  };
+}
