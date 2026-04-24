@@ -32,7 +32,3 @@ export default async function ScanQCPage() {
     </PageWrapper>
   );
 }
-
-    </PageWrapper>
-  );
-}

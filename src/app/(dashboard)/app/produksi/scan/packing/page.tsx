@@ -32,7 +32,3 @@ export default async function ScanPackingPage() {
     </PageWrapper>
   );
 }
-
-    </PageWrapper>
-  );
-}

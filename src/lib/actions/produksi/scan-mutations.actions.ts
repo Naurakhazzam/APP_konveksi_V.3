@@ -185,7 +185,7 @@ export async function scanLanjutTahap(input: {
     p_tahap_baru:  input.tahap_baru,
     p_qty:         input.qty,
     p_user_id:     user_id,
-    p_karyawan_id: input.karyawan_id || null, // null untuk tahap borongan (bukan UUID kosong)
+    p_karyawan_id: input.karyawan_id || null,
     p_tenant_id:   TENANT_ID,
   });
 
