@@ -53,15 +53,12 @@ export async function getAntrianPerTahap(tahap: TahapKey, page: number, pageSize
   if (stageIndex === -1) throw new Error(`Tahap ${tahap} tidak valid`);
 
   if (tahap === 'cutting') {
-    // cutting: belum selesai (null atau 'terima')
-    // .neq() di PostgREST menyertakan NULL — lebih aman dari .or() dengan JSONB path
-    query = query.neq(`status_tahap->cutting->>status`, 'selesai');
+    query = query.not('status_tahap', 'cs', JSON.stringify({ cutting: { status: 'selesai' } }));
   } else {
-    // Tahap lainnya: prev_stage == 'selesai' AND this_stage != 'selesai' (termasuk null & 'terima')
     const prevStage = STAGE_ORDER[stageIndex - 1];
     query = query
-      .eq(`status_tahap->${prevStage}->>status`, 'selesai')
-      .neq(`status_tahap->${tahap}->>status`, 'selesai');
+      .contains('status_tahap', { [prevStage]: { status: 'selesai' } })
+      .not('status_tahap', 'cs', JSON.stringify({ [tahap]: { status: 'selesai' } }));
   }
 
   const { data, count, error } = await query
@@ -120,19 +117,17 @@ export async function getSelesaiPerTahap(tahap: TahapKey, page: number, pageSize
 
   const nextStage = STAGE_ORDER[stageIndex + 1];
 
-  // Logic: this_stage == 'selesai' AND next_stage belum dimulai (status != 'terima' dan != 'selesai')
-  query = query.eq(`status_tahap->${tahap}->>status`, 'selesai');
+  query = query.contains('status_tahap', { [tahap]: { status: 'selesai' } });
 
   if (nextStage) {
-    // Gunakan neq — lebih aman dari .filter(is.null) untuk JSONB path di PostgREST
-    // neq('terima') akan menyertakan null (belum dimulai) dan mengecualikan yg sudah masuk tahap berikutnya
-    query = query.neq(`status_tahap->${nextStage}->>status`, 'selesai')
-                 .neq(`status_tahap->${nextStage}->>status`, 'terima');
+    query = query
+      .not('status_tahap', 'cs', JSON.stringify({ [nextStage]: { status: 'terima' } }))
+      .not('status_tahap', 'cs', JSON.stringify({ [nextStage]: { status: 'selesai' } }));
   }
 
   const { data, count, error } = await query
     .range(offset, offset + pageSize - 1)
-    .order(`status_tahap->${tahap}->>end_time`, { ascending: false });
+    .order('created_at', { ascending: false });
 
   if (error) throw new Error(`Gagal ambil data selesai ${tahap}: ${error.message}`);
 
