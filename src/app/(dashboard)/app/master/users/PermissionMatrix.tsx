@@ -11,6 +11,7 @@ import type { RolePermissionMap, PathPermission } from '@/lib/actions/master/per
 const ALL_MENUS = [
   { group: 'Dashboard',     path: '/app/dashboard',                    label: 'Dashboard' },
   { group: 'Produksi',      path: '/app/produksi/input-po',            label: '└ Input PO' },
+  { group: 'Produksi',      path: '/app/produksi/po/import',           label: '└ Import PO Massal' },
   { group: 'Produksi',      path: '/app/produksi/antrian-cutting',     label: '└ Antrian Cutting' },
   { group: 'Produksi',      path: '/app/produksi/scan/cutting',        label: '└ Scan Cutting' },
   { group: 'Produksi',      path: '/app/produksi/scan/jahit',          label: '└ Scan Jahit' },
