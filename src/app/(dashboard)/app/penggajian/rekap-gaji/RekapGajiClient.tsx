@@ -17,16 +17,17 @@ import {
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { 
-  RefreshCcw, 
-  Search, 
-  Loader2, 
-  CreditCard, 
-  Users, 
-  Wallet, 
-  TrendingUp, 
+import {
+  Search,
+  Loader2,
+  CreditCard,
+  Users,
+  Wallet,
+  TrendingUp,
   CheckCircle2,
-  Eye
+  Eye,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { toast } from 'sonner';
 import ModalBayarGaji from './ModalBayarGaji';
@@ -39,9 +40,30 @@ interface Props {
 
 export default function RekapGajiClient({ initialRekap, tanggal_dari, tanggal_sampai }: Props) {
   const [rekap, setRekap] = useState<RekapGajiItem[]>(initialRekap);
-  const [dateFrom, setDateFrom] = useState(tanggal_dari);
-  const [dateTo, setDateTo] = useState(tanggal_sampai);
+  const [weekOffset, setWeekOffset] = useState(0);
   const [loading, setLoading] = useState(false);
+
+  const getWeekRange = (offset: number) => {
+    const today = new Date();
+    const dayOfWeek = today.getDay();
+    const daysToLastSaturday = dayOfWeek === 6 ? 0 : dayOfWeek + 1;
+    const lastSaturday = new Date(today);
+    lastSaturday.setDate(today.getDate() - daysToLastSaturday + (offset * 7));
+    const nextFriday = new Date(lastSaturday);
+    nextFriday.setDate(lastSaturday.getDate() + 6);
+    return {
+      from: lastSaturday.toISOString().split('T')[0],
+      to: nextFriday.toISOString().split('T')[0],
+      fromDateObj: lastSaturday,
+      toDateObj: nextFriday,
+    };
+  };
+
+  const { from: dateFrom, to: dateTo, fromDateObj, toDateObj } = getWeekRange(weekOffset);
+
+  const formatDateLabel = (date: Date) =>
+    date.toLocaleDateString('id-ID', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' });
+  const periodLabel = `${formatDateLabel(fromDateObj)} – ${formatDateLabel(toDateObj)}`;
   
   // Modal State
   const [selectedKaryawan, setSelectedKaryawan] = useState<RekapGajiItem | null>(null);
@@ -78,31 +100,6 @@ export default function RekapGajiClient({ initialRekap, tanggal_dari, tanggal_sa
     }
   };
 
-  const handleWeekPicker = () => {
-    const today = new Date();
-    const dayOfWeek = today.getDay(); // 0=Sunday, 6=Saturday
-    const daysToLastSaturday = dayOfWeek === 6 ? 0 : dayOfWeek + 1;
-    const lastSaturday = new Date(today);
-    lastSaturday.setDate(today.getDate() - daysToLastSaturday);
-    const nextFriday = new Date(lastSaturday);
-    nextFriday.setDate(lastSaturday.getDate() + 6);
-
-    const from = lastSaturday.toISOString().split('T')[0];
-    const to = nextFriday.toISOString().split('T')[0];
-    
-    setDateFrom(from);
-    setDateTo(to);
-    // Trigger fetch manually because state update is async
-    setLoading(true);
-    getRekapGaji(from, to).then(data => {
-      setRekap(data);
-      setLoading(false);
-    }).catch(err => {
-      toast.error(err.message);
-      setLoading(false);
-    });
-  };
-
   const handlePaymentSuccess = (karyawan_id: string) => {
     setRekap(prev => prev.filter(item => item.karyawan_id !== karyawan_id));
   };
@@ -116,30 +113,25 @@ export default function RekapGajiClient({ initialRekap, tanggal_dari, tanggal_sa
 
   return (
     <div className="space-y-8 pb-20">
-      {/* Week Picker & Filters */}
+      {/* Week Navigator */}
       <div className="flex flex-wrap items-end gap-4 p-5 rounded-xl bg-[#1A1D1F] border border-[#2A2D31]">
-        <div className="space-y-1.5 flex-1 min-w-[150px]">
-          <label className="text-[10px] font-bold text-[#9aa0a6] uppercase tracking-wider">Dari Tanggal</label>
-          <input 
-            type="date"
-            value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
-            className="w-full h-10 px-3 rounded-lg bg-[#16181A] border border-[#2A2D31] text-sm text-[#e8eaed] focus:ring-1 focus:ring-[#e5c17b] outline-none"
-          />
+        <div className="flex-1 flex flex-col space-y-1.5 min-w-[300px]">
+          <label className="text-[10px] font-bold text-[#9aa0a6] uppercase tracking-wider">Periode</label>
+          <div className="flex items-center justify-between bg-[#16181A] border border-[#2A2D31] rounded-lg h-10 px-1">
+            <Button variant="ghost" onClick={() => setWeekOffset(prev => prev - 1)}
+              className="h-8 px-3 text-[#9aa0a6] hover:text-[#e8eaed] hover:bg-[#2A2D31]">
+              <ChevronLeft className="w-4 h-4 mr-1" /> Pekan Lalu
+            </Button>
+            <div className="text-xs font-bold text-[#e5c17b] tracking-wide px-2 text-center whitespace-nowrap">
+              {periodLabel}
+            </div>
+            <Button variant="ghost" onClick={() => setWeekOffset(prev => prev + 1)}
+              disabled={weekOffset === 0}
+              className="h-8 px-3 text-[#9aa0a6] hover:text-[#e8eaed] hover:bg-[#2A2D31] disabled:opacity-30">
+              Pekan Ini <ChevronRight className="w-4 h-4 ml-1" />
+            </Button>
+          </div>
         </div>
-        <div className="space-y-1.5 flex-1 min-w-[150px]">
-          <label className="text-[10px] font-bold text-[#9aa0a6] uppercase tracking-wider">Sampai Tanggal</label>
-          <input 
-            type="date"
-            value={dateTo}
-            onChange={(e) => setDateTo(e.target.value)}
-            className="w-full h-10 px-3 rounded-lg bg-[#16181A] border border-[#2A2D31] text-sm text-[#e8eaed] focus:ring-1 focus:ring-[#e5c17b] outline-none"
-          />
-        </div>
-        <Button onClick={handleWeekPicker} variant="outline" className="h-10 border-[#2A2D31] text-[#9aa0a6] hover:bg-[#2A2D31] hover:text-[#e5c17b]">
-          <RefreshCcw className="w-4 h-4 mr-2" />
-          ⟳ Pekan Ini
-        </Button>
         <Button onClick={fetchRekap} disabled={loading} className="h-10 px-6 bg-[#e5c17b] hover:bg-[#d4b06a] text-[#0D0E10] font-bold rounded-lg transition-all">
           {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4 mr-2" />}
           Tampilkan

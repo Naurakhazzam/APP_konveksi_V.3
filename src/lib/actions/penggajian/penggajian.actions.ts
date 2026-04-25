@@ -122,18 +122,10 @@ export async function getGajiDetail(
 ): Promise<GajiLedgerEntry[]> {
   const supabase = await createClient();
 
+  // Step 1: Fetch gaji_ledger entries
   const { data, error } = await supabase
     .from('gaji_ledger')
-    .select(`
-      *,
-      bundle:sumber_id(
-        barcode,
-        po_item:po_item_id(
-          warna, size,
-          produk:produk_id(model_produk:model_id(nama))
-        )
-      )
-    `)
+    .select('*')
     .eq('karyawan_id', karyawan_id)
     .gte('tanggal', tanggal_dari)
     .lte('tanggal', tanggal_sampai)
@@ -141,17 +133,43 @@ export async function getGajiDetail(
     .order('created_at', { ascending: false });
 
   if (error) throw new Error(error.message);
+  if (!data || data.length === 0) return [];
 
-  return (data ?? []).map((row: any) => {
-    const bundle = row.bundle;
-    const poItem = bundle?.po_item;
-    const modelNama = poItem?.produk?.model_produk?.nama;
-    const warna = poItem?.warna;
-    const size = poItem?.size;
+  // Step 2: Fetch bundle data separately (sumber_id = bundle UUID, not FK)
+  const bundleIds = [...new Set(data.map((r: any) => r.sumber_id).filter(Boolean))];
 
-    // Ambil prefix tahap dari keterangan lama (misal "Upah jahit")
+  let bundleMap: Record<string, { warna: string; size: string; modelNama: string }> = {};
+
+  if (bundleIds.length > 0) {
+    const { data: bundleData } = await supabase
+      .from('bundle')
+      .select(`
+        id,
+        po_item:po_item_id(
+          warna, size,
+          produk:produk_id(
+            model_produk:model_id(nama)
+          )
+        )
+      `)
+      .in('id', bundleIds);
+
+    (bundleData ?? []).forEach((b: any) => {
+      const poItem = b.po_item;
+      bundleMap[b.id] = {
+        warna: poItem?.warna ?? '',
+        size: poItem?.size ?? '',
+        modelNama: poItem?.produk?.model_produk?.nama ?? '',
+      };
+    });
+  }
+
+  // Step 3: Map + enrich keterangan
+  return data.map((row: any) => {
+    const bundle = bundleMap[row.sumber_id];
+    const { modelNama, warna, size } = bundle ?? {};
+
     const tahapPrefix = row.keterangan?.split(' - ')?.[0] ?? row.keterangan;
-
     const keteranganBaru = modelNama
       ? `${tahapPrefix} - ${modelNama} / ${warna} / ${size}`
       : row.keterangan;
