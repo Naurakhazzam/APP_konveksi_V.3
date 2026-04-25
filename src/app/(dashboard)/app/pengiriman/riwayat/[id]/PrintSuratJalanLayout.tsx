@@ -108,10 +108,11 @@ export default function PrintSuratJalanLayout({ detail }: { detail: SuratJalanDe
         </div>
         <div>
           <p className="mb-20">Pengirim (Driver),</p>
-          <p className="font-semibold border-b border-black inline-block min-w-[150px]">( ................................ )</p>
+          <p className="font-semibold border-b border-black inline-block min-w-[150px]">( <span id="sj-driver-name">................................</span> )</p>
         </div>
         <div>
-          <p className="mb-20">Hormat Kami,</p>
+          <p className="mb-14">Hormat Kami,</p>
+          <p className="font-bold text-sm mb-1">FAUZAN</p>
           <p className="font-semibold border-b border-black inline-block min-w-[150px]">( ................................ )</p>
         </div>
       </div>
