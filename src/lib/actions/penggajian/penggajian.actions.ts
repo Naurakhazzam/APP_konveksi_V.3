@@ -124,7 +124,16 @@ export async function getGajiDetail(
 
   const { data, error } = await supabase
     .from('gaji_ledger')
-    .select('*')
+    .select(`
+      *,
+      bundle:sumber_id(
+        barcode,
+        po_item:po_item_id(
+          warna, size,
+          produk:produk_id(model_produk:model_id(nama))
+        )
+      )
+    `)
     .eq('karyawan_id', karyawan_id)
     .gte('tanggal', tanggal_dari)
     .lte('tanggal', tanggal_sampai)
@@ -132,7 +141,35 @@ export async function getGajiDetail(
     .order('created_at', { ascending: false });
 
   if (error) throw new Error(error.message);
-  return data ?? [];
+
+  return (data ?? []).map((row: any) => {
+    const bundle = row.bundle;
+    const poItem = bundle?.po_item;
+    const modelNama = poItem?.produk?.model_produk?.nama;
+    const warna = poItem?.warna;
+    const size = poItem?.size;
+
+    // Ambil prefix tahap dari keterangan lama (misal "Upah jahit")
+    const tahapPrefix = row.keterangan?.split(' - ')?.[0] ?? row.keterangan;
+
+    const keteranganBaru = modelNama
+      ? `${tahapPrefix} - ${modelNama} / ${warna} / ${size}`
+      : row.keterangan;
+
+    return {
+      id: row.id,
+      karyawan_id: row.karyawan_id,
+      tipe: row.tipe,
+      total: Number(row.total),
+      tanggal: row.tanggal,
+      sumber_id: row.sumber_id,
+      keterangan: keteranganBaru,
+      status: row.status,
+      tanggal_bayar: row.tanggal_bayar,
+      is_printed: row.is_printed,
+      created_at: row.created_at,
+    };
+  });
 }
 
 /** 3. Proses Pembayaran Gaji: Menggunakan RPC Atomic */

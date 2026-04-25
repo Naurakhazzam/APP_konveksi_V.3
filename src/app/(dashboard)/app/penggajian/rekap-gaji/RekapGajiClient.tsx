@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { 
   getRekapGaji, 
+  getGajiDetail,
+  type GajiLedgerEntry,
   type RekapGajiItem 
 } from '@/lib/actions/penggajian/penggajian.actions';
 import { 
@@ -23,7 +25,8 @@ import {
   Users, 
   Wallet, 
   TrendingUp, 
-  CheckCircle2 
+  CheckCircle2,
+  Eye
 } from 'lucide-react';
 import { toast } from 'sonner';
 import ModalBayarGaji from './ModalBayarGaji';
@@ -43,6 +46,25 @@ export default function RekapGajiClient({ initialRekap, tanggal_dari, tanggal_sa
   // Modal State
   const [selectedKaryawan, setSelectedKaryawan] = useState<RekapGajiItem | null>(null);
   const [showModal, setShowModal] = useState(false);
+
+  const [detailData, setDetailData] = useState<GajiLedgerEntry[]>([]);
+  const [showDetailModal, setShowDetailModal] = useState(false);
+  const [detailKaryawan, setDetailKaryawan] = useState<RekapGajiItem | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+
+  const handleShowDetail = async (item: RekapGajiItem) => {
+    setDetailKaryawan(item);
+    setShowDetailModal(true);
+    setDetailLoading(true);
+    try {
+      const data = await getGajiDetail(item.karyawan_id, dateFrom, dateTo);
+      setDetailData(data);
+    } catch (err: any) {
+      toast.error(err.message || 'Gagal ambil detail');
+    } finally {
+      setDetailLoading(false);
+    }
+  };
 
   const fetchRekap = async () => {
     setLoading(true);
@@ -167,11 +189,17 @@ export default function RekapGajiClient({ initialRekap, tanggal_dari, tanggal_sa
                   <TableCell className="text-right font-bold text-[#e8eaed]">Rp {formatIDR(item.upah_bersih)}</TableCell>
                   <TableCell className="text-right text-orange-400 font-medium">Rp {formatIDR(item.kasbon_sisa)}</TableCell>
                   <TableCell className="text-center">
-                    {item.entry_ids.length > 0 ? (
-                      <Button onClick={() => { setSelectedKaryawan(item); setShowModal(true); }} size="sm" className="h-8 bg-[#e5c17b] hover:bg-[#d4b06a] text-[#0D0E10] font-bold rounded-lg px-4 shadow-lg shadow-yellow-500/10">
-                        <CreditCard className="w-3 h-3 mr-1.5" /> Bayar
+                    <div className="flex items-center justify-center gap-2">
+                      <Button variant="outline" onClick={() => handleShowDetail(item)}
+                        className="h-8 px-3 border-[#2A2D31] text-[#9aa0a6] hover:text-[#e5c17b] hover:border-[#e5c17b]">
+                        <Eye className="w-3.5 h-3.5 mr-1" /> Detail
                       </Button>
-                    ) : <span className="text-[#3A3D41]">—</span>}
+                      {item.entry_ids.length > 0 ? (
+                        <Button onClick={() => { setSelectedKaryawan(item); setShowModal(true); }} size="sm" className="h-8 bg-[#e5c17b] hover:bg-[#d4b06a] text-[#0D0E10] font-bold rounded-lg px-4 shadow-lg shadow-yellow-500/10">
+                          <CreditCard className="w-3 h-3 mr-1.5" /> Bayar
+                        </Button>
+                      ) : <span className="text-[#3A3D41]">—</span>}
+                    </div>
                   </TableCell>
                 </TableRow>
               ))
@@ -186,6 +214,61 @@ export default function RekapGajiClient({ initialRekap, tanggal_dari, tanggal_sa
         selectedKaryawan={selectedKaryawan} 
         onSuccess={handlePaymentSuccess} 
       />
+
+      {showDetailModal && detailKaryawan && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-[#1A1D1F] border border-[#2A2D31] rounded-2xl w-full max-w-2xl max-h-[80vh] flex flex-col">
+            <div className="p-5 border-b border-[#2A2D31] flex justify-between items-center">
+              <div>
+                <h3 className="font-bold text-[#e8eaed]">Detail Gaji — {detailKaryawan.karyawan_nama}</h3>
+                <p className="text-xs text-[#9aa0a6]">{dateFrom} s/d {dateTo}</p>
+              </div>
+              <button onClick={() => setShowDetailModal(false)}
+                className="text-[#9aa0a6] hover:text-[#e8eaed] text-xl font-bold">✕</button>
+            </div>
+            <div className="overflow-y-auto flex-1">
+              {detailLoading ? (
+                <div className="flex items-center justify-center h-32">
+                  <Loader2 className="w-6 h-6 animate-spin text-[#e5c17b]" />
+                </div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-[#2A2D31]">
+                      <th className="px-4 py-3 text-left text-[11px] text-[#9aa0a6] uppercase">Tanggal</th>
+                      <th className="px-4 py-3 text-left text-[11px] text-[#9aa0a6] uppercase">Keterangan</th>
+                      <th className="px-4 py-3 text-left text-[11px] text-[#9aa0a6] uppercase">Tipe</th>
+                      <th className="px-4 py-3 text-right text-[11px] text-[#9aa0a6] uppercase">Jumlah</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#2A2D31]">
+                    {detailData.map(entry => (
+                      <tr key={entry.id} className="hover:bg-[#2A2D31]/30">
+                        <td className="px-4 py-3 text-xs text-[#9aa0a6]">
+                          {new Date(entry.tanggal).toLocaleDateString('id-ID', { day:'2-digit', month:'short', year:'numeric' })}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-[#e8eaed]">{entry.keterangan}</td>
+                        <td className="px-4 py-3">
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase
+                            ${entry.tipe === 'selesai' ? 'bg-green-500/15 text-green-400' :
+                              entry.tipe === 'reject_potong' ? 'bg-red-500/15 text-red-400' :
+                              'bg-blue-500/15 text-blue-400'}`}>
+                            {entry.tipe}
+                          </span>
+                        </td>
+                        <td className={`px-4 py-3 text-right text-xs font-bold
+                          ${entry.tipe === 'reject_potong' ? 'text-red-400' : 'text-[#e5c17b]'}`}>
+                          {entry.tipe === 'reject_potong' ? '-' : '+'}Rp {entry.total.toLocaleString('id-ID')}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
