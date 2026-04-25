@@ -217,7 +217,7 @@ export async function selesaiCuttingBatch(
 
     const { data, error } = await supabase.rpc('selesai_cutting_batch', {
       p_po_ids:    po_ids,
-      p_pemakaian: JSON.stringify(pemakaian),
+      p_pemakaian: pemakaian,
       p_user_id:   user_id,
       p_tenant_id: TENANT_ID,
     });
