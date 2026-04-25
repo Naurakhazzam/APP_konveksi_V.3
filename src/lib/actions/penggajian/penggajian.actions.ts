@@ -137,33 +137,76 @@ export async function getGajiDetail(
   if (error) throw new Error(error.message);
   if (!data || data.length === 0) return [];
 
-  // Step 2: Fetch bundle data separately (sumber_id = bundle UUID, not FK)
+  // Step 2: Fetch bundle → po_item (warna, size, produk_id, qty)
   const bundleIds = [...new Set(data.map((r: any) => r.sumber_id).filter(Boolean))];
 
   let bundleMap: Record<string, { warna: string; size: string; modelNama: string; qty: number }> = {};
 
   if (bundleIds.length > 0) {
-    const { data: bundleData } = await supabase
+    // 2a. Fetch bundles (just po_item_id)
+    const { data: bundleData, error: bundleErr } = await supabase
       .from('bundle')
-      .select(`
-        id,
-        qty_per_bundle,
-        po_item:po_item_id(
-          warna, size,
-          produk:produk_id(
-            model_produk:model_id(nama)
-          )
-        )
-      `)
+      .select('id, po_item_id')
       .in('id', bundleIds);
 
+    if (bundleErr) throw new Error('Bundle fetch error: ' + bundleErr.message);
+
+    const poItemIds = [...new Set((bundleData ?? []).map((b: any) => b.po_item_id).filter(Boolean))];
+
+    // 2b. Fetch po_items (warna, size, qty_per_bundle, produk_id)
+    let poItemMap: Record<string, { warna: string; size: string; qty_per_bundle: number; produk_id: string }> = {};
+    if (poItemIds.length > 0) {
+      const { data: poItems, error: poErr } = await supabase
+        .from('po_item')
+        .select('id, warna, size, qty_per_bundle, produk_id')
+        .in('id', poItemIds);
+
+      if (poErr) throw new Error('PO Item fetch error: ' + poErr.message);
+      (poItems ?? []).forEach((pi: any) => {
+        poItemMap[pi.id] = { warna: pi.warna, size: pi.size, qty_per_bundle: Number(pi.qty_per_bundle) || 0, produk_id: pi.produk_id };
+      });
+    }
+
+    const produkIds = [...new Set(Object.values(poItemMap).map(pi => pi.produk_id).filter(Boolean))];
+
+    // 2c. Fetch produk → model_produk name
+    let modelMap: Record<string, string> = {};
+    if (produkIds.length > 0) {
+      const { data: produkData, error: produkErr } = await supabase
+        .from('produk')
+        .select('id, model_id')
+        .in('id', produkIds);
+
+      if (produkErr) throw new Error('Produk fetch error: ' + produkErr.message);
+
+      const modelIds = [...new Set((produkData ?? []).map((p: any) => p.model_id).filter(Boolean))];
+
+      if (modelIds.length > 0) {
+        const { data: modelData, error: modelErr } = await supabase
+          .from('model_produk')
+          .select('id, nama')
+          .in('id', modelIds);
+
+        if (modelErr) throw new Error('Model fetch error: ' + modelErr.message);
+
+        // produk_id → model nama
+        const modelNameById: Record<string, string> = {};
+        (modelData ?? []).forEach((m: any) => { modelNameById[m.id] = m.nama; });
+        (produkData ?? []).forEach((p: any) => {
+          modelMap[p.id] = modelNameById[p.model_id] ?? '';
+        });
+      }
+    }
+
+    // 2d. Build bundleMap: bundle_id → enriched info
     (bundleData ?? []).forEach((b: any) => {
-      const poItem = b.po_item;
+      const poItem = poItemMap[b.po_item_id];
+      const modelNama = poItem ? (modelMap[poItem.produk_id] ?? '') : '';
       bundleMap[b.id] = {
         warna: poItem?.warna ?? '',
         size: poItem?.size ?? '',
-        modelNama: poItem?.produk?.model_produk?.nama ?? '',
-        qty: Number(b.qty_per_bundle) || 0,
+        modelNama,
+        qty: poItem?.qty_per_bundle ?? 0,
       };
     });
   }
