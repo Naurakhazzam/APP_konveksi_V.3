@@ -146,6 +146,71 @@ export async function getAksesoriForBundle(
     }));
 }
 
+/**
+ * Fetch semua aksesori untuk banyak po_item_id sekaligus — hanya 2 query total.
+ * Dipakai di Cetak Kartu Kerja agar tidak N×7 round-trips.
+ * Return: map po_item_id → ModelAksesori[]
+ */
+export async function getAksesoriForKartuKerja(
+  po_item_ids: string[]
+): Promise<Record<string, ModelAksesori[]>> {
+  if (!po_item_ids.length) return {};
+  const supabase = await createClient();
+
+  // Query 1: ambil model_id untuk semua po_item sekaligus
+  const { data: poItems, error: poItemError } = await supabase
+    .from('po_item')
+    .select('id, produk:produk_id(model_id)')
+    .in('id', po_item_ids);
+
+  if (poItemError || !poItems?.length) return {};
+
+  // Build map po_item_id → model_id
+  const poItemModelMap: Record<string, string> = {};
+  const modelIds: string[] = [];
+  for (const pi of poItems as any[]) {
+    const modelId = pi.produk?.model_id;
+    if (modelId) {
+      poItemModelMap[pi.id] = modelId;
+      if (!modelIds.includes(modelId)) modelIds.push(modelId);
+    }
+  }
+
+  if (!modelIds.length) return {};
+
+  // Query 2: ambil semua aksesori untuk semua model sekaligus
+  const { data: aksesoriData, error: aksError } = await supabase
+    .from('model_aksesori')
+    .select(`
+      id, model_id, inventory_item_id, qty_per_pcs, tahap_pakai,
+      inventory_item:inventory_item_id (nama, satuan)
+    `)
+    .in('model_id', modelIds)
+    .eq('tenant_id', TENANT_ID);
+
+  if (aksError) throw new Error(aksError.message);
+
+  // Build result: po_item_id → ModelAksesori[]
+  const result: Record<string, ModelAksesori[]> = {};
+  for (const [poItemId, modelId] of Object.entries(poItemModelMap)) {
+    result[poItemId] = ((aksesoriData ?? []) as any[])
+      .filter(a => a.model_id === modelId)
+      .map(a => ({
+        id:                   a.id,
+        model_id:             a.model_id,
+        inventory_item_id:    a.inventory_item_id,
+        inventory_item_nama:  a.inventory_item?.nama ?? '',
+        satuan:               a.inventory_item?.satuan ?? '',
+        qty_per_pcs:          Number(a.qty_per_pcs),
+        tahap_pakai:          a.tahap_pakai,
+        warna_id:             null,
+        warna_nama:           null,
+      }));
+  }
+
+  return result;
+}
+
 // ─── WARNA AKSESORI ────────────────────────────────────────────
 
 export interface WarnaAksesori {

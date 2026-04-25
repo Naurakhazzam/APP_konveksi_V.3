@@ -18,7 +18,7 @@ import type { POCuttingItem, BundleDetailItem } from '@/lib/actions/produksi/cut
 import { mulaiCuttingBatch, getBundlesForPO } from '@/lib/actions/produksi/cutting.actions';
 import { getAntrianData } from '@/lib/actions/produksi/antrian.actions';
 import type { AntrianBundle } from '@/lib/actions/produksi/antrian.actions';
-import { getAksesoriForBundle } from '@/lib/actions/produksi/model-aksesori.actions';
+import { getAksesoriForKartuKerja } from '@/lib/actions/produksi/model-aksesori.actions';
 import PrintSPKLayout from './PrintSPKLayout';
 import PrintLabelLayout from './PrintLabelLayout';
 import PrintKartuKerjaLayout from './PrintKartuKerjaLayout';
@@ -207,27 +207,19 @@ export default function AntrianCuttingClient({ poList }: Props) {
       const filtered = allBundles.filter(b => selectedPoIds.has(b.po_id));
       if (!filtered.length) { toast.error('Tidak ada bundle ditemukan untuk PO terpilih'); return; }
 
-      const SEMUA_TAHAP = ['cutting', 'jahit', 'lubang_kancing', 'buang_benang', 'qc', 'steam', 'packing'];
+      // 1 call saja untuk semua po_item_id — drastis lebih cepat
+      const poItemIds = [...new Set(filtered.map(b => b.po_item_id))];
+      const aksesoriMap = await getAksesoriForKartuKerja(poItemIds);
 
-      const kartuData: KartuBundle[] = await Promise.all(
-        filtered.map(async (bundle) => {
-          const results = await Promise.all(
-            SEMUA_TAHAP.map(tahap => getAksesoriForBundle(bundle.po_item_id, tahap))
-          );
-          const flatResults = results.flat();
-          const unikMap = new Map<string, typeof flatResults[0]>();
-          flatResults.forEach(item => {
-            unikMap.set(`${item.inventory_item_id}-${item.tahap_pakai}`, item);
-          });
-          const aksesori: AksesoriItem[] = Array.from(unikMap.values()).map(item => ({
-            nama:        item.inventory_item_nama,
-            qty_per_pcs: item.qty_per_pcs,
-            satuan:      item.satuan,
-            tahap_pakai: item.tahap_pakai,
-          }));
-          return { ...bundle, aksesori };
-        })
-      );
+      const kartuData: KartuBundle[] = filtered.map(bundle => {
+        const aksesori: AksesoriItem[] = (aksesoriMap[bundle.po_item_id] ?? []).map(item => ({
+          nama:        item.inventory_item_nama,
+          qty_per_pcs: item.qty_per_pcs,
+          satuan:      item.satuan,
+          tahap_pakai: item.tahap_pakai,
+        }));
+        return { ...bundle, aksesori };
+      });
 
       setKartuBundles(kartuData);
       setPrintMode('kartu');
