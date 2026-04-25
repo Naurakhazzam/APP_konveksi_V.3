@@ -12,6 +12,7 @@ export interface AksesoriItem {
 
 export interface KartuBundle extends AntrianBundle {
   aksesori: AksesoriItem[];
+  nama_penjahit?: string;
 }
 
 interface Props {
@@ -226,12 +227,17 @@ export default function PrintKartuKerjaLayout({ bundles, tglCetak }: Props) {
                     </tr>
                   </thead>
                   <tbody>
-                    {['Jahit', 'Buang Benang', 'Lubang Kancing', 'QC', 'Steam', 'Packing'].map((tahap) => (
-                      <tr key={tahap}>
-                        <td style={{ ...s.cell, fontWeight: 'bold' }}>{tahap}</td>
-                        <td style={s.cellCenter}><span style={s.manualLine}></span></td>
-                      </tr>
-                    ))}
+                    {['Jahit', 'Buang Benang', 'Lubang Kancing', 'QC', 'Steam', 'Packing'].map((tahap) => {
+                      const isiNama = tahap === 'Jahit' && bundle.nama_penjahit ? bundle.nama_penjahit : null;
+                      return (
+                        <tr key={tahap}>
+                          <td style={{ ...s.cell, fontWeight: 'bold' }}>{tahap}</td>
+                          <td style={s.cellCenter}>
+                            {isiNama ? <span style={{ fontWeight: 'bold', fontSize: '11px' }}>{isiNama}</span> : <span style={s.manualLine}></span>}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

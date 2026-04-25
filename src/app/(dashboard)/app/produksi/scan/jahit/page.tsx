@@ -1,14 +1,14 @@
 import { PageWrapper } from '@/components/ui/PageWrapper';
-import { getKaryawanForTahap } from '@/lib/actions/produksi/scan.actions';
-import { getAntrianPerTahap, getSelesaiPerTahap } from '@/lib/actions/produksi/stage-bundles.actions';
+import { getKaryawanForTahap, getAntrianJahit } from '@/lib/actions/produksi/scan.actions';
+import { getSelesaiPerTahap } from '@/lib/actions/produksi/stage-bundles.actions';
 import ScanJahitClient from './ScanJahitClient';
-import { StageListSectionContainer } from '@/components/produksi/StageListSectionContainer';
+import JahitListClient from './JahitListClient';
 
 export default async function ScanJahitPage() {
   const [karyawanList, antrianResult, selesaiResult] = 
     await Promise.all([
       getKaryawanForTahap('jahit'),
-      getAntrianPerTahap('jahit', 1, 20),
+      getAntrianJahit(),
       getSelesaiPerTahap('jahit', 1, 20),
     ]);
 
@@ -21,10 +21,10 @@ export default async function ScanJahitPage() {
         <ScanJahitClient
           karyawanList={karyawanList}
         />
-        <StageListSectionContainer
-          tahap="jahit"
+        <JahitListClient
           initialAntrian={antrianResult}
           initialSelesai={selesaiResult}
+          karyawanList={karyawanList}
         />
       </div>
     </PageWrapper>

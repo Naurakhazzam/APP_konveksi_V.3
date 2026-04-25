@@ -9,7 +9,7 @@ import {
   DialogFooter
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Printer, CheckCircle, XCircle, Info, Tag } from 'lucide-react';
+import { CheckCircle, XCircle, Info, Tag } from 'lucide-react';
 import type { BundleForScan } from '@/lib/actions/produksi/scan.actions';
 import type { ModelAksesori } from '@/lib/actions/produksi/model-aksesori.actions';
 
@@ -132,16 +132,6 @@ export default function ModalSerahTerima({
           >
             <XCircle className="w-4 h-4 mr-2" />
             Batal
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            disabled={disabled}
-            onClick={() => window.print()}
-            className="border-[#2A2D31] text-[#e8eaed] bg-[#2A2D31]/50 hover:bg-[#2A2D31]"
-          >
-            <Printer className="w-4 h-4 mr-2" />
-            Print
           </Button>
           <Button
             type="button"

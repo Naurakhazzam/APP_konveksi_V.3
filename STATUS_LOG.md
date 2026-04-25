@@ -1,42 +1,30 @@
-# STATUS LOG — Update Logic Supabase Cutting
+# STATUS LOG
 
 **Tanggal Pengerjaan:** 25 April 2026
 
-## Daftar Function yang Dibuat / Diubah
+## Ringkasan Pengembangan Fitur: Tahap Jahit & Antrian Produksi
 
-### 1. `mulai_cutting_batch` (Diubah)
-**Signature:**
-```sql
-mulai_cutting_batch(p_bundle_ids uuid[], p_user_id uuid, p_tenant_id text) RETURNS jsonb
-```
-**Perubahan Logic:**
-- Sebelumnya menerima `p_po_ids`. Sekarang menerima array `p_bundle_ids`.
-- Mengubah array `bundle` berdasarkan `p_bundle_ids` spesifik, bukan seluruh PO.
-- Update properti `status_tahap->'cutting'` dengan menggabungkan JSONB (`||`) agar data sebelumnya tidak terhapus.
-- Menambahkan status menjadi `'progress'`, `start_time` menggunakan timestamp UTC sekarang, serta `updated_by`.
+Berikut adalah ringkasan perubahan komprehensif (Phase 1-5) yang telah dilakukan untuk sistem antrian jahit:
 
-### 2. `selesai_cutting_batch` (Diubah)
-**Signature:**
-```sql
-selesai_cutting_batch(p_bundle_qty jsonb, p_pemakaian jsonb, p_user_id uuid, p_tenant_id text) RETURNS jsonb
-```
-**Perubahan Logic:**
-- Penambahan perhitungan per bundle: Jika `qty_aktual < qty_order` (yang diambil dari tabel `po_item.qty_per_bundle`), maka bundle mendapat status baru `'partial'`. Jika terpenuhi, mendapat status `'selesai'`.
-- Status `'selesai'` menambahkan `qty_aktual` ke total akumulatif yang dikembalikan.
-- Perhitungan stok bahan kini menghitung deduction berdasarkan `rate_per_pcs * total_qty_artikel` dari parameter JSONB `p_pemakaian`.
-- Menyisipkan data ke `pemakaian_bahan` dengan referensi `bundle_id` pertama dari iterasi bundle. 
-- Warning alert ditambahkan apabila sisa stok bahan setelah pemakaian menunjukkan nilai negatif.
+### Phase 1: Database & Backend Logic
+- **`getAntrianJahit`:** Server action baru di `scan.actions.ts` yang diformulasikan khusus untuk mengambil daftar bundle yang sudah selesai di tahap cutting namun belum masuk ke tahap jahit.
+- **Tipe Data:** Membuat interface `AntrianJahitBundle` yang mendefinisikan skema data secara presisi (berisi relasi barcode, klien, PO, produk, qty, dsb).
 
-### 3. `close_bundle_cutting` (Baru)
-**Signature:**
-```sql
-close_bundle_cutting(p_bundle_id uuid, p_user_id uuid, p_tenant_id text) RETURNS jsonb
-```
-**Fungsi:**
-- Mengganti state `status_tahap->'cutting'->>'status'` dari `'partial'` menjadi `'selesai'`.
-- Menambahkan flag `closed_at` (timestamp) dan `closed_by` (`p_user_id`).
+### Phase 2: Komponen Antrian & Table View
+- **`JahitListClient.tsx`:** Menggantikan komponen antrian generik dengan list khusus jahit yang mampu merender `AntrianJahitBundle` di tab "ANTRIAN".
+- **Seleksi Bundle:** Mengimplementasikan state `selectedBundleIds` dan fitur checkbox multi-select pada tabel antrian, lengkap dengan checkbox "Pilih Semua".
+- **Toolbar Aksi:** Tombol aksi dinamis "Serah Terima (N Bundle)" muncul otomatis jika ada bundle yang dipilih, yang kemudian memicu Modal Serah Terima Jahit.
 
-## Catatan Penting
-- **Kolom `updated_at` di tabel bundle:** Tidak digunakan, karena track jejak mutasi disimpan langsung ke dalam `status_tahap->'cutting'` menggunakan `updated_by` dan log timestamp `waktu_selesai` / `start_time`.
-- **Enum `tahap_produksi`:** Digunakan secara eksplisit sebagai mapping untuk insert record di tabel `pemakaian_bahan` (`'cutting'::tahap_produksi`).
-- **JSONB Update Safety:** Update pada kolom JSONB dilakukan dengan menggabungkan (`||`) JSON sebelumnya dengan data baru agar key lain (misalnya tahap jahit atau packing) tidak tertimpa/terhapus.
+### Phase 3: Modal Serah Terima Jahit
+- **`ModalSerahTerimaJahit.tsx`:** Modal baru untuk melayani proses serah terima bundle secara masal.
+- **Komponen Input:** Memiliki dropdown karyawan (diaplikasikan untuk semua bundle terpilih) dan tabel ulasan daftar bundle.
+- **Proses Submit:** Melakukan *loop* pemanggilan fungsi atomik `scanJahitTerima` untuk masing-masing bundle dan menampung *stok warnings* (peringatan sisa bahan/aksesori).
+
+### Phase 4: Integrasi Cetak Kartu Kerja
+- **`PrintKartuKerjaLayout.tsx`:** Diperbarui dengan prop opsional `nama_penjahit`. Layout tabel operator per tahap sekarang secara dinamis mencetak nama penjahit pada baris "Jahit" apabila datanya ada, dan tetap membuat baris tahapan lainnya kosong.
+- **Trigger Print:** Setelah proses submit di Modal Serah Terima Jahit berhasil, komponen Kartu Kerja yang tersembunyi (`print:hidden`) akan otomatis dicetak melalui trigger `window.print()`.
+
+### Phase 5: Penyempurnaan UX Scanning
+- **Auto-fill & Read-Only Karyawan:** Di dalam scanner `ScanJahitClient.tsx`, jika bundle yang di-scan sudah berstatus `terima` di tahap jahit (artinya sudah di-assign via serah terima masal), maka karyawan yang bersangkutan akan terisi otomatis dan ditampilkan sebagai teks "read-only" agar supervisor tidak perlu memilih ulang karyawan tersebut.
+- **Single Scan Flow:** Proses scan individual yang belum di-'terima' tetap dapat berjalan normal (Scan -> Pilih Karyawan -> Terima Jahit -> Approve -> Selesai).
+- **Hapus Tombol Print Single:** Menghapus tombol "Print" dari `ModalSerahTerima.tsx` (single scan) karena saat ini pencetakan kartu kerja difokuskan melalui antrian (Modal Serah Terima Jahit masal).
