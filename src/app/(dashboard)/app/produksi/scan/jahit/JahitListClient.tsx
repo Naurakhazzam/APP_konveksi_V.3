@@ -87,7 +87,11 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
     if (selectedBundleIds.size === antrianData.length) {
       setSelectedBundleIds(new Set());
     } else {
-      setSelectedBundleIds(new Set(antrianData.map(b => b.id)));
+      setSelectedBundleIds(new Set(
+        antrianData
+          .filter(b => ((b as any).status_tahap?.['jahit'])?.status !== 'terima')
+          .map(b => b.id)
+      ));
     }
   };
 
@@ -210,7 +214,8 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
                               type="checkbox" 
                               checked={selectedBundleIds.has(item.id)}
                               onChange={() => toggleSelectBundle(item.id)}
-                              className="accent-[#e5c17b] w-4 h-4 rounded border-[#2A2D31] cursor-pointer"
+                              disabled={((item as any).status_tahap?.['jahit'])?.status === 'terima'}
+                              className="accent-[#e5c17b] w-4 h-4 rounded border-[#2A2D31] cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
                             />
                           </td>
                           <td className="px-4 py-3 text-xs font-bold text-[#9aa0a6]">
