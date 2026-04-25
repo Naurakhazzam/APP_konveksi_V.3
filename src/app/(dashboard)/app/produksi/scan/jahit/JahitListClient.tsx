@@ -115,7 +115,7 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
   };
 
   return (
-    <div className="mt-8 pt-8 border-t border-[#2A2D31]">
+    <div className="mt-2 pt-6 border-t border-[#2A2D31]">
       <div className="mb-6 px-1 flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <h2 className="text-xl font-bold text-[#e8eaed] flex items-center gap-3">

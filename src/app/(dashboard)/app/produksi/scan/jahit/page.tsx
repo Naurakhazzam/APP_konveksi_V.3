@@ -17,7 +17,7 @@ export default async function ScanJahitPage() {
       title="Scan — Jahit"
       subtitle="Scan barcode untuk penerimaan dan penyelesaian bundle di tahap jahit"
     >
-      <div className="space-y-8">
+      <div className="space-y-2">
         <ScanJahitClient
           karyawanList={karyawanList}
         />
