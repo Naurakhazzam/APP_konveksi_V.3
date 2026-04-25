@@ -9,6 +9,8 @@ export interface GajiLedgerEntry {
   karyawan_id: string;
   tipe: 'selesai' | 'reject_potong' | 'rework';
   total: number;
+  qty: number;
+  upah_per_pcs: number;
   tanggal: string;
   sumber_id: string;
   keterangan: string;
@@ -138,13 +140,14 @@ export async function getGajiDetail(
   // Step 2: Fetch bundle data separately (sumber_id = bundle UUID, not FK)
   const bundleIds = [...new Set(data.map((r: any) => r.sumber_id).filter(Boolean))];
 
-  let bundleMap: Record<string, { warna: string; size: string; modelNama: string }> = {};
+  let bundleMap: Record<string, { warna: string; size: string; modelNama: string; qty: number }> = {};
 
   if (bundleIds.length > 0) {
     const { data: bundleData } = await supabase
       .from('bundle')
       .select(`
         id,
+        qty_per_bundle,
         po_item:po_item_id(
           warna, size,
           produk:produk_id(
@@ -160,6 +163,7 @@ export async function getGajiDetail(
         warna: poItem?.warna ?? '',
         size: poItem?.size ?? '',
         modelNama: poItem?.produk?.model_produk?.nama ?? '',
+        qty: Number(b.qty_per_bundle) || 0,
       };
     });
   }
@@ -167,7 +171,11 @@ export async function getGajiDetail(
   // Step 3: Map + enrich keterangan
   return data.map((row: any) => {
     const bundle = bundleMap[row.sumber_id];
-    const { modelNama, warna, size } = bundle ?? {};
+    const { modelNama, warna, size, qty: bundleQty } = bundle ?? {};
+
+    const total = Number(row.total);
+    const qty = bundleQty || 0;
+    const upah_per_pcs = qty > 0 ? Math.round(total / qty) : 0;
 
     const tahapPrefix = row.keterangan?.split(' - ')?.[0] ?? row.keterangan;
     const keteranganBaru = modelNama
@@ -178,7 +186,9 @@ export async function getGajiDetail(
       id: row.id,
       karyawan_id: row.karyawan_id,
       tipe: row.tipe,
-      total: Number(row.total),
+      total,
+      qty,
+      upah_per_pcs,
       tanggal: row.tanggal,
       sumber_id: row.sumber_id,
       keterangan: keteranganBaru,

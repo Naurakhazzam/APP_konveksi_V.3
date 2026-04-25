@@ -92,37 +92,43 @@ export default function SlipPreview({ karyawan, ledgerEntries, kasbonEntries, da
                 <TableHead className="text-[10px] font-bold text-gray-800 uppercase py-3">Tanggal</TableHead>
                 <TableHead className="text-[10px] font-bold text-gray-800 uppercase py-3">Keterangan</TableHead>
                 <TableHead className="text-[10px] font-bold text-gray-800 uppercase py-3">Tipe</TableHead>
+                <TableHead className="text-[10px] font-bold text-gray-800 uppercase py-3 text-right">Rincian</TableHead>
                 <TableHead className="text-[10px] font-bold text-gray-800 uppercase py-3 text-right">Jumlah (Rp)</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {ledgerEntries.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={4} className="h-20 text-center text-gray-400 text-xs italic">Tidak ada rincian ledger untuk periode ini.</TableCell>
+                  <TableCell colSpan={5} className="h-20 text-center text-gray-400 text-xs italic">Tidak ada rincian ledger untuk periode ini.</TableCell>
                 </TableRow>
               ) : (
                 ledgerEntries.map((entry) => (
-                  <TableRow 
-                    key={entry.id} 
+                  <TableRow
+                    key={entry.id}
                     className={`border-gray-100 hover:bg-transparent ${
-                      entry.tipe === 'selesai' ? 'bg-green-50' : 
-                      entry.tipe === 'reject_potong' ? 'bg-red-50' : 
+                      entry.tipe === 'selesai' ? 'bg-green-50' :
+                      entry.tipe === 'reject_potong' ? 'bg-red-50' :
                       entry.tipe === 'rework' ? 'bg-blue-50' : ''
                     }`}
                   >
                     <TableCell className="text-[11px] font-medium py-2.5">{formatDate(entry.tanggal)}</TableCell>
-                    <TableCell className="text-[11px] py-2.5 max-w-[300px] truncate">{entry.keterangan}</TableCell>
-                    <TableCell className="text-[10px] font-bold uppercase py-2.5">
+                    <TableCell className="text-[11px] py-2.5 max-w-[220px] truncate">{entry.keterangan}</TableCell>
+                    <TableCell className="text-[10px] font-bold uppercase py-2.5 whitespace-nowrap">
                       <span className={
-                        entry.tipe === 'selesai' ? 'text-green-700' : 
-                        entry.tipe === 'reject_potong' ? 'text-red-700' : 
+                        entry.tipe === 'selesai' ? 'text-green-700' :
+                        entry.tipe === 'reject_potong' ? 'text-red-700' :
                         entry.tipe === 'rework' ? 'text-blue-700' : ''
                       }>
                         {entry.tipe.replace('_', ' ')}
                       </span>
                     </TableCell>
-                    <TableCell className={`text-[11px] font-bold text-right py-2.5 ${entry.tipe === 'reject_potong' ? 'text-red-600' : ''}`}>
-                      {entry.tipe === 'reject_potong' ? '-' : ''} {formatIDR(Number(entry.total))}
+                    <TableCell className="text-[11px] py-2.5 text-right text-gray-500 whitespace-nowrap">
+                      {entry.qty > 0 && entry.upah_per_pcs > 0
+                        ? `${entry.qty} pcs × @${formatIDR(entry.upah_per_pcs)}`
+                        : '—'}
+                    </TableCell>
+                    <TableCell className={`text-[11px] font-bold text-right py-2.5 whitespace-nowrap ${entry.tipe === 'reject_potong' ? 'text-red-600' : ''}`}>
+                      {entry.tipe === 'reject_potong' ? '-' : ''}Rp {formatIDR(Number(entry.total))}
                     </TableCell>
                   </TableRow>
                 ))

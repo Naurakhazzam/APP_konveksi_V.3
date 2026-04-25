@@ -230,13 +230,14 @@ export default function RekapGajiClient({ initialRekap, tanggal_dari, tanggal_sa
                       <th className="px-4 py-3 text-left text-[11px] text-[#9aa0a6] uppercase">Tanggal</th>
                       <th className="px-4 py-3 text-left text-[11px] text-[#9aa0a6] uppercase">Keterangan</th>
                       <th className="px-4 py-3 text-left text-[11px] text-[#9aa0a6] uppercase">Tipe</th>
+                      <th className="px-4 py-3 text-right text-[11px] text-[#9aa0a6] uppercase">Rincian</th>
                       <th className="px-4 py-3 text-right text-[11px] text-[#9aa0a6] uppercase">Jumlah</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#2A2D31]">
                     {detailData.map(entry => (
                       <tr key={entry.id} className="hover:bg-[#2A2D31]/30">
-                        <td className="px-4 py-3 text-xs text-[#9aa0a6]">
+                        <td className="px-4 py-3 text-xs text-[#9aa0a6] whitespace-nowrap">
                           {new Date(entry.tanggal).toLocaleDateString('id-ID', { day:'2-digit', month:'short', year:'numeric' })}
                         </td>
                         <td className="px-4 py-3 text-xs text-[#e8eaed]">{entry.keterangan}</td>
@@ -248,7 +249,12 @@ export default function RekapGajiClient({ initialRekap, tanggal_dari, tanggal_sa
                             {entry.tipe}
                           </span>
                         </td>
-                        <td className={`px-4 py-3 text-right text-xs font-bold
+                        <td className="px-4 py-3 text-right text-xs text-[#9aa0a6] whitespace-nowrap">
+                          {entry.qty > 0 && entry.upah_per_pcs > 0
+                            ? `${entry.qty} pcs × @${entry.upah_per_pcs.toLocaleString('id-ID')}`
+                            : '—'}
+                        </td>
+                        <td className={`px-4 py-3 text-right text-xs font-bold whitespace-nowrap
                           ${entry.tipe === 'reject_potong' ? 'text-red-400' : 'text-[#e5c17b]'}`}>
                           {entry.tipe === 'reject_potong' ? '-' : '+'}Rp {entry.total.toLocaleString('id-ID')}
                         </td>
