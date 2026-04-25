@@ -260,7 +260,7 @@ export default function ScanJahitClient({ karyawanList }: Props) {
   );
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6 min-h-[400px]">
+    <div className="max-w-2xl mx-auto space-y-6">
       {/* Search Input Panel */}
       {(state.phase === 'IDLE' || state.phase === 'LOADING') && (
         <div className="bg-[#1A1D1F] border border-[#2A2D31] rounded-2xl p-6 shadow-2xl">
