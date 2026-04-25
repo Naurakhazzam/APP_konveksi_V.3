@@ -14,7 +14,7 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import type { POCuttingItem, BundleDetailItem, BundleQtyInput } from '@/lib/actions/produksi/cutting.actions';
+import type { POCuttingItem, BundleDetailItem } from '@/lib/actions/produksi/cutting.actions';
 import { mulaiCuttingBatch, getBundlesForPO } from '@/lib/actions/produksi/cutting.actions';
 import { getAntrianData } from '@/lib/actions/produksi/antrian.actions';
 import type { AntrianBundle } from '@/lib/actions/produksi/antrian.actions';
@@ -244,20 +244,6 @@ export default function AntrianCuttingClient({ poList }: Props) {
   const isMenungguTab   = activeTab === 'menunggu';
   const isSelesaiTab    = activeTab === 'selesai';
   const isPendingTab    = activeTab === 'pending';
-
-  // Build bundleQty for ModalSelesaiCutting from selected bundles
-  const buildBundleQty = (): BundleQtyInput[] => {
-    const result: BundleQtyInput[] = [];
-    for (const [po_id, bundleSet] of Object.entries(selectedBundleIds)) {
-      const cached = bundleCache[po_id] ?? [];
-      for (const b of cached) {
-        if (bundleSet.has(b.id)) {
-          result.push({ bundle_id: b.id, qty_aktual: b.qty_per_bundle });
-        }
-      }
-    }
-    return result;
-  };
 
   return (
     <div className="space-y-6">
