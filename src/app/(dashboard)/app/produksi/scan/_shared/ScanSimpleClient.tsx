@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { 
     getBundleForScan, 
@@ -49,6 +50,7 @@ interface Props {
 }
 
 export default function ScanSimpleClient({ tahap, tahapLabel, mode = 'lanjut' }: Props) {
+  const router = useRouter();
   const isLanjutMode = mode === 'lanjut';
   const isStandardMode = mode === 'standard';
   const [state, setState] = useState<ScanState>({ phase: 'IDLE' });
@@ -86,7 +88,8 @@ export default function ScanSimpleClient({ tahap, tahapLabel, mode = 'lanjut' }:
       }
       return true;
     }
-    if (bundle.status_tahap?.[prevTahap]?.status !== 'selesai') {
+    const prevStatusVal = bundle.status_tahap?.[prevTahap]?.status;
+    if (!prevStatusVal || (prevStatusVal !== 'selesai' && prevStatusVal !== 'terima')) {
       const prevLabel = TAHAP_CONFIG[prevTahap].label;
       toast.error(`Bundle belum selesai di tahap ${prevLabel}`);
       setState({ phase: 'IDLE' });
@@ -515,6 +518,15 @@ export default function ScanSimpleClient({ tahap, tahapLabel, mode = 'lanjut' }:
           >
             Scan Barcode Lain
           </button>
+          
+          {tahap === 'packing' && (
+            <button
+              onClick={() => router.push('/app/pengiriman/buat-surat-jalan')}
+              className="mt-4 border border-[#e5c17b] text-[#e5c17b] hover:bg-[#e5c17b]/10 px-12 py-4 rounded-2xl text-sm font-black uppercase tracking-widest transition-all hover:scale-105 active:scale-95"
+            >
+              Buat Surat Jalan
+            </button>
+          )}
         </div>
       )}
       {/* Extras */}
