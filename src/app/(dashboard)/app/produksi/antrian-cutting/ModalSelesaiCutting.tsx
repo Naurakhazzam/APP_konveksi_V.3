@@ -1,17 +1,15 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { X, ChevronDown, ChevronRight, CheckCircle2, Loader2, AlertTriangle } from 'lucide-react';
+import { X, CheckCircle2, Loader2, AlertTriangle, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
-  getBahanUntukCutting,
+  getInventoryItemsForCutting,
   selesaiCuttingBatch,
-  type POBahanInfo,
+  type InventoryItemOption,
   type PemakaianBahanItem,
   type StokWarning,
 } from '@/lib/actions/produksi/cutting.actions';
-
-// ─── PROPS ───────────────────────────────────────────────────────────────────
 
 interface Props {
   poIds: string[];
@@ -19,49 +17,51 @@ interface Props {
   onClose: () => void;
 }
 
-// ─── COMPONENT ───────────────────────────────────────────────────────────────
+interface PemakaianRow {
+  rowId: string;
+  inventory_item_id: string;
+  qty: number;
+}
 
 export default function ModalSelesaiCutting({ poIds, onSuccess, onClose }: Props) {
   const [isLoading, setIsLoading]       = useState(true);
-  const [poDataList, setPoDataList]     = useState<POBahanInfo[]>([]);
-  const [openAccordion, setOpenAccordion] = useState<string | null>(null);
-  // { [po_id]: { [inventory_item_id]: qty_pakai } }
-  const [pemakaian, setPemakaian]       = useState<Record<string, Record<string, number>>>({});
+  const [inventoryItems, setInventoryItems] = useState<InventoryItemOption[]>([]);
+  const [rows, setRows]                 = useState<PemakaianRow[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [stokWarnings, setStokWarnings] = useState<StokWarning[]>([]);
 
-  // ─── FETCH BAHAN ────────────────────────────────────────────────────────
+  // ─── FETCH INVENTORY ITEMS ──────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
     setIsLoading(true);
-    getBahanUntukCutting(poIds)
+    getInventoryItemsForCutting()
       .then((data) => {
-        if (cancelled) return;
-        setPoDataList(data);
-        // Buka accordion pertama otomatis
-        if (data.length > 0) setOpenAccordion(data[0].po_id);
-        // Init pemakaian state: semua qty = 0
-        const init: Record<string, Record<string, number>> = {};
-        data.forEach(po => {
-          init[po.po_id] = {};
-          po.bahan.forEach(b => { init[po.po_id][b.inventory_item_id] = 0; });
-        });
-        setPemakaian(init);
+        if (!cancelled) setInventoryItems(data);
       })
       .catch((e) => {
-        if (!cancelled) toast.error('Gagal memuat data bahan: ' + e.message);
+        if (!cancelled) toast.error('Gagal memuat data inventory: ' + e.message);
       })
       .finally(() => { if (!cancelled) setIsLoading(false); });
     return () => { cancelled = true; };
-  }, [poIds]);
+  }, []);
 
-  // ─── INPUT HANDLER ──────────────────────────────────────────────────────
-  const setQty = (po_id: string, inventory_item_id: string, value: string) => {
-    const qty = parseFloat(value) || 0;
-    setPemakaian(prev => ({
-      ...prev,
-      [po_id]: { ...(prev[po_id] ?? {}), [inventory_item_id]: qty },
-    }));
+  // ─── ROW HANDLERS ───────────────────────────────────────────────────────
+  const addRow = () => {
+    setRows(prev => [...prev, {
+      rowId: crypto.randomUUID(),
+      inventory_item_id: '',
+      qty: 0,
+    }]);
+  };
+
+  const removeRow = (rowId: string) => {
+    setRows(prev => prev.filter(r => r.rowId !== rowId));
+  };
+
+  const updateRow = (rowId: string, field: 'inventory_item_id' | 'qty', value: string | number) => {
+    setRows(prev => prev.map(r =>
+      r.rowId === rowId ? { ...r, [field]: value } : r
+    ));
   };
 
   // ─── SUBMIT ─────────────────────────────────────────────────────────────
@@ -69,15 +69,14 @@ export default function ModalSelesaiCutting({ poIds, onSuccess, onClose }: Props
     setIsSubmitting(true);
     setStokWarnings([]);
 
-    // Flatten pemakaian ke array
-    const pemakaianArray: PemakaianBahanItem[] = [];
-    for (const [po_id, bahanMap] of Object.entries(pemakaian)) {
-      for (const [inventory_item_id, qty_pakai] of Object.entries(bahanMap)) {
-        if (qty_pakai > 0) {
-          pemakaianArray.push({ po_id, inventory_item_id, qty_pakai });
-        }
-      }
-    }
+    // Build pemakaian array — skip baris kosong atau qty = 0
+    const pemakaianArray: PemakaianBahanItem[] = rows
+      .filter(r => r.inventory_item_id && r.qty > 0)
+      .map(r => ({
+        po_id: poIds[0], // po_id dipakai sebagai referensi; SQL function memakai semua po_ids
+        inventory_item_id: r.inventory_item_id,
+        qty_pakai: r.qty,
+      }));
 
     const result = await selesaiCuttingBatch(poIds, pemakaianArray);
 
@@ -97,7 +96,8 @@ export default function ModalSelesaiCutting({ poIds, onSuccess, onClose }: Props
   };
 
   // ─── STYLES ─────────────────────────────────────────────────────────────
-  const inputCls = 'h-9 w-28 rounded-md border border-[#2A2D31] bg-[#1E2124] px-3 text-sm text-[#e8eaed] focus:outline-none focus:ring-1 focus:ring-[#e5c17b] disabled:opacity-50';
+  const inputCls    = 'h-9 w-28 rounded-md border border-[#2A2D31] bg-[#1E2124] px-3 text-sm text-[#e8eaed] focus:outline-none focus:ring-1 focus:ring-[#e5c17b] disabled:opacity-50';
+  const selectCls   = 'h-9 flex-1 rounded-md border border-[#2A2D31] bg-[#1E2124] px-3 text-sm text-[#e8eaed] focus:outline-none focus:ring-1 focus:ring-[#e5c17b] disabled:opacity-50';
 
   // ─── RENDER ─────────────────────────────────────────────────────────────
   return (
@@ -109,7 +109,7 @@ export default function ModalSelesaiCutting({ poIds, onSuccess, onClose }: Props
           <div>
             <h2 className="text-base font-bold text-[#e8eaed]">Selesai Cutting</h2>
             <p className="text-xs text-[#9aa0a6] mt-0.5">
-              Isi pemakaian bahan per PO — kosongkan jika tidak ada pemakaian
+              Input pemakaian bahan secara manual — kosongkan jika tidak ada pemakaian
             </p>
           </div>
           <button
@@ -121,119 +121,113 @@ export default function ModalSelesaiCutting({ poIds, onSuccess, onClose }: Props
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
+        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
           {isLoading ? (
             <div className="flex flex-col items-center justify-center py-16 gap-3 text-[#9aa0a6]">
               <Loader2 className="w-8 h-8 animate-spin text-[#e5c17b]" />
-              <span className="text-sm">Memuat data bahan...</span>
-            </div>
-          ) : poDataList.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 gap-2 text-[#9aa0a6]">
-              <span className="text-sm">Tidak ada data PO ditemukan.</span>
+              <span className="text-sm">Memuat data inventory...</span>
             </div>
           ) : (
-            poDataList.map((po) => {
-              const isOpen = openAccordion === po.po_id;
-              return (
-                <div key={po.po_id} className="rounded-lg border border-[#2A2D31] overflow-hidden">
-                  {/* Accordion Header */}
-                  <button
-                    className="w-full flex items-center justify-between px-4 py-3 bg-[#16181A] hover:bg-[#1E2124] transition-colors"
-                    onClick={() => setOpenAccordion(isOpen ? null : po.po_id)}
-                  >
-                    <div className="flex items-center gap-3">
-                      {isOpen
-                        ? <ChevronDown className="w-4 h-4 text-[#e5c17b]" />
-                        : <ChevronRight className="w-4 h-4 text-[#9aa0a6]" />}
-                      <div className="text-left">
-                        <span className="text-sm font-bold text-[#e8eaed] font-mono">{po.no_po}</span>
-                        {po.model_nama && (
-                          <span className="ml-2 text-xs text-[#9aa0a6]">— {po.model_nama}</span>
-                        )}
+            <>
+              {/* Pemakaian Rows */}
+              {rows.length > 0 && (
+                <div className="space-y-2">
+                  {/* Header */}
+                  <div className="grid grid-cols-[1fr_auto_auto_auto] gap-3 items-center px-1">
+                    <span className="text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold">Bahan</span>
+                    <span className="text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold w-28 text-right">Qty Pakai</span>
+                    <span className="text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold w-16">Satuan</span>
+                    <span className="w-8" />
+                  </div>
+
+                  {rows.map((row) => {
+                    const selectedItem = inventoryItems.find(i => i.id === row.inventory_item_id);
+                    return (
+                      <div key={row.rowId} className="grid grid-cols-[1fr_auto_auto_auto] gap-3 items-center">
+                        {/* Pilih Bahan */}
+                        <select
+                          className={selectCls}
+                          value={row.inventory_item_id}
+                          onChange={e => updateRow(row.rowId, 'inventory_item_id', e.target.value)}
+                          disabled={isSubmitting}
+                        >
+                          <option value="">— Pilih bahan —</option>
+                          {inventoryItems.map(item => (
+                            <option key={item.id} value={item.id}>
+                              {item.nama} (stok: {item.stok_aktual} {item.satuan})
+                            </option>
+                          ))}
+                        </select>
+
+                        {/* Qty */}
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          placeholder="0"
+                          value={row.qty === 0 ? '' : row.qty}
+                          onChange={e => updateRow(row.rowId, 'qty', parseFloat(e.target.value) || 0)}
+                          className={inputCls}
+                          disabled={isSubmitting}
+                        />
+
+                        {/* Satuan */}
+                        <span className="text-sm text-[#9aa0a6] w-16">
+                          {selectedItem?.satuan ?? '—'}
+                        </span>
+
+                        {/* Hapus */}
+                        <button
+                          onClick={() => removeRow(row.rowId)}
+                          disabled={isSubmitting}
+                          className="w-8 h-8 flex items-center justify-center rounded-lg text-[#9aa0a6] hover:text-red-400 hover:bg-red-400/10 transition-colors disabled:opacity-40"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </div>
-                    </div>
-                    <span className="text-xs text-[#9aa0a6]">
-                      {po.total_qty} pcs
-                      {po.bahan.length > 0
-                        ? ` · ${po.bahan.length} bahan`
-                        : ' · tidak ada bahan cutting'}
-                    </span>
-                  </button>
-
-                  {/* Accordion Body */}
-                  {isOpen && (
-                    <div className="px-4 py-4 bg-[#1A1D1F] space-y-3 border-t border-[#2A2D31]">
-                      {po.bahan.length === 0 ? (
-                        <p className="text-xs text-[#9aa0a6] italic">
-                          Tidak ada konfigurasi aksesori cutting untuk model ini.
-                          Kosongkan dan klik Selesai Cutting.
-                        </p>
-                      ) : (
-                        <>
-                          <div className="grid grid-cols-[1fr_auto_auto] gap-x-4 gap-y-2 items-center">
-                            {/* Header row */}
-                            <span className="text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold">Bahan</span>
-                            <span className="text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold text-right">Qty Pakai</span>
-                            <span className="text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold">Satuan</span>
-
-                            {/* Divider */}
-                            <div className="col-span-3 border-t border-[#2A2D31]" />
-
-                            {/* Rows */}
-                            {po.bahan.map((bahan) => {
-                              const currentQty = pemakaian[po.po_id]?.[bahan.inventory_item_id] ?? 0;
-                              return (
-                                <React.Fragment key={bahan.inventory_item_id}>
-                                  <div>
-                                    <p className="text-sm text-[#e8eaed]">{bahan.nama}</p>
-                                    <p className="text-[10px] text-[#9aa0a6]">
-                                      Stok: {bahan.stok_aktual} {bahan.satuan}
-                                    </p>
-                                  </div>
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    step="0.01"
-                                    placeholder="0"
-                                    value={currentQty === 0 ? '' : currentQty}
-                                    onChange={e => setQty(po.po_id, bahan.inventory_item_id, e.target.value)}
-                                    className={inputCls}
-                                    disabled={isSubmitting}
-                                  />
-                                  <span className="text-sm text-[#9aa0a6]">{bahan.satuan}</span>
-                                </React.Fragment>
-                              );
-                            })}
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  )}
+                    );
+                  })}
                 </div>
-              );
-            })
-          )}
+              )}
 
-          {/* Stok Warnings */}
-          {stokWarnings.length > 0 && (
-            <div className="rounded-lg border border-[#e5c17b]/30 bg-[#e5c17b]/10 p-4 space-y-2">
-              <div className="flex items-center gap-2 text-[#e5c17b] font-semibold text-sm">
-                <AlertTriangle className="w-4 h-4" />
-                Peringatan Stok Tidak Mencukupi
-              </div>
-              <ul className="space-y-1">
-                {stokWarnings.map((w, i) => (
-                  <li key={i} className="text-xs text-[#e5c17b]/80">
-                    <span className="font-medium">{w.item_nama}</span>
-                    {' '}— kekurangan <span className="font-bold">{w.qty_kurang}</span>
-                    , sisa stok: {w.sisa_stok}
-                  </li>
-                ))}
-              </ul>
-              <p className="text-[10px] text-[#9aa0a6]">
-                Produksi tetap dicatat. Segera lakukan pengadaan bahan.
-              </p>
-            </div>
+              {/* Tambah Bahan Button */}
+              <button
+                onClick={addRow}
+                disabled={isSubmitting || isLoading}
+                className="flex items-center gap-2 px-4 h-9 rounded-lg border border-dashed border-[#2A2D31] text-[#9aa0a6] text-sm hover:border-[#e5c17b] hover:text-[#e5c17b] transition-colors disabled:opacity-40"
+              >
+                <Plus className="w-4 h-4" />
+                Tambah Bahan
+              </button>
+
+              {rows.length === 0 && (
+                <p className="text-xs text-[#9aa0a6] italic">
+                  Tidak ada pemakaian bahan? Langsung klik Selesai Cutting.
+                </p>
+              )}
+
+              {/* Stok Warnings */}
+              {stokWarnings.length > 0 && (
+                <div className="rounded-lg border border-[#e5c17b]/30 bg-[#e5c17b]/10 p-4 space-y-2">
+                  <div className="flex items-center gap-2 text-[#e5c17b] font-semibold text-sm">
+                    <AlertTriangle className="w-4 h-4" />
+                    Peringatan Stok Tidak Mencukupi
+                  </div>
+                  <ul className="space-y-1">
+                    {stokWarnings.map((w, i) => (
+                      <li key={i} className="text-xs text-[#e5c17b]/80">
+                        <span className="font-medium">{w.item_nama}</span>
+                        {' '}— kekurangan <span className="font-bold">{w.qty_kurang}</span>
+                        , sisa stok: {w.sisa_stok}
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="text-[10px] text-[#9aa0a6]">
+                    Produksi tetap dicatat. Segera lakukan pengadaan bahan.
+                  </p>
+                </div>
+              )}
+            </>
           )}
         </div>
 

@@ -37,20 +37,6 @@ export interface SelesaiCuttingResult {
   error?: string;
 }
 
-export interface BahanCuttingItem {
-  inventory_item_id: string;
-  nama: string;
-  satuan: string;
-  stok_aktual: number;
-}
-
-export interface POBahanInfo {
-  po_id: string;
-  no_po: string;
-  model_nama: string | null;
-  total_qty: number;
-  bahan: BahanCuttingItem[];
-}
 
 // ─── HELPER ──────────────────────────────────────────────────────────────────
 
@@ -241,83 +227,33 @@ export async function selesaiCuttingBatch(
   }
 }
 
-// ─── FUNGSI 4: getBahanUntukCutting ──────────────────────────────────────────
+// ─── FUNGSI 4: getInventoryItemsForCutting ───────────────────────────────────
+// Mengembalikan semua item inventory sebagai pilihan input manual pemakaian bahan cutting
 
-export async function getBahanUntukCutting(
-  po_ids: string[]
-): Promise<POBahanInfo[]> {
+export interface InventoryItemOption {
+  id: string;
+  nama: string;
+  satuan: string;
+  stok_aktual: number;
+}
+
+export async function getInventoryItemsForCutting(): Promise<InventoryItemOption[]> {
   const supabase = await createClient();
 
-  if (!po_ids.length) return [];
+  const { data, error } = await supabase
+    .from('inventory_item')
+    .select('id, nama, satuan, stok_aktual')
+    .eq('tenant_id', TENANT_ID)
+    .order('nama', { ascending: true });
 
-  // Fetch PO → po_item → produk → model_id + total_qty
-  const { data: poData, error: poError } = await supabase
-    .from('po')
-    .select(`
-      id,
-      no_po,
-      po_item (
-        qty_per_bundle,
-        produk:produk_id (
-          model_id,
-          model_produk:model_id ( nama )
-        )
-      )
-    `)
-    .in('id', po_ids)
-    .eq('tenant_id', TENANT_ID);
+  if (error) throw new Error(`Gagal fetch inventory: ${error.message}`);
 
-  if (poError) throw new Error(`Gagal fetch PO: ${poError.message}`);
-
-  const result: POBahanInfo[] = [];
-
-  for (const po of (poData ?? []) as any[]) {
-    const poItems: any[] = Array.isArray(po.po_item) ? po.po_item : [po.po_item].filter(Boolean);
-    if (!poItems.length) {
-      result.push({ po_id: po.id, no_po: po.no_po, model_nama: null, total_qty: 0, bahan: [] });
-      continue;
-    }
-
-    // Ambil model_id dari po_item pertama (1 PO = 1 model)
-    const firstItem = poItems[0];
-    const produk = Array.isArray(firstItem?.produk) ? firstItem.produk[0] : firstItem?.produk;
-    const modelProduk = Array.isArray(produk?.model_produk) ? produk.model_produk[0] : produk?.model_produk;
-    const model_id: string | null = produk?.model_id ?? null;
-    const model_nama: string | null = modelProduk?.nama ?? null;
-
-    const total_qty = poItems.reduce((s: number, it: any) => s + (it.qty_per_bundle ?? 0), 0);
-
-    let bahan: BahanCuttingItem[] = [];
-
-    if (model_id) {
-      // Fetch model_aksesori untuk tahap cutting, join inventory_item
-      const { data: aksData, error: aksError } = await supabase
-        .from('model_aksesori')
-        .select(`
-          inventory_item_id,
-          inventory_item:inventory_item_id ( nama, satuan, stok_aktual )
-        `)
-        .eq('model_id', model_id)
-        .eq('tahap_pakai', 'cutting')
-        .eq('tenant_id', TENANT_ID);
-
-      if (aksError) throw new Error(`Gagal fetch model_aksesori: ${aksError.message}`);
-
-      bahan = (aksData ?? []).map((row: any) => {
-        const inv = Array.isArray(row.inventory_item) ? row.inventory_item[0] : row.inventory_item;
-        return {
-          inventory_item_id: row.inventory_item_id,
-          nama:              inv?.nama ?? '-',
-          satuan:            inv?.satuan ?? '',
-          stok_aktual:       inv?.stok_aktual ?? 0,
-        };
-      });
-    }
-
-    result.push({ po_id: po.id, no_po: po.no_po, model_nama, total_qty, bahan });
-  }
-
-  return result;
+  return (data ?? []).map((item: any) => ({
+    id:          item.id,
+    nama:        item.nama,
+    satuan:      item.satuan,
+    stok_aktual: Number(item.stok_aktual ?? 0),
+  }));
 }
 
 // ─── FUNGSI 5: getBundlesForPO ───────────────────────────────────────────────
