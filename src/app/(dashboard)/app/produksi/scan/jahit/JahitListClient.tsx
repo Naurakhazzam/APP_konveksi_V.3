@@ -6,8 +6,9 @@ import { getSelesaiPerTahap, type SelesaiBundleItem } from '@/lib/actions/produk
 import StageStatusBadge from '@/components/produksi/StageStatusBadge';
 import StagePagination from '@/components/produksi/StagePagination';
 import ModalSerahTerimaJahit from './ModalSerahTerimaJahit';
-import { Package, Clock, User, Loader2, Users, Printer } from 'lucide-react';
+import { Package, Clock, User, Loader2, Users, Printer, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
+import { scanSelesai } from '@/lib/actions/produksi/scan-mutations.actions';
 import { getAksesoriForKartuKerja } from '@/lib/actions/produksi/model-aksesori.actions';
 import PrintKartuKerjaLayout, { type KartuBundle, type AksesoriItem } from '@/app/(dashboard)/app/produksi/antrian-cutting/PrintKartuKerjaLayout';
 
@@ -18,10 +19,12 @@ interface Props {
 }
 
 export default function JahitListClient({ initialAntrian, initialSelesai, karyawanList }: Props) {
-  const [activeTab, setActiveTab] = useState<'antrian' | 'selesai'>('antrian');
+  const [activeTab, setActiveTab] = useState<'antrian' | 'sedang_proses' | 'selesai'>('antrian');
   
   // Antrian Data (Not Paginated)
   const [antrianData, setAntrianData] = useState<AntrianJahitBundle[]>(initialAntrian);
+  const antrianBelum = antrianData.filter(b => !(b as any).status_tahap?.['jahit']);
+  const antrianProses = antrianData.filter(b => ((b as any).status_tahap?.['jahit'])?.status === 'terima');
   
   // Selesai Data (Paginated)
   const [selesaiData, setSelesaiData] = useState<SelesaiBundleItem[]>(initialSelesai.data);
@@ -32,7 +35,9 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
   const [printUlangData, setPrintUlangData] = useState<KartuBundle[] | null>(null);
 
   const [isLoading, setIsLoading] = useState(false);
+  const [isSelesaikanLoading, setIsSelesaikanLoading] = useState(false);
   const [selectedBundleIds, setSelectedBundleIds] = useState<Set<string>>(new Set());
+  const [selectedProsesIds, setSelectedProsesIds] = useState<Set<string>>(new Set());
   const [showModalSerahTerima, setShowModalSerahTerima] = useState(false);
 
   const handleSerahTerimaSuccess = () => {
@@ -67,6 +72,36 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
     setTimeout(() => { window.print(); setPrintUlangData(null); }, 500);
   };
 
+  const handleBatchSelesai = async () => {
+    if (selectedProsesIds.size === 0) return;
+    setIsSelesaikanLoading(true);
+    const bundlesUntukSelesai = antrianProses.filter(b => selectedProsesIds.has(b.id));
+    let berhasil = 0;
+    let gagal = 0;
+    for (const bundle of bundlesUntukSelesai) {
+      try {
+        const karyawanId = ((bundle as any).status_tahap?.['jahit'])?.karyawan_id ?? null;
+        await scanSelesai({
+          barcode: bundle.barcode,
+          tahap: 'jahit',
+          karyawan_id: karyawanId,
+          qty: bundle.qty_per_bundle,
+          catatan: undefined,
+          alasan_qty_id: null,
+          tenant_id: 'STX-001',
+        });
+        berhasil++;
+      } catch (err: any) {
+        gagal++;
+        toast.error(`Gagal: ${bundle.barcode} — ${err.message}`);
+      }
+    }
+    setIsSelesaikanLoading(false);
+    setSelectedProsesIds(new Set());
+    if (berhasil > 0) toast.success(`${berhasil} bundle berhasil diselesaikan`);
+    if (gagal === 0) window.location.reload();
+  };
+
   const handleSelesaiPageChange = async (newPage: number) => {
     setSelesaiPage(newPage);
     setIsLoading(true);
@@ -84,14 +119,18 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
   const totalSelesaiPages = Math.ceil(selesaiTotal / pageSize);
 
   const toggleSelectAll = () => {
-    if (selectedBundleIds.size === antrianData.length) {
+    if (selectedBundleIds.size === antrianBelum.length) {
       setSelectedBundleIds(new Set());
     } else {
-      setSelectedBundleIds(new Set(
-        antrianData
-          .filter(b => ((b as any).status_tahap?.['jahit'])?.status !== 'terima')
-          .map(b => b.id)
-      ));
+      setSelectedBundleIds(new Set(antrianBelum.map(b => b.id)));
+    }
+  };
+
+  const toggleSelectAllProses = () => {
+    if (selectedProsesIds.size === antrianProses.length) {
+      setSelectedProsesIds(new Set());
+    } else {
+      setSelectedProsesIds(new Set(antrianProses.map(b => b.id)));
     }
   };
 
@@ -103,6 +142,16 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
       newSet.add(id);
     }
     setSelectedBundleIds(newSet);
+  };
+
+  const toggleSelectProses = (id: string) => {
+    const newSet = new Set(selectedProsesIds);
+    if (newSet.has(id)) {
+      newSet.delete(id);
+    } else {
+      newSet.add(id);
+    }
+    setSelectedProsesIds(newSet);
   };
 
   const TableHeader = ({ children, className = "" }: { children: React.ReactNode, className?: string }) => (
@@ -143,6 +192,18 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
             Serah Terima ({selectedBundleIds.size} Bundle)
           </button>
         )}
+        {activeTab === 'sedang_proses' && selectedProsesIds.size > 0 && (
+          <button 
+            onClick={handleBatchSelesai}
+            disabled={isSelesaikanLoading}
+            className="flex items-center gap-2 bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded-lg font-bold transition-colors shadow-lg"
+          >
+            {isSelesaikanLoading 
+              ? <><Loader2 className="w-4 h-4 animate-spin" /> Memproses...</>
+              : <><CheckCircle className="w-4 h-4" /> Selesaikan ({selectedProsesIds.size} Bundle)</>
+            }
+          </button>
+        )}
       </div>
 
       <div className="space-y-4">
@@ -154,7 +215,15 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
               activeTab === 'antrian' ? 'bg-[#e5c17b] text-[#0D0E10]' : 'text-[#9aa0a6] hover:text-[#e8eaed]'
             }`}
           >
-            ANTRIAN <span className="ml-1 opacity-50">({antrianData.length})</span>
+            ANTRIAN <span className="ml-1 opacity-50">({antrianBelum.length})</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('sedang_proses')}
+            className={`px-6 py-2 rounded-lg text-xs font-bold transition-all ${
+              activeTab === 'sedang_proses' ? 'bg-[#e5c17b] text-[#0D0E10]' : 'text-[#9aa0a6] hover:text-[#e8eaed]'
+            }`}
+          >
+            SEDANG PROSES <span className="ml-1 opacity-50">({antrianProses.length})</span>
           </button>
           <button
             onClick={() => setActiveTab('selesai')}
@@ -183,7 +252,7 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
                       <TableHeader className="w-12 text-center">
                         <input 
                           type="checkbox" 
-                          checked={selectedBundleIds.size === antrianData.length && antrianData.length > 0}
+                          checked={selectedBundleIds.size === antrianBelum.length && antrianBelum.length > 0}
                           onChange={toggleSelectAll}
                           className="accent-[#e5c17b] w-4 h-4 rounded border-[#2A2D31] cursor-pointer"
                         />
@@ -195,27 +264,25 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
                       <TableHeader>Barcode</TableHeader>
                       <TableHeader>QTY</TableHeader>
                       <TableHeader>Status</TableHeader>
-                      <TableHeader>Aksi</TableHeader>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#2A2D31]">
-                    {antrianData.length === 0 ? (
+                    {antrianBelum.length === 0 ? (
                       <tr>
-                        <td colSpan={9} className="px-4 py-12 text-center text-[#9aa0a6]">
+                        <td colSpan={8} className="px-4 py-12 text-center text-[#9aa0a6]">
                           <Package className="w-8 h-8 mx-auto mb-2 opacity-20" />
                           Tidak ada antrian di tahap jahit
                         </td>
                       </tr>
                     ) : (
-                      antrianData.map((item, idx) => (
+                      antrianBelum.map((item, idx) => (
                         <tr key={item.id} className="hover:bg-[#2A2D31]/40 transition-colors">
                           <td className="px-4 py-3 text-center">
                             <input 
                               type="checkbox" 
                               checked={selectedBundleIds.has(item.id)}
                               onChange={() => toggleSelectBundle(item.id)}
-                              disabled={((item as any).status_tahap?.['jahit'])?.status === 'terima'}
-                              className="accent-[#e5c17b] w-4 h-4 rounded border-[#2A2D31] cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                              className="accent-[#e5c17b] w-4 h-4 rounded border-[#2A2D31] cursor-pointer"
                             />
                           </td>
                           <td className="px-4 py-3 text-xs font-bold text-[#9aa0a6]">
@@ -236,13 +303,79 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
                           <td className="px-4 py-3">
                             <StageStatusBadge status="menunggu" />
                           </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : activeTab === 'sedang_proses' ? (
+            <div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm border-collapse">
+                  <thead>
+                    <tr>
+                      <TableHeader className="w-12 text-center">
+                        <input 
+                          type="checkbox" 
+                          checked={selectedProsesIds.size === antrianProses.length && antrianProses.length > 0}
+                          onChange={toggleSelectAllProses}
+                          className="accent-[#e5c17b] w-4 h-4 rounded border-[#2A2D31] cursor-pointer"
+                        />
+                      </TableHeader>
+                      <TableHeader>No.</TableHeader>
+                      <TableHeader>No. PO</TableHeader>
+                      <TableHeader>Artikel</TableHeader>
+                      <TableHeader>Warna / Size</TableHeader>
+                      <TableHeader>Barcode</TableHeader>
+                      <TableHeader>QTY</TableHeader>
+                      <TableHeader>Karyawan</TableHeader>
+                      <TableHeader>Aksi</TableHeader>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#2A2D31]">
+                    {antrianProses.length === 0 ? (
+                      <tr>
+                        <td colSpan={9} className="px-4 py-12 text-center text-[#9aa0a6]">
+                          <Package className="w-8 h-8 mx-auto mb-2 opacity-20" />
+                          Tidak ada bundle yang sedang diproses
+                        </td>
+                      </tr>
+                    ) : (
+                      antrianProses.map((item, idx) => (
+                        <tr key={item.id} className="hover:bg-[#2A2D31]/40 transition-colors">
+                          <td className="px-4 py-3 text-center">
+                            <input 
+                              type="checkbox" 
+                              checked={selectedProsesIds.has(item.id)}
+                              onChange={() => toggleSelectProses(item.id)}
+                              className="accent-[#e5c17b] w-4 h-4 rounded border-[#2A2D31] cursor-pointer"
+                            />
+                          </td>
+                          <td className="px-4 py-3 text-xs font-bold text-[#9aa0a6]">
+                            {idx + 1}
+                          </td>
                           <td className="px-4 py-3">
-                            {((item as any).status_tahap?.['jahit'])?.status === 'terima' && (
-                              <button onClick={() => handlePrintUlang(item)}
-                                className="flex items-center gap-1 text-[10px] font-bold text-[#9aa0a6] hover:text-[#e5c17b] border border-[#2A2D31] px-2 py-1 rounded-lg transition-colors">
-                                <Printer className="w-3 h-3" /> Print Ulang
-                              </button>
-                            )}
+                            <span className="font-mono font-bold text-[#e5c17b]">{item.no_po}</span>
+                            <div className="text-[10px] text-[#9aa0a6]">{item.klien_nama}</div>
+                          </td>
+                          <td className="px-4 py-3 font-medium text-[#e8eaed]">{item.model_nama ?? '-'}</td>
+                          <td className="px-4 py-3 text-[#9aa0a6]">
+                            {item.warna} <span className="mx-1">/</span> {item.size}
+                          </td>
+                          <td className="px-4 py-3 font-mono text-xs text-[#9aa0a6]">{item.barcode}</td>
+                          <td className="px-4 py-3 font-mono text-[#e8eaed]">
+                            {item.qty_per_bundle} <span className="text-[10px] text-[#9aa0a6]">pcs</span>
+                          </td>
+                          <td className="px-4 py-3 text-[#e8eaed] text-xs font-medium">
+                            {karyawanList.find(k => k.id === ((item as any).status_tahap?.['jahit'])?.karyawan_id)?.nama ?? '-'}
+                          </td>
+                          <td className="px-4 py-3">
+                            <button onClick={() => handlePrintUlang(item)}
+                              className="flex items-center gap-1 text-[10px] font-bold text-[#9aa0a6] hover:text-[#e5c17b] border border-[#2A2D31] px-2 py-1 rounded-lg transition-colors">
+                              <Printer className="w-3 h-3" /> Print Ulang
+                            </button>
                           </td>
                         </tr>
                       ))

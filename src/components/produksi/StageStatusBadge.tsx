@@ -7,7 +7,7 @@ interface Props {
 export default function StageStatusBadge({ status }: Props) {
   const configs = {
     menunggu: {
-      text: 'Menunggu',
+      text: 'Menunggu Scan',
       className: 'bg-gray-400/15 text-gray-400 border-gray-400/30',
     },
     sedang_proses: {

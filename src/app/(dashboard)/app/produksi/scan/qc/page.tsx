@@ -21,7 +21,7 @@ export default async function ScanQCPage() {
         <ScanSimpleClient
           tahap="qc"
           tahapLabel="QC"
-          mode="lanjut"
+          mode="single"
         />
         <StageListSectionContainer
           tahap="qc"

@@ -21,7 +21,7 @@ export default async function ScanSteamPage() {
         <ScanSimpleClient
           tahap="steam"
           tahapLabel="Steam"
-          mode="lanjut"
+          mode="single"
         />
         <StageListSectionContainer
           tahap="steam"

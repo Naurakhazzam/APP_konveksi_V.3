@@ -21,7 +21,7 @@ export default async function ScanLubangKancingPage() {
         <ScanSimpleClient
           tahap="lubang_kancing"
           tahapLabel="Lubang Kancing"
-          mode="lanjut"
+          mode="single"
         />
         <StageListSectionContainer
           tahap="lubang_kancing"

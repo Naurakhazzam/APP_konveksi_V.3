@@ -46,13 +46,14 @@ type ScanState =
 interface Props {
   tahap: TahapKey;
   tahapLabel: string;
-  mode?: 'lanjut' | 'standard';
+  mode?: 'lanjut' | 'standard' | 'single';
 }
 
 export default function ScanSimpleClient({ tahap, tahapLabel, mode = 'lanjut' }: Props) {
   const router = useRouter();
   const isLanjutMode = mode === 'lanjut';
   const isStandardMode = mode === 'standard';
+  const isSingleMode = mode === 'single';
   const [state, setState] = useState<ScanState>({ phase: 'IDLE' });
   const [barcode, setBarcode] = useState('');
   const [qty, setQty] = useState(0);
@@ -222,6 +223,48 @@ export default function ScanSimpleClient({ tahap, tahapLabel, mode = 'lanjut' }:
       });
       toast.success(`Proses ${tahapLabel} dicatat`);
       setState({ phase: 'RESULT', gajiLedgerId: result.gaji_entry_id, upah: result.upah_nominal });
+    } catch (err: any) {
+      toast.error(err.message || 'Gagal proses');
+      setState({ phase: 'LOADED', bundle });
+    }
+  };
+
+  const handleSingle = async (alasan_qty_id?: string) => {
+    if (state.phase !== 'LOADED') return;
+    const bundle = state.bundle;
+    const qtyTerima = bundle.qty_per_bundle;
+
+    if (qty < qtyTerima && !alasan_qty_id) {
+      setShowModalAlasan(true);
+      return;
+    }
+
+    setState({ phase: 'SUBMITTING', bundle });
+    try {
+      // Step 1: terima tahap ini (auto-close prev tahap)
+      await scanLanjutTahap({
+        barcode: bundle.barcode,
+        tahap_baru: tahap,
+        karyawan_id: '',
+        qty: qty,
+      });
+      // Step 2: langsung selesai tahap ini
+      const result = await scanSelesai({
+        barcode: bundle.barcode,
+        tahap: tahap,
+        karyawan_id: null,
+        qty: qty,
+        catatan: undefined,
+        alasan_qty_id: alasan_qty_id ?? null,
+        tenant_id: 'STX-001',
+      });
+      if (result.is_qty_lebih) {
+        setState({ phase: 'RESULT', gajiLedgerId: result.gaji_entry_id, upah: result.upah_nominal });
+        setShowToastQtyLebih(true);
+      } else {
+        toast.success(`${tahapLabel} selesai`);
+        setState({ phase: 'RESULT', gajiLedgerId: result.gaji_entry_id, upah: result.upah_nominal });
+      }
     } catch (err: any) {
       toast.error(err.message || 'Gagal proses');
       setState({ phase: 'LOADED', bundle });
@@ -448,7 +491,15 @@ export default function ScanSimpleClient({ tahap, tahapLabel, mode = 'lanjut' }:
                     >
                         Batal
                     </button>
-                    {isLanjutMode ? (
+                    {isSingleMode ? (
+                        <button
+                            onClick={() => handleSingle()}
+                            className="px-10 py-4 rounded-2xl bg-[#e5c17b] hover:bg-[#d4b16a] text-[#0D0E10] text-xs font-black uppercase tracking-widest shadow-xl transition-all flex items-center justify-center gap-2"
+                        >
+                            <CheckCircle2 className="w-4 h-4" />
+                            Selesaikan {tahapLabel}
+                        </button>
+                    ) : isLanjutMode ? (
                         <button
                             onClick={handleLanjut}
                             className="px-10 py-4 rounded-2xl bg-[#e5c17b] hover:bg-[#d4b16a] text-[#0D0E10] text-xs font-black uppercase tracking-widest shadow-xl shadow-[#e5c17b]/10 transition-all flex items-center justify-center gap-2"
@@ -534,7 +585,11 @@ export default function ScanSimpleClient({ tahap, tahapLabel, mode = 'lanjut' }:
         isOpen={showModalAlasan}
         qtyTerima={state.phase === 'LOADED' ? (state.bundle.status_tahap?.[tahap]?.qty_terima ?? state.bundle.qty_per_bundle) : 0}
         qtyInput={qty}
-        onConfirm={(id) => { setShowModalAlasan(false); handleSelesai(id); }}
+        onConfirm={(id) => {
+          setShowModalAlasan(false);
+          if (isSingleMode) handleSingle(id);
+          else handleSelesai(id);
+        }}
         onCancel={() => setShowModalAlasan(false)}
       />
       <ToastQtyLebih show={showToastQtyLebih} onClose={() => setShowToastQtyLebih(false)} />
