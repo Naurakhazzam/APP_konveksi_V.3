@@ -21,7 +21,7 @@ export default async function ScanPackingPage() {
         <ScanSimpleClient
           tahap="packing"
           tahapLabel="Packing"
-          mode="standard"
+          mode="lanjut"
         />
         <StageListSectionContainer
           tahap="packing"
