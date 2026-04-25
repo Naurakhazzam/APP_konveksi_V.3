@@ -173,6 +173,7 @@ export interface AntrianJahitBundle {
   size: string;
   qty_per_bundle: number;
   po_item_id: string;
+  status_tahap: Record<string, { status?: string; karyawan_id?: string; qty_terima?: number }>;
 }
 
 export async function getAntrianJahit(): Promise<AntrianJahitBundle[]> {
@@ -193,7 +194,7 @@ export async function getAntrianJahit(): Promise<AntrianJahitBundle[]> {
   if (error) throw new Error(error.message);
 
   const filtered = (data ?? []).filter((b: any) => {
-    return b.status_tahap?.cutting?.status === 'selesai' && !b.status_tahap?.jahit;
+    return b.status_tahap?.cutting?.status === 'selesai' && b.status_tahap?.jahit?.status !== 'selesai';
   });
 
   const result: AntrianJahitBundle[] = filtered.map((b: any) => {
@@ -213,6 +214,7 @@ export async function getAntrianJahit(): Promise<AntrianJahitBundle[]> {
       size: poItem?.size ?? '',
       qty_per_bundle: poItem?.qty_per_bundle ?? 0,
       po_item_id: b.po_item_id,
+      status_tahap: b.status_tahap ?? {},
     };
   });
 
