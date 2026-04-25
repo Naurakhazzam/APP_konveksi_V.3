@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { type AntrianJahitBundle } from '@/lib/actions/produksi/scan.actions';
 import { getSelesaiPerTahap, type SelesaiBundleItem } from '@/lib/actions/produksi/stage-bundles.actions';
 import StageStatusBadge from '@/components/produksi/StageStatusBadge';
@@ -19,18 +20,25 @@ interface Props {
 }
 
 export default function JahitListClient({ initialAntrian, initialSelesai, karyawanList }: Props) {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<'antrian' | 'sedang_proses' | 'selesai'>('antrian');
   
-  // Antrian Data (Not Paginated)
-  const [antrianData, setAntrianData] = useState<AntrianJahitBundle[]>(initialAntrian);
-  const antrianBelum = antrianData.filter(b => !(b as any).status_tahap?.['jahit']);
-  const antrianProses = antrianData.filter(b => ((b as any).status_tahap?.['jahit'])?.status === 'terima');
-  
+  // Antrian Data — pakai props langsung agar terupdate saat router.refresh()
+  const antrianBelum = initialAntrian.filter(b => !(b as any).status_tahap?.['jahit']);
+  const antrianProses = initialAntrian.filter(b => ((b as any).status_tahap?.['jahit'])?.status === 'terima');
+
   // Selesai Data (Paginated)
   const [selesaiData, setSelesaiData] = useState<SelesaiBundleItem[]>(initialSelesai.data);
   const [selesaiTotal, setSelesaiTotal] = useState(initialSelesai.total);
   const [selesaiPage, setSelesaiPage] = useState(1);
   const pageSize = 20;
+
+  // Sync selesai data saat server refresh
+  useEffect(() => {
+    setSelesaiData(initialSelesai.data);
+    setSelesaiTotal(initialSelesai.total);
+    setSelesaiPage(1);
+  }, [initialSelesai]);
 
   const [printUlangData, setPrintUlangData] = useState<KartuBundle[] | null>(null);
 
@@ -43,7 +51,7 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
   const handleSerahTerimaSuccess = () => {
     setShowModalSerahTerima(false);
     setSelectedBundleIds(new Set());
-    window.location.reload();
+    router.refresh();
   };
 
   const handlePrintUlang = async (bundle: AntrianJahitBundle) => {
@@ -99,7 +107,7 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
     setIsSelesaikanLoading(false);
     setSelectedProsesIds(new Set());
     if (berhasil > 0) toast.success(`${berhasil} bundle berhasil diselesaikan`);
-    if (gagal === 0) window.location.reload();
+    if (gagal === 0) router.refresh();
   };
 
   const handleSelesaiPageChange = async (newPage: number) => {

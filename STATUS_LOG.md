@@ -28,3 +28,9 @@ Berikut adalah ringkasan perubahan komprehensif (Phase 1-5) yang telah dilakukan
 - **Auto-fill & Read-Only Karyawan:** Di dalam scanner `ScanJahitClient.tsx`, jika bundle yang di-scan sudah berstatus `terima` di tahap jahit (artinya sudah di-assign via serah terima masal), maka karyawan yang bersangkutan akan terisi otomatis dan ditampilkan sebagai teks "read-only" agar supervisor tidak perlu memilih ulang karyawan tersebut.
 - **Single Scan Flow:** Proses scan individual yang belum di-'terima' tetap dapat berjalan normal (Scan -> Pilih Karyawan -> Terima Jahit -> Approve -> Selesai).
 - **Hapus Tombol Print Single:** Menghapus tombol "Print" dari `ModalSerahTerima.tsx` (single scan) karena saat ini pencetakan kartu kerja difokuskan melalui antrian (Modal Serah Terima Jahit masal).
+
+### Phase 6: Mode Scan Atomik & Penjahit Otomatis (Hengky)
+- **Mode 'single' di ScanSimpleClient:** Menambahkan mode baru di komponen scanner yang memungkinkan proses "Terima" dan "Selesai" dilakukan dalam satu langkah atomik. Sangat berguna untuk tahapan pasca-jahit yang sifatnya pengerjaan cepat.
+- **Implementasi Tahap Akhir:** Menerapkan mode `single` pada tahapan: Lubang Kancing, Buang Benang, QC, dan Steam.
+- **Auto-assign Penjahit (Hengky):** Melakukan otomatisasi pencarian data karyawan bernama "HENGKY" pada 4 tahapan di atas, dan mengirimkan ID-nya secara otomatis ke komponen scanner sehingga operator tidak perlu memilih karyawan lagi secara manual.
+

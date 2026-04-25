@@ -14,14 +14,13 @@ import {
     scanSelesai,
     scanLanjutTahap 
 } from '@/lib/actions/produksi/scan-mutations.actions';
-import { 
-    Search, 
-    Loader2, 
-    Hash, 
-    ChevronRight, 
-    CheckCircle2, 
+import {
+    Search,
+    Loader2,
+    Hash,
+    ChevronRight,
+    CheckCircle2,
     RefreshCcw,
-    AlertCircle,
     Info,
     ArrowRight,
     Package,
@@ -47,9 +46,10 @@ interface Props {
   tahap: TahapKey;
   tahapLabel: string;
   mode?: 'lanjut' | 'standard' | 'single';
+  karyawanId?: string;
 }
 
-export default function ScanSimpleClient({ tahap, tahapLabel, mode = 'lanjut' }: Props) {
+export default function ScanSimpleClient({ tahap, tahapLabel, mode = 'lanjut', karyawanId }: Props) {
   const router = useRouter();
   const isLanjutMode = mode === 'lanjut';
   const isStandardMode = mode === 'standard';
@@ -59,7 +59,6 @@ export default function ScanSimpleClient({ tahap, tahapLabel, mode = 'lanjut' }:
   const [qty, setQty] = useState(0);
   const [showModalAlasan, setShowModalAlasan] = useState(false);
   const [showToastQtyLebih, setShowToastQtyLebih] = useState(false);
-  const [pendingAlasanCallback, setPendingAlasanCallback] = useState<((id: string) => void) | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Auto-focus input on mount and after reset
@@ -245,14 +244,14 @@ export default function ScanSimpleClient({ tahap, tahapLabel, mode = 'lanjut' }:
       await scanLanjutTahap({
         barcode: bundle.barcode,
         tahap_baru: tahap,
-        karyawan_id: '',
+        karyawan_id: karyawanId ?? '',
         qty: qty,
       });
       // Step 2: langsung selesai tahap ini
       const result = await scanSelesai({
         barcode: bundle.barcode,
         tahap: tahap,
-        karyawan_id: null,
+        karyawan_id: karyawanId ?? null,
         qty: qty,
         catatan: undefined,
         alasan_qty_id: alasan_qty_id ?? null,
@@ -265,6 +264,7 @@ export default function ScanSimpleClient({ tahap, tahapLabel, mode = 'lanjut' }:
         toast.success(`${tahapLabel} selesai`);
         setState({ phase: 'RESULT', gajiLedgerId: result.gaji_entry_id, upah: result.upah_nominal });
       }
+      router.refresh();
     } catch (err: any) {
       toast.error(err.message || 'Gagal proses');
       setState({ phase: 'LOADED', bundle });
