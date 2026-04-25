@@ -18,12 +18,6 @@ export interface POCuttingItem {
   start_time: string | null;
 }
 
-export interface PemakaianBahanItem {
-  po_id: string;
-  inventory_item_id: string;
-  qty_pakai: number;
-}
-
 export interface StokWarning {
   item_nama: string;
   qty_kurang: number;
@@ -33,10 +27,40 @@ export interface StokWarning {
 export interface SelesaiCuttingResult {
   success: boolean;
   total_qty: number;
+  partial_count: number;
   stok_warnings: StokWarning[];
   error?: string;
 }
 
+// ─ Input type untuk mulaiCuttingBatch
+export interface MulaiBundleInput {
+  bundle_id: string;
+}
+
+// ─ Input type untuk selesaiCuttingBatch
+export interface BundleQtyInput {
+  bundle_id: string;
+  qty_aktual: number;
+}
+
+export interface PemakaianInput {
+  inventory_item_id: string;
+  rate_per_pcs: number;
+  total_qty_artikel: number;
+}
+
+// ─ Type untuk getPendingCuttingBundles
+export interface PendingBundle {
+  id: string;
+  barcode: string;
+  no_po: string;
+  klien_nama: string;
+  warna: string;
+  size: string;
+  qty_order: number;
+  qty_aktual: number;
+  tenant_id: string;
+}
 
 // ─── HELPER ──────────────────────────────────────────────────────────────────
 
@@ -115,15 +139,17 @@ export async function getPOCuttingList(): Promise<POCuttingItem[]> {
   for (const group of poMap.values()) {
     const { bundles } = group;
 
-    // Tentukan status cutting PO
+    // Tentukan status cutting PO — partial masuk hitungan progress
     const cuttingStatuses = bundles.map(b => {
-      const cutting = b.status_tahap?.cutting as { status?: string; waktu_terima?: string } | undefined;
+      const cutting = b.status_tahap?.cutting as { status?: string } | undefined;
       return cutting?.status ?? null;
     });
 
     const allNull     = cuttingStatuses.every(s => s === null);
     const allSelesai  = cuttingStatuses.every(s => s === 'selesai');
-    const anyProgress = cuttingStatuses.some(s => s === 'progress' || s === 'terima');
+    const anyProgress = cuttingStatuses.some(s =>
+      s === 'progress' || s === 'terima' || s === 'partial'
+    );
 
     const status: 'menunggu' | 'progress' | 'selesai' =
       allSelesai  ? 'selesai' :
@@ -134,7 +160,6 @@ export async function getPOCuttingList(): Promise<POCuttingItem[]> {
     // Lewati PO yang sudah selesai
     if (status === 'selesai') continue;
 
-    // Ambil start_time dari bundle (key 'start_time' sesuai RPC mulai_cutting_batch)
     const startBundle = bundles.find(b => b.status_tahap?.cutting?.start_time);
     const start_time = startBundle?.status_tahap?.cutting?.start_time ?? null;
 
@@ -167,16 +192,16 @@ export async function getPOCuttingList(): Promise<POCuttingItem[]> {
 // ─── FUNGSI 2: mulaiCuttingBatch ─────────────────────────────────────────────
 
 export async function mulaiCuttingBatch(
-  po_ids: string[]
+  bundle_ids: string[]
 ): Promise<{ success: boolean; jumlah_bundle: number; error?: string }> {
   try {
     const user_id = await resolveUserId();
     const supabase = await createClient();
 
     const { data, error } = await supabase.rpc('mulai_cutting_batch', {
-      p_po_ids:    po_ids,
-      p_user_id:   user_id,
-      p_tenant_id: TENANT_ID,
+      p_bundle_ids: bundle_ids,
+      p_user_id:    user_id,
+      p_tenant_id:  TENANT_ID,
     });
 
     if (error) return { success: false, jumlah_bundle: 0, error: error.message };
@@ -194,25 +219,26 @@ export async function mulaiCuttingBatch(
 // ─── FUNGSI 3: selesaiCuttingBatch ───────────────────────────────────────────
 
 export async function selesaiCuttingBatch(
-  po_ids: string[],
-  pemakaian: PemakaianBahanItem[]
+  bundle_qty: BundleQtyInput[],
+  pemakaian: PemakaianInput[]
 ): Promise<SelesaiCuttingResult> {
   try {
     const user_id = await resolveUserId();
     const supabase = await createClient();
 
     const { data, error } = await supabase.rpc('selesai_cutting_batch', {
-      p_po_ids:    po_ids,
-      p_pemakaian: pemakaian,
-      p_user_id:   user_id,
-      p_tenant_id: TENANT_ID,
+      p_bundle_qty: bundle_qty,
+      p_pemakaian:  pemakaian,
+      p_user_id:    user_id,
+      p_tenant_id:  TENANT_ID,
     });
 
-    if (error) return { success: false, total_qty: 0, stok_warnings: [], error: error.message };
+    if (error) return { success: false, total_qty: 0, partial_count: 0, stok_warnings: [], error: error.message };
 
     const result = data as {
       success?: boolean;
       total_qty?: number;
+      partial_count?: number;
       stok_warnings?: StokWarning[];
     } | null;
 
@@ -220,14 +246,92 @@ export async function selesaiCuttingBatch(
     return {
       success:       result?.success ?? true,
       total_qty:     result?.total_qty ?? 0,
+      partial_count: result?.partial_count ?? 0,
       stok_warnings: result?.stok_warnings ?? [],
     };
   } catch (e: any) {
-    return { success: false, total_qty: 0, stok_warnings: [], error: e.message ?? 'Terjadi kesalahan' };
+    return { success: false, total_qty: 0, partial_count: 0, stok_warnings: [], error: e.message ?? 'Terjadi kesalahan' };
   }
 }
 
-// ─── FUNGSI 4: getInventoryItemsForCutting ───────────────────────────────────
+// ─── FUNGSI 4: closeBundleCutting ────────────────────────────────────────────
+
+export async function closeBundleCutting(
+  bundle_id: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const user_id = await resolveUserId();
+    const supabase = await createClient();
+
+    const { error } = await supabase.rpc('close_bundle_cutting', {
+      p_bundle_id:  bundle_id,
+      p_user_id:    user_id,
+      p_tenant_id:  TENANT_ID,
+    });
+
+    if (error) return { success: false, error: error.message };
+
+    revalidatePath('/app/produksi/antrian-cutting');
+    return { success: true };
+  } catch (e: any) {
+    return { success: false, error: e.message ?? 'Terjadi kesalahan' };
+  }
+}
+
+// ─── FUNGSI 5: getPendingCuttingBundles ──────────────────────────────────────
+
+export async function getPendingCuttingBundles(): Promise<PendingBundle[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from('bundle')
+    .select(`
+      id,
+      barcode,
+      tenant_id,
+      status_tahap,
+      po:po_id (
+        no_po,
+        klien:klien_id ( nama )
+      ),
+      po_item:po_item_id (
+        warna,
+        size,
+        qty_per_bundle
+      )
+    `)
+    .eq('tenant_id', TENANT_ID)
+    .order('created_at', { ascending: true });
+
+  if (error) throw new Error(`Gagal fetch pending cutting: ${error.message}`);
+
+  const result: PendingBundle[] = [];
+
+  for (const raw of (data ?? []) as any[]) {
+    const cuttingStatus = raw.status_tahap?.cutting?.status;
+    if (cuttingStatus !== 'partial') continue;
+
+    const po = Array.isArray(raw.po) ? raw.po[0] : raw.po;
+    const klien = Array.isArray(po?.klien) ? po.klien[0] : po?.klien;
+    const poItem = Array.isArray(raw.po_item) ? raw.po_item[0] : raw.po_item;
+
+    result.push({
+      id:          raw.id,
+      barcode:     raw.barcode,
+      tenant_id:   raw.tenant_id,
+      no_po:       po?.no_po ?? '-',
+      klien_nama:  klien?.nama ?? '-',
+      warna:       poItem?.warna ?? '-',
+      size:        poItem?.size ?? '-',
+      qty_order:   poItem?.qty_per_bundle ?? 0,
+      qty_aktual:  raw.status_tahap?.cutting?.qty_aktual ?? 0,
+    });
+  }
+
+  return result;
+}
+
+// ─── FUNGSI 6: getInventoryItemsForCutting ───────────────────────────────────
 // Mengembalikan semua item inventory sebagai pilihan input manual pemakaian bahan cutting
 
 export interface InventoryItemOption {
@@ -256,7 +360,7 @@ export async function getInventoryItemsForCutting(): Promise<InventoryItemOption
   }));
 }
 
-// ─── FUNGSI 5: getBundlesForPO ───────────────────────────────────────────────
+// ─── FUNGSI 7: getBundlesForPO ───────────────────────────────────────────────
 
 export interface BundleDetailItem {
   id: string;
@@ -265,6 +369,7 @@ export interface BundleDetailItem {
   size: string;
   qty_per_bundle: number;
   cutting_status: string | null;
+  qty_aktual: number | null;
 }
 
 export async function getBundlesForPO(po_id: string): Promise<BundleDetailItem[]> {
@@ -290,14 +395,16 @@ export async function getBundlesForPO(po_id: string): Promise<BundleDetailItem[]
   const result: BundleDetailItem[] = (data ?? []).map((b: any) => {
     const poItem = Array.isArray(b.po_item) ? b.po_item[0] : b.po_item;
     const cuttingStatus = b.status_tahap?.cutting?.status ?? null;
+    const qtyAktual = b.status_tahap?.cutting?.qty_aktual ?? null;
 
     return {
-      id: b.id,
-      barcode: b.barcode,
-      warna: poItem?.warna ?? '-',
-      size: poItem?.size ?? '-',
+      id:             b.id,
+      barcode:        b.barcode,
+      warna:          poItem?.warna ?? '-',
+      size:           poItem?.size ?? '-',
       qty_per_bundle: poItem?.qty_per_bundle ?? 0,
       cutting_status: cuttingStatus,
+      qty_aktual:     qtyAktual !== null ? Number(qtyAktual) : null,
     };
   });
 
@@ -308,4 +415,41 @@ export async function getBundlesForPO(po_id: string): Promise<BundleDetailItem[]
   });
 
   return result;
+}
+
+// ─── FUNGSI 8: getBundlesByIds ────────────────────────────────────────────────
+
+export interface BundleForModal {
+  id: string;
+  barcode: string;
+  warna: string;
+  size: string;
+  qty_per_bundle: number;
+}
+
+export async function getBundlesByIds(bundle_ids: string[]): Promise<BundleForModal[]> {
+  if (!bundle_ids.length) return [];
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from('bundle')
+    .select(`
+      id, barcode,
+      po_item:po_item_id ( warna, size, qty_per_bundle )
+    `)
+    .in('id', bundle_ids)
+    .eq('tenant_id', TENANT_ID);
+
+  if (error) throw new Error(`Gagal fetch bundle: ${error.message}`);
+
+  return (data ?? []).map((b: any) => {
+    const pi = Array.isArray(b.po_item) ? b.po_item[0] : b.po_item;
+    return {
+      id:             b.id,
+      barcode:        b.barcode,
+      warna:          pi?.warna ?? '-',
+      size:           pi?.size ?? '-',
+      qty_per_bundle: pi?.qty_per_bundle ?? 0,
+    };
+  });
 }
