@@ -468,7 +468,7 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
 
       {showModalSerahTerima && (
         <ModalSerahTerimaJahit
-          selectedBundles={antrianData.filter(b => selectedBundleIds.has(b.id))}
+          selectedBundles={antrianBelum.filter(b => selectedBundleIds.has(b.id))}
           karyawanList={karyawanList}
           onSuccess={handleSerahTerimaSuccess}
           onClose={() => setShowModalSerahTerima(false)}

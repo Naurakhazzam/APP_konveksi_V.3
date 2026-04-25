@@ -8,13 +8,13 @@ import {
   type KasbonItem 
 } from '@/lib/actions/penggajian/penggajian.actions';
 import { Button } from '@/components/ui/button';
-import { 
-  Search, 
-  Printer, 
-  Loader2, 
-  RefreshCcw, 
-  ChevronLeft, 
-  FileText 
+import {
+  Search,
+  Printer,
+  Loader2,
+  ChevronLeft,
+  ChevronRight,
+  FileText
 } from 'lucide-react';
 import { toast } from 'sonner';
 import SlipPreview from './SlipPreview';
@@ -25,8 +25,7 @@ interface Props {
 
 export default function SlipGajiClient({ karyawanList }: Props) {
   const [selectedKaryawanId, setSelectedKaryawanId] = useState('');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+  const [weekOffset, setWeekOffset] = useState(0);
   const [loading, setLoading] = useState(false);
   
   // Data State
@@ -34,18 +33,31 @@ export default function SlipGajiClient({ karyawanList }: Props) {
   const [kasbonData, setKasbonData] = useState<KasbonItem[]>([]);
   const [hasGenerated, setHasGenerated] = useState(false);
 
-  const handleWeekPicker = () => {
+  const getWeekRange = (offset: number) => {
     const today = new Date();
-    const dayOfWeek = today.getDay();
+    const dayOfWeek = today.getDay(); // 0 = Sunday, 6 = Saturday
     const daysToLastSaturday = dayOfWeek === 6 ? 0 : dayOfWeek + 1;
+    
     const lastSaturday = new Date(today);
-    lastSaturday.setDate(today.getDate() - daysToLastSaturday);
+    lastSaturday.setDate(today.getDate() - daysToLastSaturday + (offset * 7));
+    
     const nextFriday = new Date(lastSaturday);
     nextFriday.setDate(lastSaturday.getDate() + 6);
-
-    setDateFrom(lastSaturday.toISOString().split('T')[0]);
-    setDateTo(nextFriday.toISOString().split('T')[0]);
+    
+    return {
+      from: lastSaturday.toISOString().split('T')[0],
+      to: nextFriday.toISOString().split('T')[0],
+      fromDateObj: lastSaturday,
+      toDateObj: nextFriday
+    };
   };
+
+  const { from: dateFrom, to: dateTo, fromDateObj, toDateObj } = getWeekRange(weekOffset);
+
+  const formatDateLabel = (date: Date) => {
+    return date.toLocaleDateString('id-ID', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' });
+  };
+  const periodLabel = `${formatDateLabel(fromDateObj)} – ${formatDateLabel(toDateObj)}`;
 
   const handleGenerate = async () => {
     if (!selectedKaryawanId || !dateFrom || !dateTo) {
@@ -109,31 +121,33 @@ export default function SlipGajiClient({ karyawanList }: Props) {
           </select>
         </div>
 
-        <div className="space-y-1.5 flex-1 min-w-[150px]">
-          <label className="text-[10px] font-bold text-[#9aa0a6] uppercase tracking-widest">Dari</label>
-          <input 
-            type="date"
-            value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
-            className="w-full h-11 px-3 rounded-lg bg-[#16181A] border border-[#2A2D31] text-sm text-[#e8eaed] focus:ring-1 focus:ring-[#e5c17b] outline-none"
-          />
-        </div>
-
-        <div className="space-y-1.5 flex-1 min-w-[150px]">
-          <label className="text-[10px] font-bold text-[#9aa0a6] uppercase tracking-widest">Sampai</label>
-          <input 
-            type="date"
-            value={dateTo}
-            onChange={(e) => setDateTo(e.target.value)}
-            className="w-full h-11 px-3 rounded-lg bg-[#16181A] border border-[#2A2D31] text-sm text-[#e8eaed] focus:ring-1 focus:ring-[#e5c17b] outline-none"
-          />
+        <div className="flex-1 flex flex-col min-w-[300px] space-y-1.5">
+          <label className="text-[10px] font-bold text-[#9aa0a6] uppercase tracking-widest">Periode</label>
+          <div className="flex items-center justify-between bg-[#16181A] border border-[#2A2D31] rounded-lg h-11 px-1">
+            <Button 
+              variant="ghost" 
+              onClick={() => setWeekOffset(prev => prev - 1)}
+              className="h-9 px-3 text-[#9aa0a6] hover:text-[#e8eaed] hover:bg-[#2A2D31]"
+            >
+              <ChevronLeft className="w-4 h-4 mr-1" />
+              Pekan Lalu
+            </Button>
+            <div className="text-xs font-bold text-[#e5c17b] tracking-wide px-2 text-center whitespace-nowrap">
+              {periodLabel}
+            </div>
+            <Button 
+              variant="ghost" 
+              onClick={() => setWeekOffset(prev => prev + 1)}
+              disabled={weekOffset === 0}
+              className="h-9 px-3 text-[#9aa0a6] hover:text-[#e8eaed] hover:bg-[#2A2D31] disabled:opacity-30"
+            >
+              Pekan Ini
+              <ChevronRight className="w-4 h-4 ml-1" />
+            </Button>
+          </div>
         </div>
 
         <div className="flex gap-2">
-          <Button onClick={handleWeekPicker} variant="outline" className="h-11 border-[#2A2D31] text-[#9aa0a6] hover:bg-[#2A2D31] hover:text-[#e5c17b]">
-            <RefreshCcw className="w-4 h-4 mr-2" />
-            Pekan Ini
-          </Button>
           <Button 
             onClick={handleGenerate} 
             disabled={loading}
