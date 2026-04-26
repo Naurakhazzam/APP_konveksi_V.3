@@ -1,9 +1,30 @@
-export default function LaporanPerPOPage() {
-  return (
-    <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
-      <div className="text-6xl">🚧</div>
-      <h1 className="text-2xl font-bold text-[#e8eaed]">Laporan Per PO</h1>
-      <p className="text-[#9aa0a6] text-sm">Sedang dalam pengerjaan</p>
-    </div>
-  );
+import { getLaporanPOList } from '@/lib/actions/keuangan/laporan-po.actions';
+import { PageWrapper } from '@/components/ui/PageWrapper';
+import LaporanPOClient from './LaporanPOClient';
+
+export const metadata = {
+  title: 'Laporan Per PO | Stitchlyx',
+  description: 'HPP Estimasi vs Aktual per Purchase Order',
+};
+
+export default async function LaporanPerPOPage() {
+  try {
+    const laporanList = await getLaporanPOList();
+    return (
+      <PageWrapper
+        title="Laporan Per PO"
+        subtitle="HPP Estimasi vs Aktual per Purchase Order"
+      >
+        <div className="mt-6">
+          <LaporanPOClient initialData={laporanList} />
+        </div>
+      </PageWrapper>
+    );
+  } catch (e) {
+    return (
+      <div className="p-8 text-red-400">
+        Error memuat data laporan: {String(e)}
+      </div>
+    );
+  }
 }
