@@ -32,12 +32,12 @@ export async function getLaporanPOList(filters?: {
   const { data: poData, error: poError } = await supabase
     .from('po')
     .select(`
-      id, no_po, tanggal,
+      id, no_po, tanggal_order,
       klien:klien_id(nama),
       po_item(hpp_estimasi, qty_order)
     `)
     .eq('tenant_id', TENANT_ID)
-    .order('tanggal', { ascending: false });
+    .order('tanggal_order', { ascending: false });
 
   if (poError) throw new Error(poError.message);
 
@@ -53,7 +53,7 @@ export async function getLaporanPOList(filters?: {
   // Step 3 — Hitung per PO di JavaScript
   const filteredData = (poData ?? []).filter((po: any) => {
     if (!filters?.bulan && !filters?.tahun) return true;
-    const d = new Date(po.tanggal);
+    const d = new Date(po.tanggal_order);
     if (filters.bulan && String(d.getMonth() + 1).padStart(2, '0') !== filters.bulan) return false;
     if (filters.tahun && String(d.getFullYear()) !== filters.tahun) return false;
     return true;
@@ -100,7 +100,7 @@ export async function getLaporanPOList(filters?: {
       po_id: po.id,
       no_po: po.no_po,
       klien_nama: (po.klien as any)?.nama ?? '-',
-      tanggal: po.tanggal,
+      tanggal: po.tanggal_order,
       total_qty,
       hpp_estimasi,
       biaya_bahan,
