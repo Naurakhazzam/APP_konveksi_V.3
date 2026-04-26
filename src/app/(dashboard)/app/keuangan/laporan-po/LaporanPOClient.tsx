@@ -71,6 +71,55 @@ export default function LaporanPOClient({ initialData }: Props) {
   const [filterTahun, setFilterTahun] = useState(String(new Date().getFullYear()));
   const [filtering, setFiltering] = useState(false);
 
+  // ─── SORT STATE ────────────────────────────────────────────────────────
+  const [sortConfig, setSortConfig] = useState<{ key: keyof POLaporanItem; direction: 'asc' | 'desc' } | null>(null);
+
+  const sortedData = React.useMemo(() => {
+    let sortableItems = [...data];
+    if (sortConfig !== null) {
+      sortableItems.sort((a, b) => {
+        if (a[sortConfig.key] < b[sortConfig.key]) {
+          return sortConfig.direction === 'asc' ? -1 : 1;
+        }
+        if (a[sortConfig.key] > b[sortConfig.key]) {
+          return sortConfig.direction === 'asc' ? 1 : -1;
+        }
+        return 0;
+      });
+    }
+    return sortableItems;
+  }, [data, sortConfig]);
+
+  const requestSort = (key: keyof POLaporanItem) => {
+    let direction: 'asc' | 'desc' = 'asc';
+    if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    } else if (sortConfig && sortConfig.key === key && sortConfig.direction === 'desc') {
+      setSortConfig(null);
+      return;
+    }
+    setSortConfig({ key, direction });
+  };
+
+  const SortableHeader = ({ label, sortKey, align = 'left' }: { label: string, sortKey: keyof POLaporanItem, align?: 'left' | 'right' | 'center' }) => {
+    const isActive = sortConfig?.key === sortKey;
+    return (
+      <TableHead 
+        className={`cursor-pointer select-none group transition-colors ${
+          isActive ? 'text-[#e8eaed]' : 'text-[#9aa0a6] hover:text-[#c0c6cc]'
+        }`}
+        onClick={() => requestSort(sortKey)}
+      >
+        <div className={`flex items-center gap-1 ${align === 'right' ? 'justify-end' : align === 'center' ? 'justify-center' : 'justify-start'}`}>
+          {label}
+          <span className={`text-[10px] font-mono ${isActive ? 'text-[#e5c17b]' : 'text-[#5f6368] group-hover:text-[#9aa0a6]'}`}>
+            {isActive && sortConfig.direction === 'desc' ? '↓' : '↑'}
+          </span>
+        </div>
+      </TableHead>
+    );
+  };
+
   // Detail modal state
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -227,25 +276,25 @@ export default function LaporanPOClient({ initialData }: Props) {
         <Table>
           <TableHeader className="bg-[#1A1C1E]">
             <TableRow className="border-[#2A2D31] hover:bg-transparent">
-              <TableHead className="text-[#9aa0a6]">No. PO</TableHead>
+              <SortableHeader label="No. PO" sortKey="no_po" />
               <TableHead className="text-[#9aa0a6]">Klien</TableHead>
-              <TableHead className="text-[#9aa0a6]">Tanggal</TableHead>
-              <TableHead className="text-[#9aa0a6] text-right">QTY</TableHead>
-              <TableHead className="text-[#9aa0a6] text-right">HPP Estimasi</TableHead>
-              <TableHead className="text-[#9aa0a6] text-right">HPP Aktual</TableHead>
-              <TableHead className="text-[#9aa0a6] text-right">Gap</TableHead>
+              <SortableHeader label="Tanggal" sortKey="tanggal" />
+              <SortableHeader label="QTY" sortKey="total_qty" align="right" />
+              <SortableHeader label="HPP Estimasi" sortKey="hpp_estimasi" align="right" />
+              <SortableHeader label="HPP Aktual" sortKey="hpp_aktual" align="right" />
+              <SortableHeader label="Gap" sortKey="gap" align="right" />
               <TableHead className="text-[#9aa0a6] text-center">Status</TableHead>
               <TableHead className="text-[#9aa0a6] w-20 text-center">Aksi</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {data.length === 0 ? (
+            {sortedData.length === 0 ? (
               <TableRow className="hover:bg-transparent border-[#2A2D31]">
                 <TableCell colSpan={9} className="h-32 text-center text-[#5f6368]">
                   Belum ada data PO
                 </TableCell>
               </TableRow>
-            ) : data.map(po => (
+            ) : sortedData.map(po => (
               <TableRow
                 key={po.po_id}
                 className={`border-[#2A2D31] ${ROW_BG[po.status]}`}
