@@ -180,7 +180,7 @@ export default function RingkasanClient({ initialData }: Props) {
                   color: '#e8eaed',
                   fontSize: 12,
                 }}
-                formatter={(v: number) => idrFmt(v)}
+                formatter={(v) => idrFmt(Number(v ?? 0))}
                 labelStyle={{ color: '#9aa0a6' }}
               />
               <Legend
