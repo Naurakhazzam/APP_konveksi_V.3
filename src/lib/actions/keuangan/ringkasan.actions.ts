@@ -47,12 +47,13 @@ export async function getRingkasanKeuangan(
   const supabase = await createClient();
 
   // ─── 1. Jurnal bulan berjalan ───
+  const lastDayCurrent = new Date(currentTahun, currentBulan, 0).getDate();
   const { data: jurnalBulanIni, error: jurnalErr } = await supabase
     .from('jurnal_entry')
     .select('jenis, nominal')
     .eq('tenant_id', TENANT_ID)
     .gte('tanggal', `${currentTahun}-${mm}-01`)
-    .lte('tanggal', `${currentTahun}-${mm}-31`);
+    .lte('tanggal', `${currentTahun}-${mm}-${String(lastDayCurrent).padStart(2, '0')}`);
 
   if (jurnalErr) throw new Error(jurnalErr.message);
 
@@ -88,12 +89,13 @@ export async function getRingkasanKeuangan(
   const firstMonth = months[0];
   const lastMonth = months[months.length - 1];
 
+  const lastDayOfRange = new Date(Number(lastMonth.yyyy), Number(lastMonth.mm), 0).getDate();
   const { data: jurnal6Bulan, error: tren6Err } = await supabase
     .from('jurnal_entry')
     .select('jenis, nominal, tanggal')
     .eq('tenant_id', TENANT_ID)
     .gte('tanggal', `${firstMonth.yyyy}-${firstMonth.mm}-01`)
-    .lte('tanggal', `${lastMonth.yyyy}-${lastMonth.mm}-31`);
+    .lte('tanggal', `${lastMonth.yyyy}-${lastMonth.mm}-${String(lastDayOfRange).padStart(2, '0')}`);
 
   if (tren6Err) throw new Error(tren6Err.message);
 

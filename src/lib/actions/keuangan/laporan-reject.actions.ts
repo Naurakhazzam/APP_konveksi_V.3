@@ -42,9 +42,10 @@ export async function getLaporanReject(filters?: {
 
   if (filters?.bulan && filters?.tahun) {
     const mm = filters.bulan.padStart(2, '0');
+    const lastDay = new Date(Number(filters.tahun), Number(mm), 0).getDate();
     query = query
       .gte('tanggal', `${filters.tahun}-${mm}-01`)
-      .lte('tanggal', `${filters.tahun}-${mm}-31`);
+      .lte('tanggal', `${filters.tahun}-${mm}-${String(lastDay).padStart(2, '0')}`);
   } else if (filters?.tahun) {
     query = query
       .gte('tanggal', `${filters.tahun}-01-01`)

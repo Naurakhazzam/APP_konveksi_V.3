@@ -41,6 +41,7 @@ export async function getLaporanBulan(
   const supabase = await createClient();
   const mm = bulan.padStart(2, '0');
 
+  const lastDay = new Date(Number(tahun), Number(mm), 0).getDate();
   const { data: jurnalData, error } = await supabase
     .from('jurnal_entry')
     .select(`
@@ -49,7 +50,7 @@ export async function getLaporanBulan(
     `)
     .eq('tenant_id', TENANT_ID)
     .gte('tanggal', `${tahun}-${mm}-01`)
-    .lte('tanggal', `${tahun}-${mm}-31`);
+    .lte('tanggal', `${tahun}-${mm}-${String(lastDay).padStart(2, '0')}`);
 
   if (error) throw new Error(error.message);
 

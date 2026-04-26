@@ -81,9 +81,10 @@ export async function getJurnalEntries(filters?: {
     const year = filters.tahun;
     if (filters?.bulan) {
       const month = filters.bulan.padStart(2, '0');
+      const lastDay = new Date(Number(year), Number(month), 0).getDate();
       query = query
         .gte('tanggal', `${year}-${month}-01`)
-        .lte('tanggal', `${year}-${month}-31`);
+        .lte('tanggal', `${year}-${month}-${String(lastDay).padStart(2, '0')}`);
     } else {
       query = query
         .gte('tanggal', `${year}-01-01`)
