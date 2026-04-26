@@ -112,6 +112,7 @@ const NAV_MENU = [
     children: [
       { label: 'Ringkasan',           path: '/app/keuangan/ringkasan' },
       { label: 'Jurnal Produksi',       path: '/app/keuangan/jurnal-produksi' },
+      { label: 'Buku Kas',              path: '/app/keuangan/buku-kas' },
       { label: 'Laporan Per PO',      path: '/app/keuangan/laporan-po' },
       { label: 'Setting Overhead',    path: '/app/keuangan/overhead-setting' },
       { label: 'Laporan Per Bulan',   path: '/app/keuangan/laporan-bulan' },
