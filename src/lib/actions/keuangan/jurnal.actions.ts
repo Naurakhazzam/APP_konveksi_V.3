@@ -19,6 +19,7 @@ export interface JurnalEntry {
   keterangan: string;
   qty: number | null;
   inventory_item_id: string | null;
+  tag_po_ids: string[];
   created_at: string;
 }
 
@@ -37,6 +38,7 @@ export interface AddJurnalEntryInput {
   keterangan: string;
   qty?: number;
   inventory_item_id?: string;
+  tag_po_ids?: string[];
 }
 
 // ─── FUNCTIONS ─────────────────────────────────────────────────────────────
@@ -63,6 +65,7 @@ export async function getJurnalEntries(filters?: {
       keterangan,
       qty,
       inventory_item_id,
+      tag_po_ids,
       created_at,
       kategori_trx:kategori_trx_id (nama)
     `)
@@ -104,6 +107,7 @@ export async function getJurnalEntries(filters?: {
     keterangan: item.keterangan,
     qty: item.qty != null ? Number(item.qty) : null,
     inventory_item_id: item.inventory_item_id ?? null,
+    tag_po_ids: Array.isArray(item.tag_po_ids) ? item.tag_po_ids : [],
     created_at: item.created_at,
   }));
 }
@@ -166,6 +170,9 @@ export async function addJurnalEntry(
     if (!input.inventory_item_id) {
       return { success: false, error: 'Item inventory wajib dipilih untuk jenis direct_bahan.' };
     }
+    if (!input.tag_po_ids || input.tag_po_ids.length === 0) {
+      return { success: false, error: 'Wajib pilih minimal 1 PO untuk pembelian bahan.' };
+    }
   }
 
   const profile = await getCurrentUserProfile();
@@ -186,7 +193,7 @@ export async function addJurnalEntry(
       keterangan: input.keterangan.trim(),
       qty: input.qty ?? null,
       inventory_item_id: input.inventory_item_id ?? null,
-      tag_po_ids: [],
+      tag_po_ids: input.tag_po_ids ?? [],
       tenant_id: TENANT_ID,
       created_by: profile.id,
     });
@@ -236,3 +243,21 @@ export async function deleteJurnalEntry(
   revalidatePath('/app/keuangan/jurnal-umum');
   return { success: true };
 }
+
+/**
+ * Ambil list PO aktif.
+ */
+export async function getPOList(): Promise<{ id: string; no_po: string }[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from('po')
+    .select('id, no_po')
+    .eq('tenant_id', TENANT_ID)
+    .order('created_at', { ascending: false });
+
+  if (error) throw new Error(error.message);
+
+  return data ?? [];
+}
+

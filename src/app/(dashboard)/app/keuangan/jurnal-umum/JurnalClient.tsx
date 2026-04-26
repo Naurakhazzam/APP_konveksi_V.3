@@ -62,6 +62,7 @@ const labelCls = 'block text-[10px] font-bold text-[#9aa0a6] uppercase tracking-
 interface Props {
   initialEntries: JurnalEntry[];
   kategoriList: KategoriTrxItem[];
+  poList: { id: string; no_po: string }[];
 }
 
 // ─── DEFAULT FORM ────────────────────────────────────────────────────────────
@@ -74,12 +75,20 @@ const defaultForm = {
   keterangan: '',
   no_faktur: '',
   qty: '',
+  tag_po_ids: [] as string[],
 };
 
 // ─── COMPONENT ───────────────────────────────────────────────────────────────
 
-export default function JurnalClient({ initialEntries, kategoriList }: Props) {
+export default function JurnalClient({ initialEntries, kategoriList, poList }: Props) {
   const router = useRouter();
+
+  // Map PO ID to no_po for quick lookup
+  const poMap = React.useMemo(() => {
+    const m: Record<string, string> = {};
+    poList.forEach(p => { m[p.id] = p.no_po; });
+    return m;
+  }, [poList]);
 
   // Entries & filter state
   const [entries, setEntries] = useState<JurnalEntry[]>(initialEntries);
@@ -140,6 +149,7 @@ export default function JurnalClient({ initialEntries, kategoriList }: Props) {
       keterangan: form.keterangan,
       no_faktur: form.no_faktur || undefined,
       qty: form.qty ? parseFloat(form.qty) : undefined,
+      tag_po_ids: form.tag_po_ids,
     });
     setSubmitting(false);
     if (!result.success) { toast.error(result.error || 'Gagal menambahkan'); return; }
@@ -233,6 +243,7 @@ export default function JurnalClient({ initialEntries, kategoriList }: Props) {
               <TableHead className="text-[#9aa0a6]">Tanggal</TableHead>
               <TableHead className="text-[#9aa0a6]">Kategori</TableHead>
               <TableHead className="text-[#9aa0a6]">Jenis</TableHead>
+              <TableHead className="text-[#9aa0a6]">Tag PO</TableHead>
               <TableHead className="text-[#9aa0a6]">Keterangan</TableHead>
               <TableHead className="text-[#9aa0a6]">No. Faktur</TableHead>
               <TableHead className="text-[#9aa0a6] text-right">Nominal</TableHead>
@@ -259,6 +270,19 @@ export default function JurnalClient({ initialEntries, kategoriList }: Props) {
                       <span className="inline-flex items-center rounded-full border border-sky-500/30 bg-sky-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-sky-400">
                         OTOMATIS
                       </span>
+                    )}
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <div className="flex flex-wrap gap-1 max-w-[150px]">
+                    {entry.tag_po_ids.length > 0 ? (
+                      entry.tag_po_ids.map(pid => (
+                        <span key={pid} className="bg-[#2A2D31] text-[#9aa0a6] text-[10px] px-1.5 py-0.5 rounded border border-[#3A3D41]">
+                          {poMap[pid] || '???'}
+                        </span>
+                      ))
+                    ) : (
+                      <span className="text-[#5f6368] text-xs">-</span>
                     )}
                   </div>
                 </TableCell>
@@ -300,7 +324,12 @@ export default function JurnalClient({ initialEntries, kategoriList }: Props) {
               <div>
                 <label className={labelCls}>Jenis *</label>
                 <select required className={inputCls}
-                  value={form.jenis} onChange={e => setForm(f => ({ ...f, jenis: e.target.value }))}>
+                  value={form.jenis} 
+                  onChange={e => {
+                    const newJenis = e.target.value;
+                    setForm(f => ({ ...f, jenis: newJenis, kategori_trx_id: '', tag_po_ids: [] }));
+                  }}
+                >
                   {JENIS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
               </div>
@@ -310,8 +339,14 @@ export default function JurnalClient({ initialEntries, kategoriList }: Props) {
               <select required className={inputCls}
                 value={form.kategori_trx_id} onChange={e => setForm(f => ({ ...f, kategori_trx_id: e.target.value }))}>
                 <option value="">-- Pilih Kategori --</option>
-                {kategoriList.map(k => <option key={k.id} value={k.id}>{k.nama}</option>)}
+                {kategoriList
+                  .filter(k => k.jenis === form.jenis)
+                  .map(k => <option key={k.id} value={k.id}>{k.nama}</option>)
+                }
               </select>
+              {kategoriList.filter(k => k.jenis === form.jenis).length === 0 && (
+                <p className="text-[10px] text-orange-400 mt-1">Belum ada kategori untuk jenis ini</p>
+              )}
             </div>
             <div>
               <label className={labelCls}>Nominal (Rp) *</label>
@@ -341,6 +376,44 @@ export default function JurnalClient({ initialEntries, kategoriList }: Props) {
                 </div>
               </>
             )}
+
+            {/* Tag PO Multi-select (for direct_bahan and masuk) */}
+            {(isBahan || form.jenis === 'masuk') && (
+              <div>
+                <label className={labelCls}>Tag ke PO {isBahan && '*'}</label>
+                <div className="mt-2 p-3 rounded-lg bg-[#1A1D1F] border border-[#2A2D31] max-h-40 overflow-y-auto space-y-2">
+                  {poList.length === 0 ? (
+                    <p className="text-xs text-[#5f6368]">Belum ada data PO aktif</p>
+                  ) : (
+                    poList.map(po => (
+                      <label key={po.id} className="flex items-center gap-2 cursor-pointer group">
+                        <input
+                          type="checkbox"
+                          className="w-4 h-4 rounded border-[#2A2D31] bg-[#1E2124] text-[#e5c17b] focus:ring-offset-0 focus:ring-1 focus:ring-[#e5c17b]"
+                          checked={form.tag_po_ids.includes(po.id)}
+                          onChange={e => {
+                            const checked = e.target.checked;
+                            setForm(f => ({
+                              ...f,
+                              tag_po_ids: checked
+                                ? [...f.tag_po_ids, po.id]
+                                : f.tag_po_ids.filter(id => id !== po.id)
+                            }));
+                          }}
+                        />
+                        <span className="text-sm text-[#9aa0a6] group-hover:text-[#e8eaed] transition-colors font-mono">
+                          {po.no_po}
+                        </span>
+                      </label>
+                    ))
+                  )}
+                </div>
+                {isBahan && form.tag_po_ids.length === 0 && (
+                  <p className="text-[10px] text-red-400 mt-1">Wajib pilih minimal 1 PO</p>
+                )}
+              </div>
+            )}
+
             <DialogFooter className="pt-2">
               <Button type="button" variant="outline" onClick={() => setAddOpen(false)}
                 className="border-[#2A2D31] bg-transparent text-[#e8eaed]" disabled={submitting}>

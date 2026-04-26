@@ -1,4 +1,4 @@
-import { getJurnalEntries, getKategoriTrxList } from '@/lib/actions/keuangan/jurnal.actions';
+import { getJurnalEntries, getKategoriTrxList, getPOList } from '@/lib/actions/keuangan/jurnal.actions';
 import { PageWrapper } from '@/components/ui/PageWrapper';
 import JurnalClient from './JurnalClient';
 
@@ -8,9 +8,10 @@ export const metadata = {
 
 export default async function JurnalUmumPage() {
   try {
-    const [entries, kategoriList] = await Promise.all([
+    const [entries, kategoriList, poList] = await Promise.all([
       getJurnalEntries(),
       getKategoriTrxList(),
+      getPOList(),
     ]);
 
     return (
@@ -21,6 +22,7 @@ export default async function JurnalUmumPage() {
         <JurnalClient
           initialEntries={entries}
           kategoriList={kategoriList}
+          poList={poList}
         />
       </PageWrapper>
     );
