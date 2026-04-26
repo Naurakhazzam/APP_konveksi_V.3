@@ -45,9 +45,9 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 const ROW_BG: Record<string, string> = {
-  hemat:     'hover:bg-green-500/5 bg-green-500/5',
-  boncos:    'hover:bg-red-500/5 bg-red-500/5',
-  on_budget: 'hover:bg-[#1A1C1E]/50',
+  hemat:     'bg-green-500/10 hover:bg-green-500/15',
+  boncos:    'bg-red-500/10 hover:bg-red-500/15',
+  on_budget: 'bg-[#16181A] hover:bg-[#1A1C1E]',
 };
 
 const JENIS_LABEL: Record<string, string> = {
@@ -223,7 +223,7 @@ export default function LaporanPOClient({ initialData }: Props) {
       </div>
 
       {/* Tabel */}
-      <div className="rounded-xl border border-[#2A2D31] overflow-hidden">
+      <div className="rounded-xl border border-[#2A2D31] overflow-hidden bg-[#16181A]">
         <Table>
           <TableHeader className="bg-[#1A1C1E]">
             <TableRow className="border-[#2A2D31] hover:bg-transparent">
