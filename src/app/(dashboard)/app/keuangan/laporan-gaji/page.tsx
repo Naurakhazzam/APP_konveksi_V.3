@@ -1,9 +1,20 @@
-export default function LaporanGajiPage() {
-  return (
-    <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
-      <div className="text-6xl">🚧</div>
-      <h1 className="text-2xl font-bold text-[#e8eaed]">Laporan Gaji</h1>
-      <p className="text-[#9aa0a6] text-sm">Sedang dalam pengerjaan</p>
-    </div>
-  );
+import { getLaporanGaji } from '@/lib/actions/keuangan/laporan-gaji.actions';
+import { PageWrapper } from '@/components/ui/PageWrapper';
+import LaporanGajiClient from './LaporanGajiClient';
+
+export const metadata = { title: 'Laporan Gaji | Stitchlyx' };
+
+export default async function LaporanGajiPage() {
+  try {
+    const data = await getLaporanGaji();
+    return (
+      <PageWrapper title="Laporan Gaji" subtitle="Ringkasan penggajian dari sudut pandang keuangan">
+        <div className="mt-6">
+          <LaporanGajiClient initialData={data} />
+        </div>
+      </PageWrapper>
+    );
+  } catch (e) {
+    return <div className="p-8 text-red-400">Error memuat data: {String(e)}</div>;
+  }
 }

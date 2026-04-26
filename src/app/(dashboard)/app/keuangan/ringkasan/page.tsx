@@ -1,9 +1,20 @@
-export default function RingkasanKeuanganPage() {
-  return (
-    <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
-      <div className="text-6xl">🚧</div>
-      <h1 className="text-2xl font-bold text-[#e8eaed]">Ringkasan Keuangan</h1>
-      <p className="text-[#9aa0a6] text-sm">Sedang dalam pengerjaan</p>
-    </div>
-  );
+import { getRingkasanKeuangan } from '@/lib/actions/keuangan/ringkasan.actions';
+import { PageWrapper } from '@/components/ui/PageWrapper';
+import RingkasanClient from './RingkasanClient';
+
+export const metadata = { title: 'Ringkasan Keuangan | Stitchlyx' };
+
+export default async function RingkasanPage() {
+  try {
+    const data = await getRingkasanKeuangan();
+    return (
+      <PageWrapper title="Ringkasan Keuangan" subtitle="Dashboard utama keuangan perusahaan">
+        <div className="mt-6">
+          <RingkasanClient initialData={data} />
+        </div>
+      </PageWrapper>
+    );
+  } catch (e) {
+    return <div className="p-8 text-red-400">Error memuat data: {String(e)}</div>;
+  }
 }
