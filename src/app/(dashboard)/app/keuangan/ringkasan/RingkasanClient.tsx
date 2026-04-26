@@ -230,7 +230,7 @@ export default function RingkasanClient({ initialData }: Props) {
           { label: 'Laporan Gaji', href: '/app/keuangan/laporan-gaji' },
           { label: 'Laporan Per PO', href: '/app/keuangan/laporan-po' },
           { label: 'Laporan Reject', href: '/app/keuangan/laporan-reject' },
-          { label: 'Jurnal Umum', href: '/app/keuangan/jurnal-umum' },
+          { label: 'Jurnal Produksi', href: '/app/keuangan/jurnal-produksi' },
         ].map(link => (
           <Link key={link.href} href={link.href}>
             <Button variant="outline" className="h-8 text-xs border-[#2A2D31] bg-transparent text-[#9aa0a6] hover:text-[#e8eaed] hover:bg-[#1E2124]">

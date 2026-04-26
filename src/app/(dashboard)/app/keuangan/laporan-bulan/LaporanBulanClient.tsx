@@ -145,7 +145,7 @@ export default function LaporanBulanClient({ initialData }: Props) {
 
           {/* Link ke Jurnal */}
           <div className="flex justify-end">
-            <Link href="/app/keuangan/jurnal-umum">
+            <Link href="/app/keuangan/jurnal-produksi">
               <Button variant="ghost" className="text-xs text-[#9aa0a6] hover:text-[#e8eaed]">
                 <ExternalLink className="h-3.5 w-3.5 mr-1" />
                 Lihat Jurnal

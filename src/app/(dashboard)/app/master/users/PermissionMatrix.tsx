@@ -43,7 +43,7 @@ const ALL_MENUS = [
   { group: 'Inventory',     path: '/app/inventory/transaksi-keluar',   label: '└ Transaksi Keluar' },
   { group: 'Inventory',     path: '/app/inventory/alert-order',        label: '└ Alert Order' },
   { group: 'Keuangan',      path: '/app/keuangan/ringkasan',           label: '└ Ringkasan' },
-  { group: 'Keuangan',      path: '/app/keuangan/jurnal-umum',         label: '└ Jurnal Umum' },
+  { group: 'Keuangan',      path: '/app/keuangan/jurnal-produksi',     label: '└ Jurnal Produksi' },
   { group: 'Keuangan',      path: '/app/keuangan/laporan-po',          label: '└ Laporan Per PO' },
   { group: 'Keuangan',      path: '/app/keuangan/laporan-bulan',       label: '└ Laporan Per Bulan' },
   { group: 'Keuangan',      path: '/app/keuangan/laporan-gaji',        label: '└ Laporan Gaji' },

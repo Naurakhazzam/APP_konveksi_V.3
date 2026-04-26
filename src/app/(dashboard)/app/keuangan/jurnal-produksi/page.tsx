@@ -3,7 +3,7 @@ import { PageWrapper } from '@/components/ui/PageWrapper';
 import JurnalClient from './JurnalClient';
 
 export const metadata = {
-  title: 'Jurnal Umum | Stitchlyx',
+  title: 'Jurnal Produksi | Stitchlyx',
 };
 
 export default async function JurnalUmumPage() {
@@ -16,8 +16,8 @@ export default async function JurnalUmumPage() {
 
     return (
       <PageWrapper
-        title="Jurnal Umum"
-        subtitle="Catatan semua transaksi keuangan perusahaan."
+        title="Jurnal Produksi"
+        subtitle="Catatan transaksi keuangan produksi."
       >
         <JurnalClient
           initialEntries={entries}

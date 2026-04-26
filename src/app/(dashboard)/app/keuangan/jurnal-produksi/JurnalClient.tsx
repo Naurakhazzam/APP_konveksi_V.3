@@ -21,26 +21,28 @@ import {
 
 // ─── CONSTANTS ──────────────────────────────────────────────────────────────
 
-// Opsi jenis untuk FORM TAMBAH — direct_upah SENGAJA TIDAK ADA (hanya dari sistem)
+// Opsi jenis untuk FORM TAMBAH — direct_upah dan direct_bahan SENGAJA TIDAK ADA (hanya dari sistem)
 const JENIS_OPTIONS = [
-  { value: 'direct_bahan', label: 'Pembelian Bahan' },
-  { value: 'overhead',     label: 'Biaya Overhead' },
-  { value: 'masuk',        label: 'Pemasukan' },
+  { value: 'pembelian_bahan', label: 'Pembelian Bahan' },
+  { value: 'overhead',        label: 'Biaya Overhead' },
+  { value: 'masuk',           label: 'Pemasukan' },
 ];
 
-// Label untuk TABEL — semua jenis termasuk direct_upah
+// Label untuk TABEL — semua jenis termasuk direct_upah dan direct_bahan
 const JENIS_LABELS: Record<string, string> = {
-  direct_bahan: 'Pembelian Bahan',
-  direct_upah:  'Upah Produksi',
-  overhead:     'Biaya Overhead',
-  masuk:        'Pemasukan',
+  pembelian_bahan: 'Pembelian Bahan',
+  direct_bahan:    'Pemakaian Bahan',
+  direct_upah:     'Upah Produksi',
+  overhead:        'Biaya Overhead',
+  masuk:           'Pemasukan',
 };
 
 const JENIS_BADGE: Record<string, string> = {
-  direct_bahan: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
-  direct_upah:  'bg-purple-500/10 text-purple-400 border-purple-500/20',
-  overhead:     'bg-orange-500/10 text-orange-400 border-orange-500/20',
-  masuk:        'bg-green-500/10 text-green-400 border-green-500/20',
+  pembelian_bahan: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20',
+  direct_bahan:    'bg-blue-500/10 text-blue-400 border-blue-500/20',
+  direct_upah:     'bg-purple-500/10 text-purple-400 border-purple-500/20',
+  overhead:        'bg-orange-500/10 text-orange-400 border-orange-500/20',
+  masuk:           'bg-green-500/10 text-green-400 border-green-500/20',
 };
 
 const BULAN = [
@@ -130,10 +132,10 @@ export default function JurnalClient({ initialEntries, kategoriList, poList }: P
     entries.filter(e => e.jenis === jenis).reduce((acc, e) => acc + e.nominal, 0);
 
   const summaryCards = [
-    { label: 'Total Masuk',        value: sum('masuk'),        color: 'text-green-400' },
-    { label: 'Total Direct Bahan', value: sum('direct_bahan'), color: 'text-red-400' },
-    { label: 'Total Upah',         value: sum('direct_upah'),  color: 'text-orange-400' },
-    { label: 'Total Overhead',     value: sum('overhead'),     color: 'text-orange-400' },
+    { label: 'Pembelian Bahan', value: sum('pembelian_bahan'), color: 'text-yellow-400' },
+    { label: 'Pemakaian Bahan', value: sum('direct_bahan'),    color: 'text-blue-400'   },
+    { label: 'Total Upah',      value: sum('direct_upah'),     color: 'text-purple-400' },
+    { label: 'Total Overhead',  value: sum('overhead'),        color: 'text-orange-400' },
   ];
 
   // ─── ADD ENTRY ───────────────────────────────────────────────────────────
@@ -179,7 +181,7 @@ export default function JurnalClient({ initialEntries, kategoriList, poList }: P
     setEntries(prev => prev.filter(e => e.id !== deleteTarget.id));
   };
 
-  const isBahan = form.jenis === 'direct_bahan';
+  const isBahan = form.jenis === 'pembelian_bahan';
 
   // ─── RENDER ──────────────────────────────────────────────────────────────
 
@@ -266,7 +268,7 @@ export default function JurnalClient({ initialEntries, kategoriList, poList }: P
                     <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${JENIS_BADGE[entry.jenis] ?? 'text-[#9aa0a6]'}`}>
                       {JENIS_LABELS[entry.jenis] ?? entry.jenis}
                     </span>
-                    {entry.jenis === 'direct_upah' && (
+                    {(entry.jenis === 'direct_upah' || entry.jenis === 'direct_bahan') && (
                       <span className="inline-flex items-center rounded-full border border-sky-500/30 bg-sky-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-sky-400">
                         OTOMATIS
                       </span>
@@ -291,11 +293,11 @@ export default function JurnalClient({ initialEntries, kategoriList, poList }: P
                 <TableCell className="text-sm font-semibold text-right text-[#e8eaed]">{idrFmt(entry.nominal)}</TableCell>
                 <TableCell className="text-center">
                   <Button variant="ghost" size="icon"
-                    onClick={() => entry.jenis !== 'direct_upah' && setDeleteTarget(entry)}
-                    disabled={entry.jenis === 'direct_upah'}
-                    title={entry.jenis === 'direct_upah' ? 'Entry otomatis tidak dapat dihapus' : 'Hapus'}
+                    onClick={() => !(entry.jenis === 'direct_upah' || entry.jenis === 'direct_bahan') && setDeleteTarget(entry)}
+                    disabled={(entry.jenis === 'direct_upah' || entry.jenis === 'direct_bahan')}
+                    title={(entry.jenis === 'direct_upah' || entry.jenis === 'direct_bahan') ? 'Entry otomatis tidak dapat dihapus' : 'Hapus'}
                     className={`h-8 w-8 ${
-                      entry.jenis === 'direct_upah'
+                      (entry.jenis === 'direct_upah' || entry.jenis === 'direct_bahan')
                         ? 'text-[#3A3D41] opacity-30 cursor-not-allowed'
                         : 'text-[#9aa0a6] hover:text-red-400 hover:bg-red-400/10'
                     }`}>

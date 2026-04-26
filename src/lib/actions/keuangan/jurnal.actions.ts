@@ -141,11 +141,13 @@ export async function getKategoriTrxList(): Promise<KategoriTrxItem[]> {
 export async function addJurnalEntry(
   input: AddJurnalEntryInput
 ): Promise<{ success: boolean; error?: string }> {
-  // A1 — Block direct_upah dari input manual
-  if (input.jenis === 'direct_upah') {
+  // A1 — Block direct_upah dan direct_bahan dari input manual
+  if (input.jenis === 'direct_upah' || input.jenis === 'direct_bahan') {
     return {
       success: false,
-      error: 'Jenis direct_upah tidak dapat diinput manual. Gunakan fitur Rekap Gaji.',
+      error: input.jenis === 'direct_upah'
+        ? 'Jenis direct_upah tidak dapat diinput manual. Gunakan fitur Rekap Gaji.'
+        : 'Pemakaian bahan dicatat otomatis dari proses Cutting.',
     };
   }
 
@@ -160,13 +162,13 @@ export async function addJurnalEntry(
     return { success: false, error: 'Keterangan tidak boleh kosong.' };
   }
 
-  // Validasi khusus direct_bahan
-  if (input.jenis === 'direct_bahan') {
+  // Validasi khusus pembelian_bahan
+  if (input.jenis === 'pembelian_bahan') {
     if (!input.no_faktur?.trim()) {
-      return { success: false, error: 'No. Faktur wajib diisi untuk jenis direct_bahan.' };
+      return { success: false, error: 'No. Faktur wajib diisi untuk pembelian bahan.' };
     }
     if (input.qty == null || input.qty <= 0) {
-      return { success: false, error: 'Qty wajib diisi untuk jenis direct_bahan.' };
+      return { success: false, error: 'Qty wajib diisi untuk pembelian bahan.' };
     }
 
     if (!input.tag_po_ids || input.tag_po_ids.length === 0) {
@@ -199,7 +201,7 @@ export async function addJurnalEntry(
 
   if (error) return { success: false, error: error.message };
 
-  revalidatePath('/app/keuangan/jurnal-umum');
+  revalidatePath('/app/keuangan/jurnal-produksi');
   return { success: true };
 }
 
@@ -225,7 +227,7 @@ export async function deleteJurnalEntry(
     .select('jenis')
     .eq('id', id)
     .single();
-  if (existing?.jenis === 'direct_upah') {
+  if (existing?.jenis === 'direct_upah' || existing?.jenis === 'direct_bahan') {
     return { success: false, error: 'Entry upah otomatis tidak dapat dihapus manual.' };
   }
 
@@ -239,7 +241,7 @@ export async function deleteJurnalEntry(
 
   if (error) return { success: false, error: error.message };
 
-  revalidatePath('/app/keuangan/jurnal-umum');
+  revalidatePath('/app/keuangan/jurnal-produksi');
   return { success: true };
 }
 

@@ -276,7 +276,7 @@ export async function tambahInventoryItem(input: TambahItemInput): Promise<strin
 }
 
 /**
- * 7. Mendapatkan kategori transaksi untuk bahan (direct_bahan)
+ * 7. Mendapatkan kategori transaksi untuk pembelian bahan (pembelian_bahan)
  */
 export async function getKategoriTrxBahan(): Promise<{ id: string; nama: string }[]> {
   const supabase = await createClient();
@@ -284,7 +284,7 @@ export async function getKategoriTrxBahan(): Promise<{ id: string; nama: string 
   const { data, error } = await supabase
     .from('kategori_trx')
     .select('id, nama')
-    .eq('jenis', 'direct_bahan')
+    .eq('jenis', 'pembelian_bahan')
     .eq('tenant_id', TENANT_ID)
     .eq('aktif', true)
     .order('nama');

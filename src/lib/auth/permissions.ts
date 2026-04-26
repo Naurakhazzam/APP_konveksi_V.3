@@ -73,7 +73,7 @@ export function canAccessPage(role: UserRole, page: string): boolean {
     'penggajian/rekap':       ['owner', 'supervisor'],
     'penggajian/kasbon':      ['owner', 'supervisor'],
     'penggajian/slip':        ['owner', 'supervisor'],
-    'keuangan/jurnal-umum':   ['owner', 'admin_keuangan'],
+    'keuangan/jurnal-produksi':   ['owner', 'admin_keuangan'],
     'laporan/per-po':         ['owner', 'admin_keuangan', 'supervisor'],
     'laporan/bulanan':        ['owner', 'admin_keuangan', 'supervisor'],
     'laporan/gaji':           ['owner', 'admin_keuangan', 'supervisor'],

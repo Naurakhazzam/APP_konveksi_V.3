@@ -111,7 +111,7 @@ const NAV_MENU = [
     icon: TrendingUp,
     children: [
       { label: 'Ringkasan',           path: '/app/keuangan/ringkasan' },
-      { label: 'Jurnal Umum',         path: '/app/keuangan/jurnal-umum' },
+      { label: 'Jurnal Produksi',       path: '/app/keuangan/jurnal-produksi' },
       { label: 'Laporan Per PO',      path: '/app/keuangan/laporan-po' },
       { label: 'Setting Overhead',    path: '/app/keuangan/overhead-setting' },
       { label: 'Laporan Per Bulan',   path: '/app/keuangan/laporan-bulan' },
