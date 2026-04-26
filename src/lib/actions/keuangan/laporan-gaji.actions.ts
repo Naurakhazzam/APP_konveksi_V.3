@@ -35,7 +35,7 @@ export async function getLaporanGaji(filters?: {
     .from('gaji_ledger')
     .select('karyawan_id, tipe, total, status, tanggal_bayar, karyawan:karyawan_id(nama)')
     .eq('tenant_id', TENANT_ID)
-    .in('tipe', ['upah', 'reject_potong']);
+    .in('tipe', ['selesai', 'rework', 'reject_potong']);
 
   if (filters?.bulan && filters?.tahun) {
     const mm = filters.bulan.padStart(2, '0');
@@ -55,7 +55,8 @@ export async function getLaporanGaji(filters?: {
   const { data: kasbonData, error: kasbonError } = await supabase
     .from('kasbon')
     .select('karyawan_id, jumlah, karyawan:karyawan_id(nama)')
-    .eq('tenant_id', TENANT_ID);
+    .eq('tenant_id', TENANT_ID)
+    .eq('status', 'belum_lunas');
 
   if (kasbonError) throw new Error(kasbonError.message);
 
