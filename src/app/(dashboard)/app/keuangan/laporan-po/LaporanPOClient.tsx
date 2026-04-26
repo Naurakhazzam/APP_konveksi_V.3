@@ -373,6 +373,7 @@ export default function LaporanPOClient({ initialData }: Props) {
                         <tr>
                           <th className="text-left p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider">Komponen</th>
                           <th className="text-left p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider">Kategori</th>
+                          <th className="text-left p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider">Detail</th>
                           <th className="text-right p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider">Total</th>
                         </tr>
                       </thead>
@@ -381,11 +382,14 @@ export default function LaporanPOClient({ initialData }: Props) {
                           <tr key={i} className="border-t border-[#2A2D31]">
                             <td className="p-2.5 text-[#e8eaed]">{row.nama_komponen}</td>
                             <td className="p-2.5 text-[#9aa0a6] text-xs capitalize">{row.kategori}</td>
+                            <td className="p-2.5 text-[#9aa0a6] text-xs whitespace-nowrap">
+                              {row.qty_order} pcs × @{idrFmt(row.harga_per_unit)}
+                            </td>
                             <td className="p-2.5 text-right text-[#e8eaed]">{idrFmt(row.total)}</td>
                           </tr>
                         ))}
                         <tr className="border-t-2 border-[#2A2D31] bg-[#1A1C1E]">
-                          <td colSpan={2} className="p-2.5 font-bold text-[#9aa0a6] text-xs uppercase">Total Estimasi</td>
+                          <td colSpan={3} className="p-2.5 font-bold text-[#9aa0a6] text-xs uppercase">Total Estimasi</td>
                           <td className="p-2.5 text-right font-bold text-[#e8eaed]">{idrFmt(detailData.totals.hpp_estimasi)}</td>
                         </tr>
                       </tbody>

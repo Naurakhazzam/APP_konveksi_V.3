@@ -119,6 +119,8 @@ export interface POHPPDetail {
   estimasi_breakdown: {
     nama_komponen : string;
     kategori      : string;
+    qty_order     : number;   // qty PO
+    harga_per_unit: number;   // hpp per pcs untuk komponen ini
     total         : number;
   }[];
   aktual_breakdown: {
@@ -164,29 +166,34 @@ export async function getPOHPPDetail(po_id: string): Promise<POHPPDetail> {
 
   if (poErr) throw new Error(poErr.message);
 
-  const estMap: Record<string, { total: number; kategori: string }> = {};
-  let total_hpp_estimasi = 0;
+  const estMap: Record<string, { total: number; kategori: string; qty_order: number; harga_per_unit: number }> = {};
 
   (poItems ?? []).forEach((pi: any) => {
     const qtyOrder = Number(pi.qty_order) || 0;
-    total_hpp_estimasi += (Number(pi.hpp_estimasi) * qtyOrder);
 
     const hppItems = pi.produk?.hpp_item ?? [];
     hppItems.forEach((hi: any) => {
       const nama = hi.hpp_komponen?.nama || 'Unknown';
       const kategori = hi.hpp_komponen?.kategori || 'Lainnya';
-      const lineTotal = Number(hi.qty) * Number(hi.harga_satuan) * qtyOrder;
+      const harga_per_unit = Number(hi.harga_satuan) || 0;
+      const lineTotal = Number(hi.qty) * harga_per_unit * qtyOrder;
 
       if (!estMap[nama]) {
-        estMap[nama] = { total: 0, kategori };
+        estMap[nama] = { total: 0, kategori, qty_order: 0, harga_per_unit };
       }
       estMap[nama].total += lineTotal;
+      estMap[nama].qty_order += qtyOrder;
     });
   });
+
+  // Fix 1: hitung total estimasi dari sum estMap, bukan dari po_item.hpp_estimasi
+  const total_hpp_estimasi = Object.values(estMap).reduce((sum, v) => sum + v.total, 0);
 
   const estimasi_breakdown = Object.entries(estMap).map(([nama, val]) => ({
     nama_komponen: nama,
     kategori: val.kategori,
+    qty_order: val.qty_order,
+    harga_per_unit: val.harga_per_unit,
     total: val.total
   }));
 
