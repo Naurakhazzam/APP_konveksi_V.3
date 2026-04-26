@@ -15,6 +15,8 @@ import {
   type AddBukuKasInput,
   KATEGORI_MASUK,
   KATEGORI_KELUAR,
+} from '@/lib/actions/keuangan/buku-kas.types';
+import {
   getBukuKasEntries,
   addBukuKas,
   deleteBukuKas,

@@ -3,45 +3,11 @@
 import { createClient } from '@/lib/supabase/server';
 import { getCurrentUserProfile } from '@/lib/auth/permissions';
 import { revalidatePath } from 'next/cache';
+import type { BukuKasEntry, AddBukuKasInput } from './buku-kas.types';
+
+export type { BukuKasEntry, AddBukuKasInput } from './buku-kas.types';
 
 const TENANT_ID = 'STX-001';
-
-export interface BukuKasEntry {
-  id: string;
-  tanggal: string;
-  tipe: 'masuk' | 'keluar';
-  kategori: string;
-  nominal: number;
-  keterangan: string;
-  no_referensi: string | null;
-  po_id: string | null;
-  po_no: string | null;
-  created_at: string;
-}
-
-export interface AddBukuKasInput {
-  tanggal: string;
-  tipe: 'masuk' | 'keluar';
-  kategori: string;
-  nominal: number;
-  keterangan: string;
-  no_referensi?: string;
-  po_id?: string;
-}
-
-export const KATEGORI_MASUK = [
-  'DP Klien',
-  'Pelunasan Klien',
-  'Pendapatan Lain',
-];
-
-export const KATEGORI_KELUAR = [
-  'Pembelian Bahan',
-  'Pembayaran Gaji',
-  'Biaya Overhead',
-  'Biaya Operasional',
-  'Lainnya',
-];
 
 export async function getBukuKasEntries(filters?: {
   bulan?: string;
