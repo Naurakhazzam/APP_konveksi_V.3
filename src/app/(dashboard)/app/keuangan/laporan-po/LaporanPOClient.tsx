@@ -270,13 +270,8 @@ export default function LaporanPOClient({ initialData }: Props) {
                   {po.total_qty.toLocaleString('id-ID')} pcs
                 </TableCell>
 
-                {/* HPP Estimasi */}
                 <TableCell className="text-sm text-right">
-                  {po.warning_no_estimasi ? (
-                    <span className="text-orange-400 text-xs font-medium">⚠ HPP belum diset</span>
-                  ) : (
-                    <span className="text-[#e8eaed]">{idrFmt(po.hpp_estimasi)}</span>
-                  )}
+                  <span className="text-[#e8eaed]">{idrFmt(po.hpp_estimasi)}</span>
                 </TableCell>
 
                 {/* HPP Aktual */}

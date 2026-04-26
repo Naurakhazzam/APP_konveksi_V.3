@@ -10,13 +10,12 @@ export interface POLaporanItem {
   klien_nama   : string;
   tanggal      : string;
   total_qty    : number;
-  hpp_estimasi : number;   // dari po_item.hpp_estimasi × qty_order
+  hpp_estimasi : number;   // dari BOM (hpp_item.qty × harga_satuan × qty_order)
   biaya_bahan  : number;   // dari jurnal direct_bahan (dengan multi-PO split)
   biaya_upah   : number;   // dari jurnal direct_upah
   hpp_aktual   : number;   // biaya_bahan + biaya_upah
   gap          : number;   // hpp_aktual - hpp_estimasi
   status       : 'hemat' | 'boncos' | 'on_budget';
-  warning_no_estimasi?: boolean;
 }
 
 /**
@@ -34,7 +33,12 @@ export async function getLaporanPOList(filters?: {
     .select(`
       id, no_po, tanggal_order,
       klien:klien_id(nama),
-      po_item(hpp_estimasi, qty_order)
+      po_item(
+        qty_order,
+        produk:produk_id(
+          hpp_item(qty, harga_satuan)
+        )
+      )
     `)
     .eq('tenant_id', TENANT_ID)
     .order('tanggal_order', { ascending: false });
@@ -60,13 +64,17 @@ export async function getLaporanPOList(filters?: {
   });
 
   const result: POLaporanItem[] = filteredData.map((po: any) => {
-    // HPP Estimasi
-    const hpp_estimasi = (po.po_item ?? []).reduce((sum: number, item: any) => {
-      return sum + (Number(item.hpp_estimasi) * Number(item.qty_order));
+    // HPP Estimasi — dari BOM (sama dengan getPOHPPDetail)
+    const hpp_estimasi = (po.po_item ?? []).reduce((sum: number, pi: any) => {
+      const qtyOrder = Number(pi.qty_order) || 0;
+      const hppItems = pi.produk?.hpp_item ?? [];
+      const hppPerPcs = hppItems.reduce((s: number, hi: any) =>
+        s + Number(hi.qty) * Number(hi.harga_satuan), 0);
+      return sum + (hppPerPcs * qtyOrder);
     }, 0);
 
-    const total_qty = (po.po_item ?? []).reduce((sum: number, item: any) => {
-      return sum + Number(item.qty_order);
+    const total_qty = (po.po_item ?? []).reduce((sum: number, pi: any) => {
+      return sum + Number(pi.qty_order);
     }, 0);
 
     // Biaya Bahan Real — dengan multi-PO split
@@ -108,7 +116,6 @@ export async function getLaporanPOList(filters?: {
       hpp_aktual,
       gap,
       status,
-      warning_no_estimasi: hpp_estimasi === 0 && total_qty > 0
     };
   });
 
