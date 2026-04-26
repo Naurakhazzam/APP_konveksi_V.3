@@ -167,9 +167,7 @@ export async function addJurnalEntry(
     if (input.qty == null || input.qty <= 0) {
       return { success: false, error: 'Qty wajib diisi untuk jenis direct_bahan.' };
     }
-    if (!input.inventory_item_id) {
-      return { success: false, error: 'Item inventory wajib dipilih untuk jenis direct_bahan.' };
-    }
+
     if (!input.tag_po_ids || input.tag_po_ids.length === 0) {
       return { success: false, error: 'Wajib pilih minimal 1 PO untuk pembelian bahan.' };
     }
