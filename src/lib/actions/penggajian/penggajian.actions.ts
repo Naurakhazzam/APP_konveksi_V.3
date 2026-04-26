@@ -243,6 +243,58 @@ export async function getGajiDetail(
   });
 }
 
+/**
+ * Helper (D1): Dari array entry_ids gaji_ledger, trace ke UUID PO yang terlibat.
+ * Path: gaji_ledger.sumber_id → bundle.id → bundle.po_item_id → po_item.po_id
+ * Entry dengan sumber_id = 'SYSTEM' (gaji pokok prorata) difilter dan diabaikan.
+ */
+async function getPoIdsFromLedgerEntries(
+  supabase: any,
+  entry_ids: string[]
+): Promise<string[]> {
+  if (entry_ids.length === 0) return [];
+
+  // 1. Ambil sumber_id (bundle UUID) dari ledger entries
+  const { data: ledgerRows, error: ledgerErr } = await supabase
+    .from('gaji_ledger')
+    .select('sumber_id')
+    .in('id', entry_ids);
+
+  if (ledgerErr || !ledgerRows?.length) return [];
+
+  const bundleIds = [...new Set(
+    (ledgerRows as any[])
+      .map((r) => r.sumber_id)
+      .filter((id: string) => id && id !== 'SYSTEM')
+  )] as string[];
+
+  if (bundleIds.length === 0) return [];
+
+  // 2. Dari bundle_ids, ambil po_item_id
+  const { data: bundleRows } = await supabase
+    .from('bundle')
+    .select('po_item_id')
+    .in('id', bundleIds);
+
+  const poItemIds = [...new Set(
+    (bundleRows ?? []).map((b: any) => b.po_item_id).filter(Boolean)
+  )] as string[];
+
+  if (poItemIds.length === 0) return [];
+
+  // 3. Dari po_item_ids, ambil po_id
+  const { data: poItemRows } = await supabase
+    .from('po_item')
+    .select('po_id')
+    .in('id', poItemIds);
+
+  const poIds = [...new Set(
+    (poItemRows ?? []).map((pi: any) => pi.po_id).filter(Boolean)
+  )] as string[];
+
+  return poIds;
+}
+
 /** 3. Proses Pembayaran Gaji: Menggunakan RPC Atomic */
 export async function prosesBayar(input: {
   karyawan_id: string;
@@ -252,10 +304,10 @@ export async function prosesBayar(input: {
 }): Promise<void> {
   const supabase = await createClient();
 
-  // 1. Ambil data karyawan untuk gaji_pokok
+  // 1. Ambil data karyawan untuk gaji_pokok dan nama
   const { data: karyawan, error: kError } = await supabase
     .from('karyawan')
-    .select('gaji_pokok')
+    .select('gaji_pokok, nama')
     .eq('id', input.karyawan_id)
     .single();
 
@@ -265,15 +317,46 @@ export async function prosesBayar(input: {
   const gapok = Number(karyawan.gaji_pokok) || 0;
   const gapok_prorata = (gapok / 6) * input.hari_kerja;
 
-  // 3. Panggil RPC Atomic pay_salary_atomic
-  // Parameter disesuaikan dengan schema DB
+  // 3. (D1) Trace PO IDs dari entry ledger
+  const tag_po_ids = await getPoIdsFromLedgerEntries(supabase, input.entry_ids);
+
+  // 4. (D2) Hitung upah bersih dari entries untuk nominal jurnal
+  const { data: ledgerEntries } = await supabase
+    .from('gaji_ledger')
+    .select('tipe, total')
+    .in('id', input.entry_ids);
+
+  const upah_bersih = (ledgerEntries ?? []).reduce((acc: number, e: any) => {
+    if (e.tipe === 'selesai' || e.tipe === 'rework') return acc + Number(e.total);
+    if (e.tipe === 'reject_potong') return acc - Number(e.total);
+    return acc;
+  }, 0);
+
+  const total_bayar = upah_bersih + gapok_prorata - input.potong_kasbon;
+
+  // 5. Panggil RPC Atomic pay_salary_atomic dengan tag_po_ids dan detail_upah
   const { error } = await supabase.rpc('pay_salary_atomic', {
-    p_karyawan_id: input.karyawan_id,
-    p_ledger_ids: input.entry_ids,
+    p_karyawan_id  : input.karyawan_id,
+    p_ledger_ids   : input.entry_ids,
     p_tanggal_bayar: new Date().toISOString(),
-    p_gapok_row: (gapok_prorata > 0) ? { jumlah: gapok_prorata, keterangan: `Gaji Pokok (${input.hari_kerja} hari)` } : null,
-    p_kasbon_row: (input.potong_kasbon > 0) ? { jumlah: input.potong_kasbon, keterangan: 'Potongan Gaji' } : null,
-    p_jurnal_row: { keterangan: `Pembayaran Gaji Karyawan ID: ${input.karyawan_id}` }
+    p_gapok_row    : (gapok_prorata > 0)
+      ? { jumlah: gapok_prorata, keterangan: `Gaji Pokok (${input.hari_kerja} hari)` }
+      : null,
+    p_kasbon_row   : (input.potong_kasbon > 0)
+      ? { jumlah: input.potong_kasbon, keterangan: 'Potongan Kasbon' }
+      : null,
+    p_jurnal_row   : (total_bayar > 0)
+      ? {
+          keterangan : `Pembayaran Gaji — ${karyawan.nama}`,
+          nominal    : total_bayar,
+          tag_po_ids : tag_po_ids,
+          detail_upah: [{
+            karyawan: karyawan.nama,
+            jumlah  : total_bayar,
+            po      : tag_po_ids.join(', '),
+          }],
+        }
+      : null,
   });
 
   if (error) throw new Error(error.message);
