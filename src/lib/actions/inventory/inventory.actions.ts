@@ -75,10 +75,10 @@ export interface TambahItemInput {
 export async function getInventoryOverview(): Promise<InventoryOverviewItem[]> {
   const supabase = await createClient();
 
-  // A. Fetch items
+  // A. Fetch items (tanpa embedded join warna — pakai lookup manual agar tidak bergantung schema cache)
   const { data: items, error: itemError } = await supabase
     .from('inventory_item')
-    .select('id, nama, satuan, stok_aktual, stok_minimum, warna_id, warna:warna_id(nama)')
+    .select('id, nama, satuan, stok_aktual, stok_minimum, warna_id')
     .eq('tenant_id', TENANT_ID)
     .order('nama');
 
@@ -93,20 +93,38 @@ export async function getInventoryOverview(): Promise<InventoryOverviewItem[]> {
 
   if (batchError) throw new Error(batchError.message);
 
+  // C. Fetch warna lookup (tanpa join — query langsung ke tabel warna)
+  const warnaIds = [...new Set((items ?? []).map(i => i.warna_id).filter(Boolean))] as string[];
+  let warnaMap: Record<string, string> = {};
+  if (warnaIds.length > 0) {
+    const { data: warnaRows } = await supabase
+      .from('warna')
+      .select('id, nama')
+      .in('id', warnaIds);
+    (warnaRows ?? []).forEach((w: any) => { warnaMap[w.id] = w.nama; });
+  }
+
   const batchCountMap: Record<string, number> = {};
   batches?.forEach(b => {
     batchCountMap[b.inventory_item_id] = (batchCountMap[b.inventory_item_id] || 0) + 1;
   });
 
-  // C. Map to final structure
+  // D. Map to final structure
   return (items || []).map(item => {
-    const status = item.stok_aktual < 0 ? 'minus' : (item.stok_aktual <= item.stok_minimum ? 'low' : 'normal');
+    const stokNum = Number(item.stok_aktual ?? 0);
+    const minNum  = Number(item.stok_minimum ?? 0);
+    const status: 'minus' | 'low' | 'normal' =
+      stokNum < 0 ? 'minus' : stokNum <= minNum ? 'low' : 'normal';
     return {
-      ...item,
-      warna_id: item.warna_id ?? null,
-      warna_nama: (item.warna as any)?.nama ?? null,
+      id:           item.id,
+      nama:         item.nama,
+      satuan:       item.satuan,
+      stok_aktual:  stokNum,
+      stok_minimum: minNum,
+      warna_id:     item.warna_id ?? null,
+      warna_nama:   item.warna_id ? (warnaMap[item.warna_id] ?? null) : null,
       status,
-      batch_count: batchCountMap[item.id] ?? 0
+      batch_count:  batchCountMap[item.id] ?? 0,
     };
   });
 }
