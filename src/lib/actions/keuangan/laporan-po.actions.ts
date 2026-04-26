@@ -1,6 +1,7 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
+import { getOverheadRateInfo, getQtyShippedPerPO } from './overhead.actions';
 
 const TENANT_ID = 'STX-001';
 
@@ -19,6 +20,11 @@ export interface POLaporanItem {
   nilai_project: number;   // SUM(qty_order × produk.harga_jual)
   profit       : number;   // nilai_project - hpp_aktual
   margin_pct   : number;   // (profit / nilai_project) × 100
+  qty_shipped  : number;
+  alokasi_overhead: number;
+  hpp_aktual_final: number;
+  profit_final : number;
+  margin_pct_final: number;
 }
 
 /**
@@ -67,6 +73,14 @@ export async function getLaporanPOList(filters?: {
     return true;
   });
 
+  const rateInfo = await getOverheadRateInfo();
+  const qtyShippedMap = rateInfo.period
+    ? await getQtyShippedPerPO(
+        rateInfo.period.tanggal_mulai,
+        rateInfo.period.tanggal_akhir
+      )
+    : {};
+
   const result: POLaporanItem[] = filteredData.map((po: any) => {
     // HPP Estimasi — dari BOM (sama dengan getPOHPPDetail)
     const hpp_estimasi = (po.po_item ?? []).reduce((sum: number, pi: any) => {
@@ -113,6 +127,14 @@ export async function getLaporanPOList(filters?: {
       ? Math.round((profit / nilai_project) * 100)
       : 0;
 
+    const qty_shipped = qtyShippedMap[po.id] ?? 0;
+    const alokasi_overhead = rateInfo.overhead_rate * qty_shipped;
+    const hpp_aktual_final = hpp_aktual + alokasi_overhead;
+    const profit_final = nilai_project - hpp_aktual_final;
+    const margin_pct_final = nilai_project > 0
+      ? Math.round((profit_final / nilai_project) * 100)
+      : 0;
+
     let status: 'hemat' | 'boncos' | 'on_budget' = 'on_budget';
     if (gap > 50000) status = 'boncos';
     else if (gap < -50000) status = 'hemat';
@@ -132,6 +154,11 @@ export async function getLaporanPOList(filters?: {
       nilai_project,
       profit,
       margin_pct,
+      qty_shipped,
+      alokasi_overhead,
+      hpp_aktual_final,
+      profit_final,
+      margin_pct_final,
     };
   });
 

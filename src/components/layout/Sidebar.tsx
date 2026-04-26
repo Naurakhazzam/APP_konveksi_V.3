@@ -113,6 +113,7 @@ const NAV_MENU = [
       { label: 'Ringkasan',           path: '/app/keuangan/ringkasan' },
       { label: 'Jurnal Umum',         path: '/app/keuangan/jurnal-umum' },
       { label: 'Laporan Per PO',      path: '/app/keuangan/laporan-po' },
+      { label: 'Setting Overhead',    path: '/app/keuangan/overhead-setting' },
       { label: 'Laporan Per Bulan',   path: '/app/keuangan/laporan-bulan' },
       { label: 'Laporan Gaji',        path: '/app/keuangan/laporan-gaji' },
       { label: 'Laporan Koreksi QTY', path: '/app/keuangan/laporan-reject' },

@@ -16,6 +16,7 @@ import {
   type POLaporanItem,
   type POHPPDetail,
 } from '@/lib/actions/keuangan/laporan-po.actions';
+import { type OverheadRateInfo } from '@/lib/actions/keuangan/overhead.actions';
 
 // ─── CONSTANTS ──────────────────────────────────────────────────────────────
 
@@ -61,11 +62,12 @@ const JENIS_LABEL: Record<string, string> = {
 
 interface Props {
   initialData: POLaporanItem[];
+  overheadRateInfo: OverheadRateInfo;
 }
 
 // ─── COMPONENT ───────────────────────────────────────────────────────────────
 
-export default function LaporanPOClient({ initialData }: Props) {
+export default function LaporanPOClient({ initialData, overheadRateInfo }: Props) {
   const [data, setData] = useState<POLaporanItem[]>(initialData);
   const [filterBulan, setFilterBulan] = useState('');
   const [filterTahun, setFilterTahun] = useState(String(new Date().getFullYear()));
@@ -128,9 +130,9 @@ export default function LaporanPOClient({ initialData }: Props) {
 
   // ─── SUMMARY ───────────────────────────────────────────────────────────
   const totalEstimasi = data.reduce((s, p) => s + p.hpp_estimasi, 0);
-  const totalAktual   = data.reduce((s, p) => s + p.hpp_aktual, 0);
+  const totalAktual   = data.reduce((s, p) => s + p.hpp_aktual_final, 0);
   const totalGap      = data.reduce((s, p) => s + p.gap, 0);
-  const totalProfit   = data.reduce((s, p) => s + p.profit, 0);
+  const totalProfit   = data.reduce((s, p) => s + p.profit_final, 0);
   const countBoncos   = data.filter(p => p.status === 'boncos').length;
   const countHemat    = data.filter(p => p.status === 'hemat').length;
   const countOnBudget = data.filter(p => p.status === 'on_budget').length;
@@ -157,7 +159,7 @@ export default function LaporanPOClient({ initialData }: Props) {
       icon: null
     },
     {
-      label: 'Total Profit',
+      label: 'Total Profit (incl. Overhead)',
       value: (totalProfit >= 0 ? '' : '-') + idrFmt(totalProfit),
       color: totalProfit > 0 ? 'text-green-400' : totalProfit < 0 ? 'text-red-400' : 'text-[#9aa0a6]',
       icon: totalProfit > 0
@@ -223,6 +225,32 @@ export default function LaporanPOClient({ initialData }: Props) {
   // ─── RENDER ────────────────────────────────────────────────────────────
   return (
     <div className="space-y-6">
+
+      {/* Info Bar Overhead */}
+      {overheadRateInfo.period ? (
+        <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 flex flex-col md:flex-row md:items-center justify-between gap-2">
+          <div>
+            <p className="text-sm font-bold text-amber-400">
+              Overhead Rate: {idrFmt(overheadRateInfo.overhead_rate)} / pcs
+            </p>
+            <p className="text-xs text-amber-400/80 mt-1">
+              Periode: {overheadRateInfo.period.label} ({dateFmt(overheadRateInfo.period.tanggal_mulai)} s/d {dateFmt(overheadRateInfo.period.tanggal_akhir)})
+            </p>
+          </div>
+          <div className="text-left md:text-right">
+            <p className="text-xs font-mono text-amber-400/80">
+              Total Overhead: {idrFmt(overheadRateInfo.total_overhead)}
+            </p>
+            <p className="text-xs font-mono text-amber-400/80">
+              Total Shipped: {overheadRateInfo.total_qty_shipped.toLocaleString('id-ID')} pcs
+            </p>
+          </div>
+        </div>
+      ) : (
+        <div className="p-4 rounded-xl bg-[#1A1D1F] border border-[#2A2D31]">
+          <p className="text-sm font-bold text-orange-400">Overhead belum dikonfigurasi — profit belum include overhead</p>
+        </div>
+      )}
 
       {/* Summary Bar */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
@@ -291,12 +319,14 @@ export default function LaporanPOClient({ initialData }: Props) {
               <TableHead className="text-[#9aa0a6]">Klien</TableHead>
               <SortableHeader label="Tanggal" sortKey="tanggal" />
               <SortableHeader label="QTY" sortKey="total_qty" align="right" />
+              <SortableHeader label="Qty Shipped" sortKey="qty_shipped" align="right" />
               <SortableHeader label="HPP Estimasi" sortKey="hpp_estimasi" align="right" />
               <SortableHeader label="HPP Aktual" sortKey="hpp_aktual" align="right" />
+              <SortableHeader label="Alokasi OH" sortKey="alokasi_overhead" align="right" />
               <SortableHeader label="Gap" sortKey="gap" align="right" />
               <SortableHeader label="Nilai Project" sortKey="nilai_project" align="right" />
-              <SortableHeader label="Profit" sortKey="profit" align="right" />
-              <SortableHeader label="Margin" sortKey="margin_pct" align="right" />
+              <SortableHeader label="Profit" sortKey="profit_final" align="right" />
+              <SortableHeader label="Margin" sortKey="margin_pct_final" align="right" />
               <TableHead className="text-[#9aa0a6] text-center">Status</TableHead>
               <TableHead className="text-[#9aa0a6] w-20 text-center">Aksi</TableHead>
             </TableRow>
@@ -304,7 +334,7 @@ export default function LaporanPOClient({ initialData }: Props) {
           <TableBody>
             {sortedData.length === 0 ? (
               <TableRow className="hover:bg-transparent border-[#2A2D31]">
-                <TableCell colSpan={12} className="h-32 text-center text-[#5f6368]">
+                <TableCell colSpan={14} className="h-32 text-center text-[#5f6368]">
                   Belum ada data PO
                 </TableCell>
               </TableRow>
@@ -333,6 +363,15 @@ export default function LaporanPOClient({ initialData }: Props) {
                   {po.total_qty.toLocaleString('id-ID')} pcs
                 </TableCell>
 
+                {/* QTY Shipped */}
+                <TableCell className="text-sm text-[#e8eaed] text-right">
+                  {po.qty_shipped > 0 ? (
+                    <span>{po.qty_shipped.toLocaleString('id-ID')} pcs</span>
+                  ) : (
+                    <span className="text-[#5f6368]">-</span>
+                  )}
+                </TableCell>
+
                 <TableCell className="text-sm text-right">
                   <span className="text-[#e8eaed]">{idrFmt(po.hpp_estimasi)}</span>
                 </TableCell>
@@ -343,6 +382,15 @@ export default function LaporanPOClient({ initialData }: Props) {
                     <span className="text-[#5f6368] text-xs">Belum ada biaya tercatat</span>
                   ) : (
                     <span className="text-[#e8eaed]">{idrFmt(po.hpp_aktual)}</span>
+                  )}
+                </TableCell>
+
+                {/* Alokasi OH */}
+                <TableCell className="text-sm text-right">
+                  {po.alokasi_overhead > 0 ? (
+                    <span className="text-orange-400">{idrFmt(po.alokasi_overhead)}</span>
+                  ) : (
+                    <span className="text-[#5f6368]">-</span>
                   )}
                 </TableCell>
 
@@ -371,8 +419,8 @@ export default function LaporanPOClient({ initialData }: Props) {
                   {po.nilai_project === 0 ? (
                     <span className="text-[#5f6368]">-</span>
                   ) : (
-                    <span className={po.profit > 0 ? 'text-green-400' : po.profit < 0 ? 'text-red-400' : 'text-[#9aa0a6]'}>
-                      {po.profit > 0 ? '+' : po.profit < 0 ? '-' : ''}{idrFmt(po.profit)}
+                    <span className={po.profit_final > 0 ? 'text-green-400' : po.profit_final < 0 ? 'text-red-400' : 'text-[#9aa0a6]'}>
+                      {po.profit_final > 0 ? '+' : po.profit_final < 0 ? '-' : ''}{idrFmt(po.profit_final)}
                     </span>
                   )}
                 </TableCell>
@@ -382,8 +430,8 @@ export default function LaporanPOClient({ initialData }: Props) {
                   {po.nilai_project === 0 ? (
                     <span className="text-[#5f6368]">-</span>
                   ) : (
-                    <span className={po.margin_pct > 0 ? 'text-green-400' : po.margin_pct < 0 ? 'text-red-400' : 'text-[#9aa0a6]'}>
-                      {po.margin_pct}%
+                    <span className={po.margin_pct_final > 0 ? 'text-green-400' : po.margin_pct_final < 0 ? 'text-red-400' : 'text-[#9aa0a6]'}>
+                      {po.margin_pct_final}%
                     </span>
                   )}
                 </TableCell>
