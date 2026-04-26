@@ -130,6 +130,7 @@ export default function LaporanPOClient({ initialData }: Props) {
   const totalEstimasi = data.reduce((s, p) => s + p.hpp_estimasi, 0);
   const totalAktual   = data.reduce((s, p) => s + p.hpp_aktual, 0);
   const totalGap      = data.reduce((s, p) => s + p.gap, 0);
+  const totalProfit   = data.reduce((s, p) => s + p.profit, 0);
   const countBoncos   = data.filter(p => p.status === 'boncos').length;
   const countHemat    = data.filter(p => p.status === 'hemat').length;
   const countOnBudget = data.filter(p => p.status === 'on_budget').length;
@@ -154,6 +155,16 @@ export default function LaporanPOClient({ initialData }: Props) {
       value: (totalGap > 0 ? '+' : '') + idrFmt(totalGap),
       color: totalGap > 0 ? 'text-red-400' : totalGap < 0 ? 'text-green-400' : 'text-[#9aa0a6]',
       icon: null
+    },
+    {
+      label: 'Total Profit',
+      value: (totalProfit >= 0 ? '' : '-') + idrFmt(totalProfit),
+      color: totalProfit > 0 ? 'text-green-400' : totalProfit < 0 ? 'text-red-400' : 'text-[#9aa0a6]',
+      icon: totalProfit > 0
+        ? <TrendingUp className="h-4 w-4 text-green-400" />
+        : totalProfit < 0
+          ? <TrendingDown className="h-4 w-4 text-red-400" />
+          : null
     },
     {
       label: 'Distribusi Status',
@@ -214,7 +225,7 @@ export default function LaporanPOClient({ initialData }: Props) {
     <div className="space-y-6">
 
       {/* Summary Bar */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         {summaryCards.map(card => (
           <div key={card.label} className="p-4 rounded-xl bg-[#1A1D1F] border border-[#2A2D31]">
             <div className="flex items-center justify-between mb-1">
@@ -283,6 +294,9 @@ export default function LaporanPOClient({ initialData }: Props) {
               <SortableHeader label="HPP Estimasi" sortKey="hpp_estimasi" align="right" />
               <SortableHeader label="HPP Aktual" sortKey="hpp_aktual" align="right" />
               <SortableHeader label="Gap" sortKey="gap" align="right" />
+              <SortableHeader label="Nilai Project" sortKey="nilai_project" align="right" />
+              <SortableHeader label="Profit" sortKey="profit" align="right" />
+              <SortableHeader label="Margin" sortKey="margin_pct" align="right" />
               <TableHead className="text-[#9aa0a6] text-center">Status</TableHead>
               <TableHead className="text-[#9aa0a6] w-20 text-center">Aksi</TableHead>
             </TableRow>
@@ -290,7 +304,7 @@ export default function LaporanPOClient({ initialData }: Props) {
           <TableBody>
             {sortedData.length === 0 ? (
               <TableRow className="hover:bg-transparent border-[#2A2D31]">
-                <TableCell colSpan={9} className="h-32 text-center text-[#5f6368]">
+                <TableCell colSpan={12} className="h-32 text-center text-[#5f6368]">
                   Belum ada data PO
                 </TableCell>
               </TableRow>
@@ -339,6 +353,37 @@ export default function LaporanPOClient({ initialData }: Props) {
                   ) : (
                     <span className={po.gap > 0 ? 'text-red-400' : po.gap < 0 ? 'text-green-400' : 'text-[#9aa0a6]'}>
                       {po.gap > 0 ? '+' : ''}{idrFmt(po.gap)}
+                    </span>
+                  )}
+                </TableCell>
+
+                {/* Nilai Project */}
+                <TableCell className="text-sm text-right">
+                  {po.nilai_project === 0 ? (
+                    <span className="text-orange-400 text-xs">Harga jual belum diset</span>
+                  ) : (
+                    <span className="text-[#e8eaed]">{idrFmt(po.nilai_project)}</span>
+                  )}
+                </TableCell>
+
+                {/* Profit */}
+                <TableCell className="text-sm font-semibold text-right">
+                  {po.nilai_project === 0 ? (
+                    <span className="text-[#5f6368]">-</span>
+                  ) : (
+                    <span className={po.profit > 0 ? 'text-green-400' : po.profit < 0 ? 'text-red-400' : 'text-[#9aa0a6]'}>
+                      {po.profit > 0 ? '+' : po.profit < 0 ? '-' : ''}{idrFmt(po.profit)}
+                    </span>
+                  )}
+                </TableCell>
+
+                {/* Margin */}
+                <TableCell className="text-sm font-bold text-right">
+                  {po.nilai_project === 0 ? (
+                    <span className="text-[#5f6368]">-</span>
+                  ) : (
+                    <span className={po.margin_pct > 0 ? 'text-green-400' : po.margin_pct < 0 ? 'text-red-400' : 'text-[#9aa0a6]'}>
+                      {po.margin_pct}%
                     </span>
                   )}
                 </TableCell>

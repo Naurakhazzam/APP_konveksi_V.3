@@ -16,6 +16,9 @@ export interface POLaporanItem {
   hpp_aktual   : number;   // biaya_bahan + biaya_upah
   gap          : number;   // hpp_aktual - hpp_estimasi
   status       : 'hemat' | 'boncos' | 'on_budget';
+  nilai_project: number;   // SUM(qty_order × produk.harga_jual)
+  profit       : number;   // nilai_project - hpp_aktual
+  margin_pct   : number;   // (profit / nilai_project) × 100
 }
 
 /**
@@ -36,6 +39,7 @@ export async function getLaporanPOList(filters?: {
       po_item(
         qty_order,
         produk:produk_id(
+          harga_jual,
           hpp_item(qty, harga_satuan)
         )
       )
@@ -100,6 +104,15 @@ export async function getLaporanPOList(filters?: {
     const hpp_aktual = biaya_bahan + biaya_upah;
     const gap = hpp_aktual - hpp_estimasi;
 
+    // Profit kalkulasi
+    const nilai_project = (po.po_item ?? []).reduce((sum: number, pi: any) => {
+      return sum + (Number(pi.produk?.harga_jual ?? 0) * Number(pi.qty_order));
+    }, 0);
+    const profit = nilai_project - hpp_aktual;
+    const margin_pct = nilai_project > 0
+      ? Math.round((profit / nilai_project) * 100)
+      : 0;
+
     let status: 'hemat' | 'boncos' | 'on_budget' = 'on_budget';
     if (gap > 50000) status = 'boncos';
     else if (gap < -50000) status = 'hemat';
@@ -116,6 +129,9 @@ export async function getLaporanPOList(filters?: {
       hpp_aktual,
       gap,
       status,
+      nilai_project,
+      profit,
+      margin_pct,
     };
   });
 
