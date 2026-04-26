@@ -236,7 +236,7 @@ export default function JurnalClient({ initialEntries, kategoriList, poList }: P
       </div>
 
       {/* Tabel */}
-      <div className="rounded-xl border border-[#2A2D31] overflow-hidden">
+      <div className="rounded-xl border border-[#2A2D31] overflow-hidden bg-[#1A1D1F]">
         <Table>
           <TableHeader className="bg-[#1A1C1E]">
             <TableRow className="border-[#2A2D31] hover:bg-transparent">
@@ -250,7 +250,7 @@ export default function JurnalClient({ initialEntries, kategoriList, poList }: P
               <TableHead className="text-[#9aa0a6] w-14 text-center">Aksi</TableHead>
             </TableRow>
           </TableHeader>
-          <TableBody>
+          <TableBody className="bg-[#1A1D1F]">
             {entries.length === 0 ? (
               <TableRow className="hover:bg-transparent border-[#2A2D31]">
                 <TableCell colSpan={7} className="h-32 text-center text-[#5f6368]">
@@ -258,7 +258,7 @@ export default function JurnalClient({ initialEntries, kategoriList, poList }: P
                 </TableCell>
               </TableRow>
             ) : entries.map(entry => (
-              <TableRow key={entry.id} className="border-[#2A2D31] hover:bg-[#1A1C1E]/50">
+              <TableRow key={entry.id} className="border-[#2A2D31] hover:bg-[#16181A]">
                 <TableCell className="text-sm text-[#e8eaed] whitespace-nowrap">{dateFmt(entry.tanggal)}</TableCell>
                 <TableCell className="text-sm text-[#9aa0a6]">{entry.kategori_nama}</TableCell>
                 <TableCell>
