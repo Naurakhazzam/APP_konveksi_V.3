@@ -25,6 +25,7 @@ export interface JurnalEntry {
 export interface KategoriTrxItem {
   id: string;
   nama: string;
+  jenis: string; // untuk filter kategori per jenis di UI
 }
 
 export interface AddJurnalEntryInput {
@@ -115,7 +116,7 @@ export async function getKategoriTrxList(): Promise<KategoriTrxItem[]> {
 
   const { data, error } = await supabase
     .from('kategori_trx')
-    .select('id, nama')
+    .select('id, nama, jenis')
     .eq('tenant_id', TENANT_ID)
     .order('nama');
 
@@ -124,6 +125,7 @@ export async function getKategoriTrxList(): Promise<KategoriTrxItem[]> {
   return (data ?? []).map((item: any) => ({
     id: item.id,
     nama: item.nama,
+    jenis: item.jenis ?? '',
   }));
 }
 
@@ -134,6 +136,14 @@ export async function getKategoriTrxList(): Promise<KategoriTrxItem[]> {
 export async function addJurnalEntry(
   input: AddJurnalEntryInput
 ): Promise<{ success: boolean; error?: string }> {
+  // A1 — Block direct_upah dari input manual
+  if (input.jenis === 'direct_upah') {
+    return {
+      success: false,
+      error: 'Jenis direct_upah tidak dapat diinput manual. Gunakan fitur Rekap Gaji.',
+    };
+  }
+
   // Validasi dasar
   if (!input.nominal || input.nominal <= 0) {
     return { success: false, error: 'Nominal harus lebih dari 0.' };
@@ -200,6 +210,17 @@ export async function deleteJurnalEntry(
   }
   if (profile.role !== 'owner') {
     return { success: false, error: 'Hanya owner yang dapat menghapus jurnal entry.' };
+  }
+
+  // A1 — Guard: direct_upah tidak boleh dihapus manual
+  const supabaseCheck = await createClient();
+  const { data: existing } = await supabaseCheck
+    .from('jurnal_entry')
+    .select('jenis')
+    .eq('id', id)
+    .single();
+  if (existing?.jenis === 'direct_upah') {
+    return { success: false, error: 'Entry upah otomatis tidak dapat dihapus manual.' };
   }
 
   const supabase = await createClient();

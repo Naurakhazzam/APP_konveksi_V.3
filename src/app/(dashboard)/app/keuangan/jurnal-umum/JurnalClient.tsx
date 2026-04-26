@@ -21,12 +21,20 @@ import {
 
 // ─── CONSTANTS ──────────────────────────────────────────────────────────────
 
+// Opsi jenis untuk FORM TAMBAH — direct_upah SENGAJA TIDAK ADA (hanya dari sistem)
 const JENIS_OPTIONS = [
   { value: 'direct_bahan', label: 'Pembelian Bahan' },
-  { value: 'direct_upah',  label: 'Upah Produksi' },
-  { value: 'overhead',     label: 'Overhead' },
+  { value: 'overhead',     label: 'Biaya Overhead' },
   { value: 'masuk',        label: 'Pemasukan' },
 ];
+
+// Label untuk TABEL — semua jenis termasuk direct_upah
+const JENIS_LABELS: Record<string, string> = {
+  direct_bahan: 'Pembelian Bahan',
+  direct_upah:  'Upah Produksi',
+  overhead:     'Biaya Overhead',
+  masuk:        'Pemasukan',
+};
 
 const JENIS_BADGE: Record<string, string> = {
   direct_bahan: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
@@ -243,17 +251,30 @@ export default function JurnalClient({ initialEntries, kategoriList }: Props) {
                 <TableCell className="text-sm text-[#e8eaed] whitespace-nowrap">{dateFmt(entry.tanggal)}</TableCell>
                 <TableCell className="text-sm text-[#9aa0a6]">{entry.kategori_nama}</TableCell>
                 <TableCell>
-                  <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${JENIS_BADGE[entry.jenis] ?? 'text-[#9aa0a6]'}`}>
-                    {JENIS_OPTIONS.find(j => j.value === entry.jenis)?.label ?? entry.jenis}
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${JENIS_BADGE[entry.jenis] ?? 'text-[#9aa0a6]'}`}>
+                      {JENIS_LABELS[entry.jenis] ?? entry.jenis}
+                    </span>
+                    {entry.jenis === 'direct_upah' && (
+                      <span className="inline-flex items-center rounded-full border border-sky-500/30 bg-sky-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-sky-400">
+                        OTOMATIS
+                      </span>
+                    )}
+                  </div>
                 </TableCell>
                 <TableCell className="text-sm text-[#e8eaed] max-w-[200px] truncate">{entry.keterangan}</TableCell>
                 <TableCell className="text-sm text-[#9aa0a6] font-mono">{entry.no_faktur ?? '-'}</TableCell>
                 <TableCell className="text-sm font-semibold text-right text-[#e8eaed]">{idrFmt(entry.nominal)}</TableCell>
                 <TableCell className="text-center">
                   <Button variant="ghost" size="icon"
-                    onClick={() => setDeleteTarget(entry)}
-                    className="h-8 w-8 text-[#9aa0a6] hover:text-red-400 hover:bg-red-400/10">
+                    onClick={() => entry.jenis !== 'direct_upah' && setDeleteTarget(entry)}
+                    disabled={entry.jenis === 'direct_upah'}
+                    title={entry.jenis === 'direct_upah' ? 'Entry otomatis tidak dapat dihapus' : 'Hapus'}
+                    className={`h-8 w-8 ${
+                      entry.jenis === 'direct_upah'
+                        ? 'text-[#3A3D41] opacity-30 cursor-not-allowed'
+                        : 'text-[#9aa0a6] hover:text-red-400 hover:bg-red-400/10'
+                    }`}>
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </TableCell>
