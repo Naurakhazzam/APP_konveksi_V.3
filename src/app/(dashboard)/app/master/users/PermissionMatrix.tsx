@@ -46,6 +46,7 @@ const ALL_MENUS = [
   { group: 'Keuangan',      path: '/app/keuangan/jurnal-produksi',     label: '└ Jurnal Produksi' },
   { group: 'Keuangan',      path: '/app/keuangan/buku-kas',            label: '└ Buku Kas' },
   { group: 'Keuangan',      path: '/app/keuangan/invoice',             label: '└ Invoice & Tagihan' },
+  { group: 'Keuangan',      path: '/app/keuangan/laporan-lr',          label: '└ Laporan Laba Rugi' },
   { group: 'Keuangan',      path: '/app/keuangan/laporan-po',          label: '└ Laporan Per PO' },
   { group: 'Keuangan',      path: '/app/keuangan/laporan-bulan',       label: '└ Laporan Per Bulan' },
   { group: 'Keuangan',      path: '/app/keuangan/laporan-gaji',        label: '└ Laporan Gaji' },
