@@ -385,67 +385,88 @@ export async function getInvoiceTotalFromSJ(
 ): Promise<{ total: number; breakdown: { no_po: string; model: string | null; warna: string; size: string; qty: number; harga_jual: number; subtotal: number }[] }> {
   const supabase = await createClient();
 
-  // Ambil semua item SJ beserta qty_kirim
-  const { data: sjItems, error } = await supabase
+  // Step 1: Ambil surat_jalan_item — hanya kolom flat, tanpa join
+  const { data: sjItems, error: sjErr } = await supabase
     .from('surat_jalan_item')
     .select('qty_kirim, bundle_id')
     .eq('surat_jalan_id', sj_id);
 
-  if (error) throw new Error(error.message);
+  if (sjErr) throw new Error('SJ item: ' + sjErr.message);
   if (!sjItems || sjItems.length === 0) return { total: 0, breakdown: [] };
 
-  // Ambil data bundle → po_item → produk secara terpisah (hindari schema cache issue)
-  const bundleIds = sjItems.map((i: any) => i.bundle_id);
-
+  // Step 2: Ambil bundle — hanya kolom flat, tanpa join
+  const bundleIds = sjItems.map((i: any) => i.bundle_id).filter(Boolean);
   const { data: bundles, error: bundleErr } = await supabase
     .from('bundle')
-    .select('id, po_item_id, po:po_id(no_po)')
+    .select('id, po_id, po_item_id')
     .in('id', bundleIds);
 
-  if (bundleErr) throw new Error(bundleErr.message);
+  if (bundleErr) throw new Error('Bundle: ' + bundleErr.message);
 
-  const poItemIds = [...new Set((bundles ?? []).map((b: any) => b.po_item_id))];
+  // Step 3: Ambil po — hanya no_po
+  const poIds = [...new Set((bundles ?? []).map((b: any) => b.po_id).filter(Boolean))];
+  const poMap: Record<string, string> = {};
+  if (poIds.length > 0) {
+    const { data: poData } = await supabase
+      .from('po')
+      .select('id, no_po')
+      .in('id', poIds);
+    (poData ?? []).forEach((p: any) => { poMap[p.id] = p.no_po; });
+  }
 
-  const { data: poItems, error: poItemErr } = await supabase
-    .from('po_item')
-    .select('id, warna, size, produk_id')
-    .in('id', poItemIds);
+  // Step 4: Ambil po_item — hanya kolom flat
+  const poItemIds = [...new Set((bundles ?? []).map((b: any) => b.po_item_id).filter(Boolean))];
+  const poItemMap: Record<string, any> = {};
+  if (poItemIds.length > 0) {
+    const { data: poItems, error: poItemErr } = await supabase
+      .from('po_item')
+      .select('id, warna, size, produk_id')
+      .in('id', poItemIds);
+    if (poItemErr) throw new Error('PO item: ' + poItemErr.message);
+    (poItems ?? []).forEach((p: any) => { poItemMap[p.id] = p; });
+  }
 
-  if (poItemErr) throw new Error(poItemErr.message);
+  // Step 5: Ambil produk — hanya kolom flat
+  const produkIds = [...new Set(Object.values(poItemMap).map((p: any) => p.produk_id).filter(Boolean))];
+  const produkMap: Record<string, any> = {};
+  if (produkIds.length > 0) {
+    const { data: produks, error: produkErr } = await supabase
+      .from('produk')
+      .select('id, harga_jual, model_id')
+      .in('id', produkIds);
+    if (produkErr) throw new Error('Produk: ' + produkErr.message);
+    (produks ?? []).forEach((p: any) => { produkMap[p.id] = p; });
+  }
 
-  const produkIds = [...new Set((poItems ?? []).map((p: any) => p.produk_id))];
+  // Step 6: Ambil model_produk — hanya nama
+  const modelIds = [...new Set(Object.values(produkMap).map((p: any) => p.model_id).filter(Boolean))];
+  const modelMap: Record<string, string> = {};
+  if (modelIds.length > 0) {
+    const { data: models } = await supabase
+      .from('model_produk')
+      .select('id, nama')
+      .in('id', modelIds);
+    (models ?? []).forEach((m: any) => { modelMap[m.id] = m.nama; });
+  }
 
-  const { data: produks, error: produkErr } = await supabase
-    .from('produk')
-    .select('id, harga_jual, model_produk:model_id(nama)')
-    .in('id', produkIds);
-
-  if (produkErr) throw new Error(produkErr.message);
-
-  // Build lookup maps
+  // Build bundle lookup
   const bundleMap: Record<string, any> = {};
   (bundles ?? []).forEach((b: any) => { bundleMap[b.id] = b; });
 
-  const poItemMap: Record<string, any> = {};
-  (poItems ?? []).forEach((p: any) => { poItemMap[p.id] = p; });
-
-  const produkMap: Record<string, any> = {};
-  (produks ?? []).forEach((p: any) => { produkMap[p.id] = p; });
-
-  // Kalkulasi
+  // Kalkulasi total
   let total = 0;
   const breakdown = sjItems.map((item: any) => {
-    const bundle  = bundleMap[item.bundle_id];
-    const poItem  = bundle ? poItemMap[bundle.po_item_id] : null;
-    const produk  = poItem  ? produkMap[poItem.produk_id] : null;
+    const bundle     = bundleMap[item.bundle_id];
+    const poItem     = bundle ? poItemMap[bundle.po_item_id] : null;
+    const produk     = poItem  ? produkMap[poItem.produk_id]  : null;
     const harga_jual = Number(produk?.harga_jual ?? 0);
     const qty        = Number(item.qty_kirim ?? 0);
     const subtotal   = harga_jual * qty;
     total += subtotal;
 
     return {
-      no_po:      (Array.isArray(bundle?.po) ? bundle.po[0]?.no_po : bundle?.po?.no_po) ?? '-',
-      model:      (Array.isArray(produk?.model_produk) ? produk.model_produk[0]?.nama : produk?.model_produk?.nama) ?? null,
+      no_po:      bundle ? (poMap[bundle.po_id] ?? '-') : '-',
+      model:      produk?.model_id ? (modelMap[produk.model_id] ?? null) : null,
       warna:      poItem?.warna ?? '-',
       size:       poItem?.size  ?? '-',
       qty,
