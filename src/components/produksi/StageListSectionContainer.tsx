@@ -4,10 +4,7 @@ import React, { useState } from 'react';
 import type { AntrianBundleItem, SelesaiBundleItem } from '@/lib/actions/produksi/stage-bundles.actions';
 import StageListSection from './StageListSection';
 import { type TahapKey } from '@/modules/produksi/constants/tahap';
-import { scanLanjutTahap, scanSelesai } from '@/lib/actions/produksi/scan-mutations.actions';
 import PrintHangTagLayout from '@/app/(dashboard)/app/produksi/scan/packing/PrintHangTagLayout';
-import { toast } from 'sonner';
-import { useRouter } from 'next/navigation';
 
 interface Props {
   tahap: TahapKey;
@@ -19,7 +16,6 @@ interface Props {
 export function StageListSectionContainer({
   tahap, initialAntrian, initialSelesai, pageSize = 20
 }: Props) {
-  const router = useRouter();
   const [hangTagData, setHangTagData] = useState<{
     noUrut: string;
     model_nama: string | null;
@@ -28,50 +24,20 @@ export function StageListSectionContainer({
     qty: number;
   }[] | null>(null);
 
-  const handlePackingBulkSelesai = async (bundles: AntrianBundleItem[]) => {
-    let berhasil = 0;
-    const printItems: typeof hangTagData = [];
-
-    for (const bundle of bundles) {
-      try {
-        await scanLanjutTahap({
-          barcode: bundle.barcode,
-          tahap_baru: 'packing',
-          karyawan_id: '',
-          qty: bundle.qty_per_bundle,
-        });
-        await scanSelesai({
-          barcode: bundle.barcode,
-          tahap: 'packing',
-          karyawan_id: null,
-          qty: bundle.qty_per_bundle,
-          catatan: undefined,
-          alasan_qty_id: null,
-          tenant_id: 'STX-001',
-        });
-        printItems!.push({
-          noUrut: bundle.barcode.split('-')[2] ?? '',
-          model_nama: bundle.model_nama ?? null,
-          warna: bundle.warna,
-          size: bundle.size,
-          qty: bundle.qty_per_bundle,
-        });
-        berhasil++;
-      } catch (err: any) {
-        toast.error(`Gagal: ${bundle.barcode} — ${err.message}`);
-      }
-    }
-
-    if (berhasil > 0) {
-      toast.success(`${berhasil} bundle berhasil diselesaikan`);
-      setHangTagData(printItems);
-      // Tunda print agar layout render dulu
-      setTimeout(() => {
-        window.print();
-        setHangTagData(null);
-      }, 600);
-    }
-    router.refresh();
+  const handleBulkSelesaiDone = (bundles: AntrianBundleItem[]) => {
+    if (tahap !== 'packing') return;
+    const items = bundles.map(b => ({
+      noUrut: b.barcode.split('-')[2] ?? '',
+      model_nama: b.model_nama ?? null,
+      warna: b.warna,
+      size: b.size,
+      qty: b.qty_per_bundle,
+    }));
+    setHangTagData(items);
+    setTimeout(() => {
+      window.print();
+      setHangTagData(null);
+    }, 600);
   };
 
   return (
@@ -96,7 +62,7 @@ export function StageListSectionContainer({
         selesaiData={initialSelesai.data}
         selesaiTotal={initialSelesai.total}
         pageSize={pageSize}
-        onBulkSelesai={tahap === 'packing' ? handlePackingBulkSelesai : undefined}
+        onBulkSelesaiDone={handleBulkSelesaiDone}
       />
 
       {/* Print hang tag — hanya untuk packing, hidden kecuali saat print */}
