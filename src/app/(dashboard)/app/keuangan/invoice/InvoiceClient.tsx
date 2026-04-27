@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { toast } from 'sonner';
 import {
-  Plus, Trash2, Loader2, Filter, ChevronDown, ChevronUp,
+  Trash2, Loader2, Filter, ChevronDown, ChevronUp,
   CreditCard, Receipt, AlertCircle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -15,13 +15,11 @@ import {
 } from '@/components/ui/table';
 import {
   STATUS_LABEL, STATUS_COLOR, METODE_BAYAR,
-  type InvoiceStatus,
 } from '@/lib/actions/keuangan/invoice.types';
 import type { InvoiceRow, InvoiceDetail, InvoicePembayaran } from '@/lib/actions/keuangan/invoice.types';
 import {
   getInvoiceList, getInvoiceDetail,
-  createInvoice, addPembayaran, deletePembayaran, deleteInvoice,
-  getInvoiceTotalFromSJ,
+  addPembayaran, deletePembayaran, deleteInvoice,
 } from '@/lib/actions/keuangan/invoice.actions';
 
 // ─── CONSTANTS ───────────────────────────────────────────────────────────────
@@ -37,27 +35,15 @@ const idrFmt = (n: number) =>
 const dateFmt = (d: string | null) =>
   d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '-';
 
-const inputCls = 'w-full h-10 px-3 rounded-lg bg-[#1E2124] border border-[#2A2D31] text-sm text-[#e8eaed] focus:ring-1 focus:ring-[#e5c17b] outline-none';
-const labelCls = 'block text-[10px] font-bold text-[#9aa0a6] uppercase tracking-widest mb-1';
+const inputCls  = 'w-full h-10 px-3 rounded-lg bg-[#1E2124] border border-[#2A2D31] text-sm text-[#e8eaed] focus:ring-1 focus:ring-[#e5c17b] outline-none';
+const labelCls  = 'block text-[10px] font-bold text-[#9aa0a6] uppercase tracking-widest mb-1';
 
 // ─── PROPS ───────────────────────────────────────────────────────────────────
 
 interface Props {
   initialInvoices: InvoiceRow[];
   klienList: { id: string; nama: string }[];
-  sjList: { id: string; nomor_sj: string; klien_id: string; klien_nama: string; tanggal: string }[];
 }
-
-// ─── DEFAULT FORMS ───────────────────────────────────────────────────────────
-
-const defaultCreateForm = () => ({
-  tanggal:             '',
-  tanggal_jatuh_tempo: '',
-  surat_jalan_id:      '',
-  klien_id:            '',
-  total_nilai:         '',
-  catatan:             '',
-});
 
 const defaultBayarForm = (invoice_id: string) => ({
   invoice_id,
@@ -69,33 +55,25 @@ const defaultBayarForm = (invoice_id: string) => ({
 
 // ─── COMPONENT ───────────────────────────────────────────────────────────────
 
-export default function InvoiceClient({ initialInvoices, klienList, sjList }: Props) {
-  const [invoices, setInvoices]   = useState<InvoiceRow[]>(initialInvoices);
-  const [loading, setLoading]     = useState(false);
-  const [filtering, setFiltering] = useState(false);
+export default function InvoiceClient({ initialInvoices, klienList }: Props) {
+  const [invoices, setInvoices]     = useState<InvoiceRow[]>(initialInvoices);
+  const [filtering, setFiltering]   = useState(false);
 
-  // Filter state
-  const [filterStatus, setFilterStatus]   = useState('');
-  const [filterKlien, setFilterKlien]     = useState('');
-  const [filterBulan, setFilterBulan]     = useState('');
-  const [filterTahun, setFilterTahun]     = useState(String(new Date().getFullYear()));
+  // Filter
+  const [filterStatus, setFilterStatus] = useState('');
+  const [filterKlien, setFilterKlien]   = useState('');
+  const [filterBulan, setFilterBulan]   = useState('');
+  const [filterTahun, setFilterTahun]   = useState(String(new Date().getFullYear()));
 
-  // Expanded row (show detail inline)
-  const [expandedId, setExpandedId]       = useState<string | null>(null);
+  // Expand detail inline
+  const [expandedId, setExpandedId]         = useState<string | null>(null);
   const [expandedDetail, setExpandedDetail] = useState<InvoiceDetail | null>(null);
-  const [loadingDetail, setLoadingDetail] = useState(false);
+  const [loadingDetail, setLoadingDetail]   = useState(false);
 
-  // Create invoice modal
-  const [showCreate, setShowCreate]       = useState(false);
-  const [createForm, setCreateForm]       = useState(defaultCreateForm());
-  const [creating, setCreating]           = useState(false);
-  const [calcLoading, setCalcLoading]     = useState(false);
-  const [sjBreakdown, setSjBreakdown]     = useState<{ no_po: string; model: string | null; warna: string; size: string; qty: number; harga_jual: number; subtotal: number }[]>([]);
-
-  // Tambah bayar modal
-  const [bayarInvoice, setBayarInvoice]   = useState<InvoiceRow | null>(null);
-  const [bayarForm, setBayarForm]         = useState(defaultBayarForm(''));
-  const [bayaring, setBayaring]           = useState(false);
+  // Catat bayar modal
+  const [bayarInvoice, setBayarInvoice] = useState<InvoiceRow | null>(null);
+  const [bayarForm, setBayarForm]       = useState(defaultBayarForm(''));
+  const [bayaring, setBayaring]         = useState(false);
 
   // Delete states
   const [deleteInvoiceTarget, setDeleteInvoiceTarget] = useState<InvoiceRow | null>(null);
@@ -105,8 +83,8 @@ export default function InvoiceClient({ initialInvoices, klienList, sjList }: Pr
 
   // ─── DERIVED ──────────────────────────────────────────────────────────────
 
-  const totalPiutang  = invoices.filter(i => i.status !== 'lunas').reduce((s, i) => s + i.sisa, 0);
-  const totalLunas    = invoices.filter(i => i.status === 'lunas').reduce((s, i) => s + i.total_nilai, 0);
+  const totalPiutang      = invoices.filter(i => i.status !== 'lunas').reduce((s, i) => s + i.sisa, 0);
+  const totalLunas        = invoices.filter(i => i.status === 'lunas').reduce((s, i) => s + i.total_nilai, 0);
   const jumlahOutstanding = invoices.filter(i => i.status !== 'lunas').length;
 
   // ─── FILTER ───────────────────────────────────────────────────────────────
@@ -115,10 +93,10 @@ export default function InvoiceClient({ initialInvoices, klienList, sjList }: Pr
     setFiltering(true);
     try {
       const data = await getInvoiceList({
-        status:   filterStatus   || undefined,
-        klien_id: filterKlien    || undefined,
-        bulan:    filterBulan    || undefined,
-        tahun:    filterTahun    || undefined,
+        status:   filterStatus || undefined,
+        klien_id: filterKlien  || undefined,
+        bulan:    filterBulan  || undefined,
+        tahun:    filterTahun  || undefined,
       });
       setInvoices(data);
       setExpandedId(null);
@@ -144,63 +122,14 @@ export default function InvoiceClient({ initialInvoices, klienList, sjList }: Pr
     try {
       const detail = await getInvoiceDetail(id);
       setExpandedDetail(detail);
-    } catch (e: any) {
+    } catch {
       toast.error('Gagal memuat detail invoice');
     } finally {
       setLoadingDetail(false);
     }
   };
 
-  // ─── CREATE INVOICE ───────────────────────────────────────────────────────
-
-  const handleSJChange = async (sjId: string) => {
-    const sj = sjList.find(s => s.id === sjId);
-    setCreateForm(f => ({
-      ...f,
-      surat_jalan_id: sjId,
-      klien_id: sj ? sj.klien_id : f.klien_id,
-      total_nilai: '',
-    }));
-    setSjBreakdown([]);
-
-    if (!sjId) return;
-
-    setCalcLoading(true);
-    try {
-      const result = await getInvoiceTotalFromSJ(sjId);
-      setSjBreakdown(result.breakdown);
-      setCreateForm(f => ({ ...f, total_nilai: String(result.total) }));
-    } catch (e: any) {
-      toast.error('Gagal menghitung total dari SJ');
-    } finally {
-      setCalcLoading(false);
-    }
-  };
-
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setCreating(true);
-    const result = await createInvoice({
-      tanggal:             createForm.tanggal,
-      tanggal_jatuh_tempo: createForm.tanggal_jatuh_tempo || undefined,
-      surat_jalan_id:      createForm.surat_jalan_id      || undefined,
-      klien_id:            createForm.klien_id,
-      total_nilai:         parseFloat(createForm.total_nilai),
-      catatan:             createForm.catatan              || undefined,
-    });
-    setCreating(false);
-    if (!result.success) {
-      toast.error(result.error || 'Gagal membuat invoice');
-      return;
-    }
-    toast.success('Invoice berhasil dibuat');
-    setShowCreate(false);
-    setCreateForm(defaultCreateForm());
-    const fresh = await getInvoiceList({ tahun: filterTahun || undefined, bulan: filterBulan || undefined });
-    setInvoices(fresh);
-  };
-
-  // ─── TAMBAH BAYAR ─────────────────────────────────────────────────────────
+  // ─── CATAT BAYAR ──────────────────────────────────────────────────────────
 
   const openBayar = (inv: InvoiceRow) => {
     setBayarInvoice(inv);
@@ -225,7 +154,7 @@ export default function InvoiceClient({ initialInvoices, klienList, sjList }: Pr
     toast.success('Pembayaran berhasil dicatat');
     setBayarInvoice(null);
 
-    // Refresh list + detail
+    // Refresh
     const fresh = await getInvoiceList({ tahun: filterTahun || undefined, bulan: filterBulan || undefined });
     setInvoices(fresh);
     if (expandedId === bayarForm.invoice_id) {
@@ -241,13 +170,9 @@ export default function InvoiceClient({ initialInvoices, klienList, sjList }: Pr
     setDeletingBayar(true);
     const result = await deletePembayaran(deleteBayarTarget.id);
     setDeletingBayar(false);
-    if (!result.success) {
-      toast.error(result.error || 'Gagal menghapus pembayaran');
-      return;
-    }
+    if (!result.success) { toast.error(result.error || 'Gagal menghapus'); return; }
     toast.success('Pembayaran dihapus');
     setDeleteBayarTarget(null);
-
     const fresh = await getInvoiceList({ tahun: filterTahun || undefined, bulan: filterBulan || undefined });
     setInvoices(fresh);
     if (expandedId) {
@@ -263,17 +188,11 @@ export default function InvoiceClient({ initialInvoices, klienList, sjList }: Pr
     setDeletingInvoice(true);
     const result = await deleteInvoice(deleteInvoiceTarget.id);
     setDeletingInvoice(false);
-    if (!result.success) {
-      toast.error(result.error || 'Gagal menghapus invoice');
-      return;
-    }
+    if (!result.success) { toast.error(result.error || 'Gagal menghapus invoice'); return; }
     toast.success('Invoice dihapus');
     setDeleteInvoiceTarget(null);
     setInvoices(prev => prev.filter(i => i.id !== deleteInvoiceTarget.id));
-    if (expandedId === deleteInvoiceTarget.id) {
-      setExpandedId(null);
-      setExpandedDetail(null);
-    }
+    if (expandedId === deleteInvoiceTarget.id) { setExpandedId(null); setExpandedDetail(null); }
   };
 
   // ─── RENDER ───────────────────────────────────────────────────────────────
@@ -288,7 +207,7 @@ export default function InvoiceClient({ initialInvoices, klienList, sjList }: Pr
             <p className="text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold">Total Piutang Aktif</p>
             <AlertCircle className="h-4 w-4 text-red-400" />
           </div>
-          <p className="text-sm font-bold text-red-400">{idrFmt(totalPiutang)}</p>
+          <p className="text-lg font-bold font-mono text-red-400">{idrFmt(totalPiutang)}</p>
           <p className="text-[10px] text-[#5f6368] mt-1">{jumlahOutstanding} invoice outstanding</p>
         </div>
         <div className="p-4 rounded-xl bg-[#1A1D1F] border border-green-500/20">
@@ -296,26 +215,16 @@ export default function InvoiceClient({ initialInvoices, klienList, sjList }: Pr
             <p className="text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold">Total Lunas</p>
             <Receipt className="h-4 w-4 text-green-400" />
           </div>
-          <p className="text-sm font-bold text-green-400">{idrFmt(totalLunas)}</p>
+          <p className="text-lg font-bold font-mono text-green-400">{idrFmt(totalLunas)}</p>
         </div>
         <div className="p-4 rounded-xl bg-[#1A1D1F] border border-[#2A2D31]">
           <div className="flex items-center justify-between mb-1">
             <p className="text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold">Total Invoice</p>
             <CreditCard className="h-4 w-4 text-[#e5c17b]" />
           </div>
-          <p className="text-sm font-bold text-[#e5c17b]">{invoices.length} invoice</p>
+          <p className="text-lg font-bold font-mono text-[#e5c17b]">{invoices.length} invoice</p>
+          <p className="text-[10px] text-[#5f6368] mt-1">Otomatis dari Surat Jalan</p>
         </div>
-      </div>
-
-      {/* ─── HEADER + BUTTON ──────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <h2 className="text-base font-bold text-[#e8eaed]">Daftar Invoice</h2>
-        <Button
-          onClick={() => { setCreateForm(defaultCreateForm()); setSjBreakdown([]); setShowCreate(true); }}
-          className="bg-[#e5c17b] text-[#0D0E10] hover:bg-[#d4b06a] font-bold text-xs h-9 px-4"
-        >
-          <Plus className="h-4 w-4 mr-1" /> Buat Invoice
-        </Button>
       </div>
 
       {/* ─── FILTER BAR ───────────────────────────────────────────────────── */}
@@ -357,8 +266,11 @@ export default function InvoiceClient({ initialInvoices, klienList, sjList }: Pr
           {filtering ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Filter className="h-4 w-4 mr-1" />}
           Terapkan
         </Button>
-        <Button variant="ghost" onClick={() => { setFilterStatus(''); setFilterKlien(''); setFilterBulan(''); setFilterTahun(String(new Date().getFullYear())); }}
-          className="h-9 text-xs text-[#9aa0a6] hover:text-[#e8eaed]">Reset</Button>
+        <Button variant="ghost"
+          onClick={() => { setFilterStatus(''); setFilterKlien(''); setFilterBulan(''); setFilterTahun(String(new Date().getFullYear())); }}
+          className="h-9 text-xs text-[#9aa0a6] hover:text-[#e8eaed]">
+          Reset
+        </Button>
       </div>
 
       {/* ─── TABEL ────────────────────────────────────────────────────────── */}
@@ -370,8 +282,7 @@ export default function InvoiceClient({ initialInvoices, klienList, sjList }: Pr
               <TableHead className="text-[#9aa0a6]">Klien</TableHead>
               <TableHead className="text-[#9aa0a6]">No. SJ</TableHead>
               <TableHead className="text-[#9aa0a6]">Tanggal</TableHead>
-              <TableHead className="text-[#9aa0a6]">Jatuh Tempo</TableHead>
-              <TableHead className="text-[#9aa0a6] text-right">Total</TableHead>
+              <TableHead className="text-[#9aa0a6] text-right">Total Tagihan</TableHead>
               <TableHead className="text-[#9aa0a6] text-right">Terbayar</TableHead>
               <TableHead className="text-[#9aa0a6] text-right">Sisa</TableHead>
               <TableHead className="text-[#9aa0a6] text-center">Status</TableHead>
@@ -381,15 +292,18 @@ export default function InvoiceClient({ initialInvoices, klienList, sjList }: Pr
           <TableBody className="bg-[#16181A]">
             {invoices.length === 0 ? (
               <TableRow className="hover:bg-transparent border-[#2A2D31]">
-                <TableCell colSpan={10} className="h-32 text-center text-[#5f6368]">
-                  Belum ada invoice
+                <TableCell colSpan={9} className="h-32 text-center text-[#5f6368]">
+                  Belum ada invoice — invoice akan muncul otomatis saat Surat Jalan diterbitkan
                 </TableCell>
               </TableRow>
             ) : invoices.map(inv => (
               <React.Fragment key={inv.id}>
+
                 {/* ─── ROW UTAMA ─── */}
-                <TableRow className={`border-[#2A2D31] hover:bg-[#1A1C1E] cursor-pointer ${expandedId === inv.id ? 'bg-[#1A1C1E]' : ''}`}
-                  onClick={() => toggleExpand(inv.id)}>
+                <TableRow
+                  className={`border-[#2A2D31] hover:bg-[#1A1C1E] cursor-pointer ${expandedId === inv.id ? 'bg-[#1A1C1E]' : ''}`}
+                  onClick={() => toggleExpand(inv.id)}
+                >
                   <TableCell className="font-mono text-sm text-[#e5c17b] font-bold">
                     {inv.nomor_invoice}
                   </TableCell>
@@ -399,12 +313,6 @@ export default function InvoiceClient({ initialInvoices, klienList, sjList }: Pr
                   </TableCell>
                   <TableCell className="text-sm text-[#9aa0a6] whitespace-nowrap">
                     {dateFmt(inv.tanggal)}
-                  </TableCell>
-                  <TableCell className={`text-sm whitespace-nowrap ${
-                    inv.status !== 'lunas' && inv.tanggal_jatuh_tempo && new Date(inv.tanggal_jatuh_tempo) < new Date()
-                      ? 'text-red-400 font-semibold' : 'text-[#9aa0a6]'
-                  }`}>
-                    {dateFmt(inv.tanggal_jatuh_tempo)}
                   </TableCell>
                   <TableCell className="text-sm font-mono text-right text-[#e8eaed]">
                     {idrFmt(inv.total_nilai)}
@@ -437,7 +345,9 @@ export default function InvoiceClient({ initialInvoices, klienList, sjList }: Pr
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
                       <span className="text-[#5f6368]">
-                        {expandedId === inv.id ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                        {expandedId === inv.id
+                          ? <ChevronUp className="h-3.5 w-3.5" />
+                          : <ChevronDown className="h-3.5 w-3.5" />}
                       </span>
                     </div>
                   </TableCell>
@@ -446,47 +356,62 @@ export default function InvoiceClient({ initialInvoices, klienList, sjList }: Pr
                 {/* ─── DETAIL PANEL ─── */}
                 {expandedId === inv.id && (
                   <TableRow className="border-[#2A2D31] hover:bg-transparent">
-                    <TableCell colSpan={10} className="p-0">
-                      <div className="bg-[#12141A] border-t border-[#2A2D31] px-6 py-4">
-                        {loadingDetail ? (
-                          <div className="flex items-center gap-2 text-[#9aa0a6] text-sm py-2">
-                            <Loader2 className="h-4 w-4 animate-spin" /> Memuat riwayat pembayaran...
-                          </div>
-                        ) : !expandedDetail ? (
-                          <p className="text-sm text-[#5f6368]">Tidak ada data</p>
-                        ) : (
-                          <div>
-                            <p className="text-[10px] font-bold uppercase tracking-widest text-[#9aa0a6] mb-3">
-                              Riwayat Pembayaran
-                            </p>
-                            {expandedDetail.pembayaran.length === 0 ? (
-                              <p className="text-sm text-[#5f6368] italic">Belum ada pembayaran.</p>
-                            ) : (
-                              <div className="space-y-2 max-w-2xl">
-                                {expandedDetail.pembayaran.map(p => (
-                                  <div key={p.id}
-                                    className="flex items-center justify-between p-3 rounded-lg bg-[#1A1D1F] border border-[#2A2D31]">
-                                    <div className="flex items-center gap-4">
-                                      <span className="text-sm text-[#9aa0a6] whitespace-nowrap">{dateFmt(p.tanggal)}</span>
-                                      <span className="text-xs bg-[#2A2D31] text-[#9aa0a6] px-2 py-0.5 rounded capitalize">{p.metode}</span>
-                                      {p.keterangan && <span className="text-sm text-[#9aa0a6]">{p.keterangan}</span>}
-                                    </div>
-                                    <div className="flex items-center gap-3">
-                                      <span className="text-sm font-bold font-mono text-green-400">{idrFmt(p.jumlah)}</span>
-                                      <Button variant="ghost" size="icon"
-                                        onClick={() => setDeleteBayarTarget(p)}
-                                        className="h-6 w-6 text-[#9aa0a6] hover:text-red-400 hover:bg-red-400/10">
-                                        <Trash2 className="h-3 w-3" />
-                                      </Button>
-                                    </div>
+                    <TableCell colSpan={9} className="p-0">
+                      <div className="bg-[#12141A] border-t border-[#2A2D31] px-6 py-4 space-y-4">
+
+                        {/* Info baris */}
+                        <div className="flex flex-wrap gap-6 text-xs text-[#9aa0a6]">
+                          {inv.tanggal_jatuh_tempo && (
+                            <span>Jatuh Tempo: <span className={`font-semibold ${inv.status !== 'lunas' && new Date(inv.tanggal_jatuh_tempo) < new Date() ? 'text-red-400' : 'text-[#e8eaed]'}`}>{dateFmt(inv.tanggal_jatuh_tempo)}</span></span>
+                          )}
+                          {inv.catatan && (
+                            <span>Catatan: <span className="text-[#e8eaed] italic">{inv.catatan}</span></span>
+                          )}
+                        </div>
+
+                        {/* Riwayat Pembayaran */}
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-[#9aa0a6] mb-3">
+                            Riwayat Pembayaran
+                          </p>
+                          {loadingDetail ? (
+                            <div className="flex items-center gap-2 text-[#9aa0a6] text-sm">
+                              <Loader2 className="h-4 w-4 animate-spin" /> Memuat...
+                            </div>
+                          ) : !expandedDetail || expandedDetail.pembayaran.length === 0 ? (
+                            <p className="text-sm text-[#5f6368] italic">Belum ada pembayaran.</p>
+                          ) : (
+                            <div className="space-y-2 max-w-2xl">
+                              {expandedDetail.pembayaran.map(p => (
+                                <div key={p.id}
+                                  className="flex items-center justify-between p-3 rounded-lg bg-[#1A1D1F] border border-[#2A2D31]">
+                                  <div className="flex items-center gap-4">
+                                    <span className="text-sm text-[#9aa0a6] whitespace-nowrap">{dateFmt(p.tanggal)}</span>
+                                    <span className="text-xs bg-[#2A2D31] text-[#9aa0a6] px-2 py-0.5 rounded capitalize">{p.metode}</span>
+                                    {p.keterangan && <span className="text-sm text-[#9aa0a6]">{p.keterangan}</span>}
                                   </div>
-                                ))}
-                              </div>
-                            )}
-                            {expandedDetail.catatan && (
-                              <p className="text-xs text-[#9aa0a6] mt-3 italic">Catatan: {expandedDetail.catatan}</p>
-                            )}
-                          </div>
+                                  <div className="flex items-center gap-3">
+                                    <span className="text-sm font-bold font-mono text-green-400">{idrFmt(p.jumlah)}</span>
+                                    <Button variant="ghost" size="icon"
+                                      onClick={() => setDeleteBayarTarget(p)}
+                                      className="h-6 w-6 text-[#9aa0a6] hover:text-red-400 hover:bg-red-400/10">
+                                      <Trash2 className="h-3 w-3" />
+                                    </Button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Tombol catat bayar inline */}
+                        {inv.status !== 'lunas' && (
+                          <Button
+                            onClick={() => openBayar(inv)}
+                            className="bg-green-600 hover:bg-green-700 text-white font-bold text-xs h-8 px-4">
+                            <CreditCard className="h-3.5 w-3.5 mr-1.5" />
+                            Catat Pembayaran
+                          </Button>
                         )}
                       </div>
                     </TableCell>
@@ -498,132 +423,6 @@ export default function InvoiceClient({ initialInvoices, klienList, sjList }: Pr
         </Table>
       </div>
 
-      {/* ─── MODAL: BUAT INVOICE ──────────────────────────────────────────── */}
-      <Dialog open={showCreate} onOpenChange={open => { if (!open) { setShowCreate(false); setSjBreakdown([]); } }}>
-        <DialogContent className="bg-[#16181A] border-[#2A2D31] text-[#e8eaed] sm:max-w-lg max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="text-[#e5c17b]">Buat Invoice Baru</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleCreate} className="space-y-4 py-2">
-
-            {/* Tag ke SJ */}
-            <div>
-              <label className={labelCls}>Tag ke Surat Jalan <span className="text-[#5f6368] normal-case font-normal">(opsional)</span></label>
-              <select className={inputCls}
-                value={createForm.surat_jalan_id}
-                onChange={e => handleSJChange(e.target.value)}
-                disabled={calcLoading}>
-                <option value="">-- Tidak ada (input manual) --</option>
-                {sjList.map(sj => (
-                  <option key={sj.id} value={sj.id}>
-                    {sj.nomor_sj} — {sj.klien_nama} ({dateFmt(sj.tanggal)})
-                  </option>
-                ))}
-              </select>
-              {calcLoading && (
-                <p className="text-[10px] text-[#e5c17b] mt-1 flex items-center gap-1">
-                  <Loader2 className="h-3 w-3 animate-spin" /> Menghitung total dari SJ...
-                </p>
-              )}
-            </div>
-
-            {/* Breakdown items dari SJ */}
-            {sjBreakdown.length > 0 && (
-              <div className="rounded-lg border border-[#2A2D31] overflow-hidden">
-                <div className="px-3 py-2 bg-[#1A1D1F] border-b border-[#2A2D31]">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-[#9aa0a6]">Rincian Item Surat Jalan</p>
-                </div>
-                <div className="divide-y divide-[#2A2D31]">
-                  {sjBreakdown.map((item, i) => (
-                    <div key={i} className="flex items-center justify-between px-3 py-2 bg-[#12141A]">
-                      <div>
-                        <p className="text-xs text-[#e8eaed]">
-                          {item.model ? `${item.model} · ` : ''}{item.warna} / {item.size}
-                        </p>
-                        <p className="text-[10px] text-[#9aa0a6]">
-                          {item.qty} pcs × {idrFmt(item.harga_jual)}
-                        </p>
-                      </div>
-                      <p className="text-xs font-mono font-bold text-[#e5c17b]">{idrFmt(item.subtotal)}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Klien */}
-            <div>
-              <label className={labelCls}>Klien *</label>
-              <select required className={inputCls}
-                value={createForm.klien_id}
-                onChange={e => setCreateForm(f => ({ ...f, klien_id: e.target.value }))}>
-                <option value="">-- Pilih Klien --</option>
-                {klienList.map(k => <option key={k.id} value={k.id}>{k.nama}</option>)}
-              </select>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className={labelCls}>Tanggal Invoice *</label>
-                <input type="date" required className={`${inputCls} [color-scheme:dark]`}
-                  value={createForm.tanggal}
-                  onChange={e => setCreateForm(f => ({ ...f, tanggal: e.target.value }))} />
-              </div>
-              <div>
-                <label className={labelCls}>Jatuh Tempo <span className="text-[#5f6368] normal-case font-normal">(opsional)</span></label>
-                <input type="date" className={`${inputCls} [color-scheme:dark]`}
-                  value={createForm.tanggal_jatuh_tempo}
-                  onChange={e => setCreateForm(f => ({ ...f, tanggal_jatuh_tempo: e.target.value }))} />
-              </div>
-            </div>
-
-            <div>
-              <label className={labelCls}>
-                Total Nilai Tagihan (Rp) *
-                {sjBreakdown.length > 0 && (
-                  <span className="ml-2 text-[#e5c17b] normal-case font-normal tracking-normal">
-                    — dihitung otomatis dari SJ
-                  </span>
-                )}
-              </label>
-              <input
-                type="number" required min="1"
-                placeholder="contoh: 5000000"
-                className={`${inputCls} ${sjBreakdown.length > 0 ? 'border-[#e5c17b]/30 text-[#e5c17b] font-bold' : ''}`}
-                value={createForm.total_nilai}
-                onChange={e => setCreateForm(f => ({ ...f, total_nilai: e.target.value }))}
-                readOnly={sjBreakdown.length > 0}
-              />
-              {sjBreakdown.length > 0 && (
-                <p className="text-[10px] text-[#9aa0a6] mt-1">
-                  Bisa diubah manual jika diperlukan (klik field lalu edit)
-                </p>
-              )}
-            </div>
-
-            <div>
-              <label className={labelCls}>Catatan <span className="text-[#5f6368] normal-case font-normal">(opsional)</span></label>
-              <input type="text" placeholder="Keterangan tambahan"
-                className={inputCls}
-                value={createForm.catatan}
-                onChange={e => setCreateForm(f => ({ ...f, catatan: e.target.value }))} />
-            </div>
-
-            <DialogFooter className="pt-2">
-              <Button type="button" variant="outline" onClick={() => setShowCreate(false)}
-                className="border-[#2A2D31] bg-transparent text-[#e8eaed]" disabled={creating}>
-                Batal
-              </Button>
-              <Button type="submit" disabled={creating}
-                className="bg-[#e5c17b] text-[#0D0E10] hover:bg-[#d4b06a] font-bold">
-                {creating && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-                {creating ? 'Menyimpan...' : 'Buat Invoice'}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
       {/* ─── MODAL: CATAT PEMBAYARAN ──────────────────────────────────────── */}
       <Dialog open={!!bayarInvoice} onOpenChange={open => { if (!open) setBayarInvoice(null); }}>
         <DialogContent className="bg-[#16181A] border-[#2A2D31] text-[#e8eaed] sm:max-w-md">
@@ -631,11 +430,19 @@ export default function InvoiceClient({ initialInvoices, klienList, sjList }: Pr
             <DialogTitle className="text-green-400">Catat Pembayaran</DialogTitle>
           </DialogHeader>
           {bayarInvoice && (
-            <div className="mb-2 p-3 rounded-lg bg-[#1A1D1F] border border-[#2A2D31] text-sm">
+            <div className="mb-2 p-3 rounded-lg bg-[#1A1D1F] border border-[#2A2D31] text-sm space-y-1">
               <p className="font-mono text-[#e5c17b] font-bold">{bayarInvoice.nomor_invoice}</p>
               <p className="text-[#9aa0a6]">{bayarInvoice.klien_nama}</p>
-              <div className="flex justify-between mt-1">
-                <span className="text-[#9aa0a6] text-xs">Sisa:</span>
+              <div className="flex justify-between pt-1 border-t border-[#2A2D31]">
+                <span className="text-[#9aa0a6] text-xs">Total Tagihan</span>
+                <span className="text-[#e8eaed] font-mono text-xs">{idrFmt(bayarInvoice.total_nilai)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-[#9aa0a6] text-xs">Sudah Terbayar</span>
+                <span className="text-green-400 font-mono text-xs">{idrFmt(bayarInvoice.total_bayar)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-[#9aa0a6] text-xs font-bold">Sisa</span>
                 <span className="text-red-400 font-bold font-mono text-xs">{idrFmt(bayarInvoice.sisa)}</span>
               </div>
             </div>
@@ -654,14 +461,15 @@ export default function InvoiceClient({ initialInvoices, klienList, sjList }: Pr
                   value={bayarForm.metode}
                   onChange={e => setBayarForm(f => ({ ...f, metode: e.target.value as any }))}>
                   {METODE_BAYAR.map(m => (
-                    <option key={m} value={m} className="capitalize">{m.charAt(0).toUpperCase() + m.slice(1)}</option>
+                    <option key={m} value={m}>{m.charAt(0).toUpperCase() + m.slice(1)}</option>
                   ))}
                 </select>
               </div>
             </div>
             <div>
               <label className={labelCls}>Jumlah Bayar (Rp) *</label>
-              <input type="number" required min="1" placeholder="Jumlah yang dibayar"
+              <input type="number" required min="1"
+                placeholder={bayarInvoice ? `Maks: ${bayarInvoice.sisa.toLocaleString('id-ID')}` : ''}
                 className={inputCls}
                 value={bayarForm.jumlah}
                 onChange={e => setBayarForm(f => ({ ...f, jumlah: e.target.value }))} />
@@ -693,7 +501,8 @@ export default function InvoiceClient({ initialInvoices, klienList, sjList }: Pr
         <DialogContent className="bg-[#16181A] border-[#2A2D31] text-[#e8eaed] sm:max-w-sm">
           <DialogHeader><DialogTitle>Hapus Pembayaran?</DialogTitle></DialogHeader>
           <p className="text-sm text-[#9aa0a6] py-2">
-            Hapus pembayaran sebesar <span className="text-[#e8eaed] font-bold">{idrFmt(deleteBayarTarget?.jumlah ?? 0)}</span>?
+            Hapus pembayaran sebesar{' '}
+            <span className="text-[#e8eaed] font-bold">{idrFmt(deleteBayarTarget?.jumlah ?? 0)}</span>?
             Status invoice akan otomatis diperbarui.
           </p>
           <DialogFooter>
@@ -713,7 +522,8 @@ export default function InvoiceClient({ initialInvoices, klienList, sjList }: Pr
         <DialogContent className="bg-[#16181A] border-[#2A2D31] text-[#e8eaed] sm:max-w-sm">
           <DialogHeader><DialogTitle>Hapus Invoice?</DialogTitle></DialogHeader>
           <p className="text-sm text-[#9aa0a6] py-2">
-            Hapus invoice <span className="text-[#e5c17b] font-bold">{deleteInvoiceTarget?.nomor_invoice}</span>?
+            Hapus invoice{' '}
+            <span className="text-[#e5c17b] font-bold">{deleteInvoiceTarget?.nomor_invoice}</span>?
             Invoice yang sudah memiliki riwayat pembayaran tidak dapat dihapus.
           </p>
           <DialogFooter>

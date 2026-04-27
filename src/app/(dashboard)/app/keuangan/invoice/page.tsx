@@ -1,4 +1,4 @@
-import { getInvoiceList, getKlienListForInvoice, getSuratJalanForInvoice } from '@/lib/actions/keuangan/invoice.actions';
+import { getInvoiceList, getKlienListForInvoice } from '@/lib/actions/keuangan/invoice.actions';
 import { PageWrapper } from '@/components/ui/PageWrapper';
 import InvoiceClient from './InvoiceClient';
 
@@ -8,21 +8,19 @@ export const metadata = {
 
 export default async function InvoicePage() {
   try {
-    const [invoices, klienList, sjList] = await Promise.all([
+    const [invoices, klienList] = await Promise.all([
       getInvoiceList(),
       getKlienListForInvoice(),
-      getSuratJalanForInvoice(),
     ]);
 
     return (
       <PageWrapper
         title="Invoice & Tagihan"
-        subtitle="Kelola invoice dan track pembayaran klien."
+        subtitle="Invoice otomatis dibuat setiap kali Surat Jalan diterbitkan."
       >
         <InvoiceClient
           initialInvoices={invoices}
           klienList={klienList}
-          sjList={sjList}
         />
       </PageWrapper>
     );
