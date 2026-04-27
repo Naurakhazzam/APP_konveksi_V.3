@@ -386,10 +386,11 @@ export async function getInvoiceTotalFromSJ(
   const supabase = await createClient();
 
   // Step 1: Ambil surat_jalan_item — hanya kolom flat, tanpa join
+  // Kolom foreign key ke surat_jalan adalah "sj_id" (bukan surat_jalan_id)
   const { data: sjItems, error: sjErr } = await supabase
     .from('surat_jalan_item')
     .select('qty_kirim, bundle_id')
-    .eq('surat_jalan_id', sj_id);
+    .eq('sj_id', sj_id);
 
   if (sjErr) throw new Error('SJ item: ' + sjErr.message);
   if (!sjItems || sjItems.length === 0) return { total: 0, breakdown: [] };
