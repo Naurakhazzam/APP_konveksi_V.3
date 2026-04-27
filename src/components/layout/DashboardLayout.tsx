@@ -6,27 +6,75 @@ import { getAllowedPathsForRole } from '@/lib/actions/master/permission.actions'
 import { redirect } from 'next/navigation';
 import { Toaster } from 'sonner';
 
+// Semua path yang ada di app — owner selalu dapat akses ke semua ini
+const ALL_APP_PATHS = [
+  '/app/dashboard',
+  '/app/produksi/input-po',
+  '/app/produksi/po/import',
+  '/app/produksi/antrian-cutting',
+  '/app/produksi/scan/cutting',
+  '/app/produksi/scan/jahit',
+  '/app/produksi/scan/lubang-kancing',
+  '/app/produksi/scan/buang-benang',
+  '/app/produksi/scan/qc',
+  '/app/produksi/scan/steam',
+  '/app/produksi/scan/packing',
+  '/app/produksi/monitoring',
+  '/app/produksi/approval-qty',
+  '/app/pengiriman/buat-surat-jalan',
+  '/app/pengiriman/riwayat',
+  '/app/penggajian/rekap-gaji',
+  '/app/penggajian/kasbon',
+  '/app/penggajian/slip-gaji',
+  '/app/master/detail',
+  '/app/master/produk',
+  '/app/master/model',
+  '/app/master/karyawan',
+  '/app/master/jabatan',
+  '/app/master/klien',
+  '/app/master/satuan',
+  '/app/master/reject',
+  '/app/master/kategori-trx',
+  '/app/master/komponen-hpp',
+  '/app/master/aksesori-warna',
+  '/app/master/users',
+  '/app/inventory/overview',
+  '/app/inventory/transaksi-keluar',
+  '/app/inventory/alert-order',
+  '/app/keuangan/ringkasan',
+  '/app/keuangan/jurnal-produksi',
+  '/app/keuangan/buku-kas',
+  '/app/keuangan/invoice',
+  '/app/keuangan/laporan-po',
+  '/app/keuangan/overhead-setting',
+  '/app/keuangan/laporan-bulan',
+  '/app/keuangan/laporan-gaji',
+  '/app/keuangan/laporan-reject',
+  '/app/settings',
+];
+
 export async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const profile = await getCurrentUserProfile();
-  
+
   if (!profile) {
     redirect('/login');
   }
 
-  // Ambil semua path yang diizinkan untuk role ini dari DB
-  const allowedPaths = await getAllowedPathsForRole(profile.role);
+  // Owner selalu dapat semua path — role lain ambil dari DB
+  const allowedPaths: string[] = profile.role === 'owner'
+    ? ALL_APP_PATHS
+    : await getAllowedPathsForRole(profile.role);
 
-  // Derive allowedNavIds dari allowedPaths (parent nav tampil jika minimal 1 child-nya boleh)
   // Nav ID → path prefix mapping
   const NAV_PATH_MAP: Record<string, string> = {
-    dashboard:   '/app/dashboard',
-    produksi:    '/app/produksi',
-    pengiriman:  '/app/pengiriman',
-    penggajian:  '/app/penggajian',
+    dashboard:     '/app/dashboard',
+    produksi:      '/app/produksi',
+    pengiriman:    '/app/pengiriman',
+    penggajian:    '/app/penggajian',
     'master-data': '/app/master',
-    inventory:   '/app/inventory',
-    keuangan:    '/app/keuangan',
-    settings:    '/app/settings',
+    inventory:     '/app/inventory',
+    keuangan:      '/app/keuangan',
+    settings:      '/app/settings',
   };
 
   const allowedNavIds = Object.entries(NAV_PATH_MAP)
