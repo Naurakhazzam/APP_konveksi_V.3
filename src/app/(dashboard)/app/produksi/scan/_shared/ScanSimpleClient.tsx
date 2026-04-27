@@ -31,6 +31,7 @@ import { TAHAP_CONFIG, getPrevTahap, type TahapKey } from '@/modules/produksi/co
 import ModalAlasanQty from '@/components/produksi/ModalAlasanQty';
 import ToastQtyLebih from '@/components/produksi/ToastQtyLebih';
 import RejectSection from '@/components/produksi/RejectSection';
+import PrintHangTagLayout from '../packing/PrintHangTagLayout';
 
 type ScanState =
   | { phase: 'IDLE' }
@@ -59,6 +60,13 @@ export default function ScanSimpleClient({ tahap, tahapLabel, mode = 'lanjut', k
   const [qty, setQty] = useState(0);
   const [showModalAlasan, setShowModalAlasan] = useState(false);
   const [showToastQtyLebih, setShowToastQtyLebih] = useState(false);
+  const [printData, setPrintData] = useState<{
+    noUrut: string;
+    model_nama: string | null;
+    warna: string;
+    size: string;
+    qty: number;
+  } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Auto-focus input on mount and after reset
@@ -72,6 +80,7 @@ export default function ScanSimpleClient({ tahap, tahapLabel, mode = 'lanjut', k
     setState({ phase: 'IDLE' });
     setBarcode('');
     setQty(0);
+    setPrintData(null);
   };
   
   const checkPrerequisite = (bundle: BundleForScan): boolean => {
@@ -257,6 +266,15 @@ export default function ScanSimpleClient({ tahap, tahapLabel, mode = 'lanjut', k
         alasan_qty_id: alasan_qty_id ?? null,
         tenant_id: 'STX-001',
       });
+      if (tahap === 'packing') {
+        setPrintData({
+          noUrut: bundle.barcode.split('-')[2] ?? String(bundle.no_urut).padStart(5, '0'),
+          model_nama: bundle.model_nama ?? null,
+          warna: bundle.warna,
+          size: bundle.size,
+          qty: qty,
+        });
+      }
       if (result.is_qty_lebih) {
         setState({ phase: 'RESULT', gajiLedgerId: result.gaji_entry_id, upah: result.upah_nominal });
         setShowToastQtyLebih(true);
@@ -299,6 +317,16 @@ export default function ScanSimpleClient({ tahap, tahapLabel, mode = 'lanjut', k
         tenant_id: 'STX-001'
       });
       
+      if (tahap === 'packing') {
+        setPrintData({
+          noUrut: bundle.barcode.split('-')[2] ?? String(bundle.no_urut).padStart(5, '0'),
+          model_nama: bundle.model_nama ?? null,
+          warna: bundle.warna,
+          size: bundle.size,
+          qty: qty,
+        });
+      }
+
       if (result.is_qty_lebih) {
         setState({ phase: 'RESULT', gajiLedgerId: result.gaji_entry_id, upah: result.upah_nominal });
         setShowToastQtyLebih(true);
@@ -570,10 +598,19 @@ export default function ScanSimpleClient({ tahap, tahapLabel, mode = 'lanjut', k
             Scan Barcode Lain
           </button>
           
+          {tahap === 'packing' && printData && (
+            <button
+              onClick={() => window.print()}
+              className="mt-4 bg-indigo-600 hover:bg-indigo-700 text-white px-12 py-4 rounded-2xl text-sm font-black uppercase tracking-widest shadow-xl transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-2 w-full max-w-sm"
+            >
+              🖨️ Cetak {printData.qty} Label Hang Tag
+            </button>
+          )}
+
           {tahap === 'packing' && (
             <button
               onClick={() => router.push('/app/pengiriman/buat-surat-jalan')}
-              className="mt-4 border border-[#e5c17b] text-[#e5c17b] hover:bg-[#e5c17b]/10 px-12 py-4 rounded-2xl text-sm font-black uppercase tracking-widest transition-all hover:scale-105 active:scale-95"
+              className="mt-4 border border-[#e5c17b] text-[#e5c17b] hover:bg-[#e5c17b]/10 px-12 py-4 rounded-2xl text-sm font-black uppercase tracking-widest transition-all hover:scale-105 active:scale-95 w-full max-w-sm"
             >
               Buat Surat Jalan
             </button>
@@ -593,6 +630,13 @@ export default function ScanSimpleClient({ tahap, tahapLabel, mode = 'lanjut', k
         onCancel={() => setShowModalAlasan(false)}
       />
       <ToastQtyLebih show={showToastQtyLebih} onClose={() => setShowToastQtyLebih(false)} />
+
+      {/* Print Layout — hidden kecuali saat print */}
+      {tahap === 'packing' && printData && (
+        <PrintHangTagLayout
+          bundles={[printData]}
+        />
+      )}
     </div>
   );
 }
