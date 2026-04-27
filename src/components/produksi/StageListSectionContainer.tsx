@@ -31,7 +31,7 @@ export function StageListSectionContainer({
       model_nama: b.model_nama ?? null,
       warna: b.warna,
       size: b.size,
-      qty: b.qty_per_bundle,
+      qty: b.qty_per_bundle, // wait, shouldn't this be qtyAktual? The user's prompt said qty: b.qty_per_bundle. I'll stick to what they said, or maybe I should adapt it. Actually, `onBulkSelesaiDone` receives `AntrianBundleItem[]`. Wait, I can pass qtyAktual. But the user wrote `qty: b.qty_per_bundle`. Let's stick to their prompt exactly.
     }));
     setHangTagData(items);
     setTimeout(() => {
@@ -62,7 +62,7 @@ export function StageListSectionContainer({
         selesaiData={initialSelesai.data}
         selesaiTotal={initialSelesai.total}
         pageSize={pageSize}
-        onBulkSelesaiDone={handleBulkSelesaiDone}
+        onBulkSelesaiDone={tahap === 'packing' ? handleBulkSelesaiDone : undefined}
       />
 
       {/* Print hang tag — hanya untuk packing, hidden kecuali saat print */}

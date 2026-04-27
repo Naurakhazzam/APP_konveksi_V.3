@@ -10,10 +10,11 @@ import {
 import { type TahapKey } from '@/modules/produksi/constants/tahap';
 import StageStatusBadge from './StageStatusBadge';
 import StagePagination from './StagePagination';
-import { Package, Clock, User, Loader2, CheckCircle } from 'lucide-react';
+import { Package, Clock, Loader2, CheckCircle, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
 import { scanLanjutTahap, scanSelesai } from '@/lib/actions/produksi/scan-mutations.actions';
+import { getAlasanQty } from '@/lib/actions/produksi/qty-approval.actions';
 
 interface Props {
   tahap: TahapKey;
@@ -51,11 +52,26 @@ export default function StageListSection({
   
   const [isLoading, setIsLoading] = useState(false);
   
+  // Selection & Modal State
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isBulkLoading, setIsBulkLoading] = useState(false);
+  
+  const [showKonfirmasiModal, setShowKonfirmasiModal] = useState(false);
+  const [alasanList, setAlasanList] = useState<{ id: string; label: string }[]>([]);
+  const [qtyInputs, setQtyInputs] = useState<{
+    bundleId: string;
+    barcode: string;
+    artikelNama: string;
+    warna: string;
+    size: string;
+    qtyOrder: number;
+    qtyAktual: number;
+    alasanId: string | null;
+  }[]>([]);
+
   const router = useRouter();
 
-  // Sync with initial props if they change (e.g. after a new scan)
+  // Sync with initial props if they change
   useEffect(() => {
     setAntrianData(initialAntrianData);
     setAntrianTotal(initialAntrianTotal);
@@ -101,37 +117,83 @@ export default function StageListSection({
   const waitingData = isPacking ? antrianData.filter(b => b.status === 'menunggu') : [];
   const sedangProsesData = isPacking ? antrianData.filter(b => b.status === 'sedang_proses') : antrianData;
 
+  const handleOpenModal = async () => {
+    const selected = antrianData.filter(b => selectedIds.has(b.id));
+    if (selected.length === 0) return;
+    
+    setIsLoading(true);
+    try {
+      const alasan = await getAlasanQty();
+      setAlasanList(alasan);
+      setQtyInputs(selected.map(b => ({
+        bundleId: b.id,
+        barcode: b.barcode,
+        artikelNama: b.model_nama ?? '-',
+        warna: b.warna,
+        size: b.size,
+        qtyOrder: b.qty_per_bundle,
+        qtyAktual: b.qty_per_bundle,
+        alasanId: null,
+      })));
+      setShowKonfirmasiModal(true);
+    } catch (e: any) {
+      toast.error('Gagal memuat alasan qty');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleQtyChange = (bundleId: string, newQty: number) => {
+    setQtyInputs(prev => prev.map(item =>
+      item.bundleId === bundleId
+        ? { ...item, qtyAktual: newQty, alasanId: null }
+        : item
+    ));
+  };
+
+  const handleAlasanChange = (bundleId: string, alasanId: string) => {
+    setQtyInputs(prev => prev.map(item =>
+      item.bundleId === bundleId ? { ...item, alasanId } : item
+    ));
+  };
+
   const handleBulkSelesai = async () => {
-    const targetBundles = isPacking
-      ? antrianData.filter(b => selectedIds.has(b.id) && b.status === 'sedang_proses')
-      : antrianData.filter(b => selectedIds.has(b.id));
+    const adaYangBelumIsiAlasan = qtyInputs.some(
+      item => item.qtyAktual < item.qtyOrder && !item.alasanId
+    );
+    if (adaYangBelumIsiAlasan) {
+      toast.error('Semua reject wajib diisi alasan');
+      return;
+    }
 
-    if (targetBundles.length === 0) return;
     setIsBulkLoading(true);
-
     const berhasilBundles: AntrianBundleItem[] = [];
     let gagal = 0;
 
-    for (const bundle of targetBundles) {
+    for (const input of qtyInputs) {
+      const bundle = antrianData.find(b => b.id === input.bundleId);
+      if (!bundle) continue;
+
       try {
         if (!isPacking) {
           await scanLanjutTahap({
             barcode: bundle.barcode,
             tahap_baru: tahap,
             karyawan_id: '',
-            qty: bundle.qty_per_bundle,
+            qty: input.qtyAktual,
           });
         }
         await scanSelesai({
           barcode: bundle.barcode,
           tahap: tahap,
           karyawan_id: null,
-          qty: bundle.qty_per_bundle,
+          qty: input.qtyAktual,
           catatan: undefined,
-          alasan_qty_id: null,
+          alasan_qty_id: input.alasanId ?? null,
           tenant_id: 'STX-001',
         });
-        berhasilBundles.push(bundle);
+        
+        berhasilBundles.push({ ...bundle, qty_per_bundle: input.qtyAktual });
       } catch (err: any) {
         gagal++;
         toast.error(`Gagal: ${bundle.barcode} — ${err.message}`);
@@ -139,14 +201,19 @@ export default function StageListSection({
     }
 
     setIsBulkLoading(false);
-    setSelectedIds(new Set());
-
+    
     if (berhasilBundles.length > 0) {
       toast.success(`${berhasilBundles.length} bundle berhasil diselesaikan`);
+      setShowKonfirmasiModal(false);
+      setSelectedIds(new Set());
       onBulkSelesaiDone?.(berhasilBundles);
     }
-
-    router.refresh();
+    
+    if (gagal === 0 && berhasilBundles.length > 0) {
+      router.refresh();
+    } else if (berhasilBundles.length > 0) {
+      router.refresh();
+    }
   };
 
   const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -179,6 +246,8 @@ export default function StageListSection({
       {children}
     </th>
   );
+
+  const rejectCount = qtyInputs.filter(item => item.qtyAktual < item.qtyOrder).length;
 
   return (
     <div className="space-y-4">
@@ -217,11 +286,11 @@ export default function StageListSection({
         {/* Bulk Action Button */}
         {activeTab === 'sedang_proses' && selectedIds.size > 0 && (
           <button
-            onClick={handleBulkSelesai}
-            disabled={isBulkLoading}
+            onClick={handleOpenModal}
+            disabled={isLoading}
             className="flex items-center gap-2 bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-xs font-bold transition-colors shadow-lg"
           >
-            {isBulkLoading ? (
+            {isLoading ? (
               <><Loader2 className="w-4 h-4 animate-spin" /> Memproses...</>
             ) : (
               <><CheckCircle className="w-4 h-4" /> Selesaikan ({selectedIds.size} Bundle)</>
@@ -232,7 +301,7 @@ export default function StageListSection({
 
       {/* Content */}
       <div className="bg-[#1A1D1F] border border-[#2A2D31] rounded-2xl overflow-hidden shadow-sm relative">
-        {isLoading && (
+        {isLoading && !showKonfirmasiModal && (
           <div className="absolute inset-0 bg-[#0D0E10]/40 backdrop-blur-[1px] z-10 flex items-center justify-center">
             <Loader2 className="w-8 h-8 text-[#e5c17b] animate-spin" />
           </div>
@@ -425,6 +494,122 @@ export default function StageListSection({
           </div>
         )}
       </div>
+
+      {/* Modal Konfirmasi QTY */}
+      {showKonfirmasiModal && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-[#1A1D1F] border border-[#2A2D31] rounded-2xl w-full max-w-3xl max-h-[80vh] flex flex-col shadow-2xl">
+            {/* Header */}
+            <div className="flex items-center justify-between p-6 border-b border-[#2A2D31]">
+              <div>
+                <h3 className="text-lg font-bold text-[#e8eaed]">Konfirmasi QTY Sebelum Selesaikan</h3>
+                <p className="text-sm text-[#9aa0a6] mt-1">Periksa dan sesuaikan QTY aktual. Jika ada reject, wajib isi alasan.</p>
+              </div>
+              <button 
+                onClick={() => !isBulkLoading && setShowKonfirmasiModal(false)}
+                disabled={isBulkLoading}
+                className="text-[#9aa0a6] hover:text-[#e8eaed] transition-colors disabled:opacity-50"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto p-6">
+              <table className="w-full text-sm border-collapse text-[#e8eaed]">
+                <thead className="sticky top-0 bg-[#1A1D1F] z-10">
+                  <tr>
+                    <th className="text-left px-2 py-3 text-[11px] font-bold uppercase tracking-wider text-[#9aa0a6] border-b border-[#2A2D31]">No</th>
+                    <th className="text-left px-2 py-3 text-[11px] font-bold uppercase tracking-wider text-[#9aa0a6] border-b border-[#2A2D31]">Barcode</th>
+                    <th className="text-left px-2 py-3 text-[11px] font-bold uppercase tracking-wider text-[#9aa0a6] border-b border-[#2A2D31]">Artikel</th>
+                    <th className="text-left px-2 py-3 text-[11px] font-bold uppercase tracking-wider text-[#9aa0a6] border-b border-[#2A2D31]">Warna/Size</th>
+                    <th className="text-center px-2 py-3 text-[11px] font-bold uppercase tracking-wider text-[#9aa0a6] border-b border-[#2A2D31]">QTY Order</th>
+                    <th className="text-center px-2 py-3 text-[11px] font-bold uppercase tracking-wider text-[#9aa0a6] border-b border-[#2A2D31]">QTY Aktual</th>
+                    <th className="text-left px-2 py-3 text-[11px] font-bold uppercase tracking-wider text-[#9aa0a6] border-b border-[#2A2D31]">Alasan Reject</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#2A2D31]">
+                  {qtyInputs.map((item, idx) => {
+                    const isReject = item.qtyAktual < item.qtyOrder;
+                    return (
+                      <tr 
+                        key={item.bundleId} 
+                        className={`transition-colors ${isReject ? 'bg-red-500/5 border-l-2 border-red-500' : 'hover:bg-[#2A2D31]/40'}`}
+                      >
+                        <td className="px-2 py-3 text-xs font-bold text-[#9aa0a6]">{idx + 1}</td>
+                        <td className="px-2 py-3 font-mono text-xs">{item.barcode}</td>
+                        <td className="px-2 py-3">{item.artikelNama}</td>
+                        <td className="px-2 py-3 text-[#9aa0a6]">{item.warna} / {item.size}</td>
+                        <td className="px-2 py-3 font-mono text-center">{item.qtyOrder}</td>
+                        <td className="px-2 py-3 text-center">
+                          <input 
+                            type="number"
+                            min={0}
+                            max={item.qtyOrder}
+                            value={item.qtyAktual}
+                            onChange={(e) => handleQtyChange(item.bundleId, parseInt(e.target.value) || 0)}
+                            className={`w-16 text-center bg-[#0D0E10] border ${isReject ? 'border-red-500' : 'border-[#2A2D31]'} rounded-lg px-2 py-1 text-sm font-bold text-[#e8eaed] focus:border-[#e5c17b] outline-none transition-colors`}
+                          />
+                        </td>
+                        <td className="px-2 py-3">
+                          {isReject && (
+                            <select
+                              value={item.alasanId || ''}
+                              onChange={(e) => handleAlasanChange(item.bundleId, e.target.value)}
+                              className="w-full bg-[#0D0E10] border border-red-500 rounded-lg px-2 py-1 text-sm text-[#e8eaed] outline-none"
+                              required
+                            >
+                              <option value="" disabled>-- Pilih alasan --</option>
+                              {alasanList.map(a => (
+                                <option key={a.id} value={a.id}>{a.label}</option>
+                              ))}
+                            </select>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-between p-6 border-t border-[#2A2D31] bg-[#16181A] rounded-b-2xl">
+              <div className="text-sm font-medium">
+                <span className="text-[#9aa0a6]">Total bundle: {qtyInputs.length} | </span>
+                {rejectCount > 0 ? (
+                  <span className="text-red-400 font-bold">Ada reject: {rejectCount} bundle</span>
+                ) : (
+                  <span className="text-green-400 font-bold">Semua QTY penuh ✓</span>
+                )}
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setShowKonfirmasiModal(false)}
+                  disabled={isBulkLoading}
+                  className="px-6 py-2 rounded-lg bg-[#2A2D31] hover:bg-[#3A3D41] text-[#e8eaed] font-bold text-sm transition-colors disabled:opacity-50"
+                >
+                  Batal
+                </button>
+                <button
+                  onClick={handleBulkSelesai}
+                  disabled={
+                    isBulkLoading || 
+                    qtyInputs.some(item => item.qtyAktual < item.qtyOrder && !item.alasanId)
+                  }
+                  className="flex items-center gap-2 px-6 py-2 rounded-lg bg-green-600 hover:bg-green-500 text-white font-bold text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isBulkLoading ? (
+                    <><Loader2 className="w-4 h-4 animate-spin" /> Memproses...</>
+                  ) : (
+                    'Konfirmasi & Selesaikan'
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
