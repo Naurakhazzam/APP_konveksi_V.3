@@ -24,6 +24,7 @@ interface Props {
   selesaiTotal: number;
   pageSize?: number;
   onBulkSelesaiDone?: (selesaiBundles: AntrianBundleItem[]) => void;
+  onBulkTerimaDone?: (bundles: AntrianBundleItem[]) => void;
 }
 
 export default function StageListSection({
@@ -33,7 +34,8 @@ export default function StageListSection({
   selesaiData: initialSelesaiData,
   selesaiTotal: initialSelesaiTotal,
   pageSize = 20,
-  onBulkSelesaiDone
+  onBulkSelesaiDone,
+  onBulkTerimaDone
 }: Props) {
   const isPacking = tahap === 'packing';
   
@@ -53,8 +55,10 @@ export default function StageListSection({
   const [isLoading, setIsLoading] = useState(false);
   
   // Selection & Modal State
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [selectedAntrianIds, setSelectedAntrianIds] = useState<Set<string>>(new Set());
+  const [selectedProsesIds, setSelectedProsesIds]   = useState<Set<string>>(new Set());
   const [isBulkLoading, setIsBulkLoading] = useState(false);
+  const [isBulkTerimaLoading, setIsBulkTerimaLoading] = useState(false);
   
   const [showKonfirmasiModal, setShowKonfirmasiModal] = useState(false);
   const [alasanList, setAlasanList] = useState<{ id: string; label: string }[]>([]);
@@ -70,6 +74,12 @@ export default function StageListSection({
   }[]>([]);
 
   const router = useRouter();
+
+  // Clear selection saat pindah tab
+  useEffect(() => {
+    setSelectedAntrianIds(new Set());
+    setSelectedProsesIds(new Set());
+  }, [activeTab]);
 
   // Sync with initial props if they change
   useEffect(() => {
@@ -118,7 +128,7 @@ export default function StageListSection({
   const sedangProsesData = isPacking ? antrianData.filter(b => b.status === 'sedang_proses') : antrianData;
 
   const handleOpenModal = async () => {
-    const selected = antrianData.filter(b => selectedIds.has(b.id));
+    const selected = sedangProsesData.filter(b => selectedProsesIds.has(b.id));
     if (selected.length === 0) return;
     
     setIsLoading(true);
@@ -157,6 +167,39 @@ export default function StageListSection({
     ));
   };
 
+  const handleBulkTerima = async () => {
+    const selected = waitingData.filter(b => selectedAntrianIds.has(b.id));
+    if (selected.length === 0) return;
+
+    setIsBulkTerimaLoading(true);
+    const berhasilBundles: AntrianBundleItem[] = [];
+    let gagal = 0;
+
+    for (const bundle of selected) {
+      try {
+        await scanLanjutTahap({
+          barcode: bundle.barcode,
+          tahap_baru: tahap,
+          karyawan_id: '',
+          qty: bundle.qty_per_bundle,
+        });
+        berhasilBundles.push(bundle);
+      } catch (err: any) {
+        gagal++;
+        toast.error(`Gagal terima: ${bundle.barcode} — ${err.message}`);
+      }
+    }
+
+    setIsBulkTerimaLoading(false);
+
+    if (berhasilBundles.length > 0) {
+      toast.success(`${berhasilBundles.length} bundle berhasil diterima`);
+      setSelectedAntrianIds(new Set());
+      onBulkTerimaDone?.(berhasilBundles);
+      router.refresh();
+    }
+  };
+
   const handleBulkSelesai = async () => {
     const adaYangBelumIsiAlasan = qtyInputs.some(
       item => item.qtyAktual < item.qtyOrder && !item.alasanId
@@ -171,7 +214,7 @@ export default function StageListSection({
     let gagal = 0;
 
     for (const input of qtyInputs) {
-      const bundle = antrianData.find(b => b.id === input.bundleId);
+      const bundle = sedangProsesData.find(b => b.id === input.bundleId);
       if (!bundle) continue;
 
       try {
@@ -205,7 +248,7 @@ export default function StageListSection({
     if (berhasilBundles.length > 0) {
       toast.success(`${berhasilBundles.length} bundle berhasil diselesaikan`);
       setShowKonfirmasiModal(false);
-      setSelectedIds(new Set());
+      setSelectedProsesIds(new Set());
       onBulkSelesaiDone?.(berhasilBundles);
     }
     
@@ -216,19 +259,34 @@ export default function StageListSection({
     }
   };
 
+  const handleSelectAllAntrian = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.checked) {
+      setSelectedAntrianIds(new Set(waitingData.map(b => b.id)));
+    } else {
+      setSelectedAntrianIds(new Set());
+    }
+  };
+
+  const toggleSelectAntrian = (id: string) => {
+    const newSet = new Set(selectedAntrianIds);
+    if (newSet.has(id)) newSet.delete(id);
+    else newSet.add(id);
+    setSelectedAntrianIds(newSet);
+  };
+
   const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.checked) {
-      setSelectedIds(new Set(sedangProsesData.map(b => b.id)));
+      setSelectedProsesIds(new Set(sedangProsesData.map(b => b.id)));
     } else {
-      setSelectedIds(new Set());
+      setSelectedProsesIds(new Set());
     }
   };
 
   const toggleSelect = (id: string) => {
-    const newSet = new Set(selectedIds);
+    const newSet = new Set(selectedProsesIds);
     if (newSet.has(id)) newSet.delete(id);
     else newSet.add(id);
-    setSelectedIds(newSet);
+    setSelectedProsesIds(newSet);
   };
 
   const formatDateTime = (dateStr: string) => {
@@ -284,7 +342,21 @@ export default function StageListSection({
         </div>
 
         {/* Bulk Action Button */}
-        {activeTab === 'sedang_proses' && selectedIds.size > 0 && (
+        {isPacking && activeTab === 'antrian' && selectedAntrianIds.size > 0 && (
+          <button
+            onClick={handleBulkTerima}
+            disabled={isBulkTerimaLoading}
+            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-xs font-bold transition-colors shadow-lg"
+          >
+            {isBulkTerimaLoading ? (
+              <><Loader2 className="w-4 h-4 animate-spin" /> Menerima...</>
+            ) : (
+              <><CheckCircle className="w-4 h-4" /> Terima ({selectedAntrianIds.size} Bundle)</>
+            )}
+          </button>
+        )}
+
+        {activeTab === 'sedang_proses' && selectedProsesIds.size > 0 && (
           <button
             onClick={handleOpenModal}
             disabled={isLoading}
@@ -293,7 +365,7 @@ export default function StageListSection({
             {isLoading ? (
               <><Loader2 className="w-4 h-4 animate-spin" /> Memproses...</>
             ) : (
-              <><CheckCircle className="w-4 h-4" /> Selesaikan ({selectedIds.size} Bundle)</>
+              <><CheckCircle className="w-4 h-4" /> Selesaikan ({selectedProsesIds.size} Bundle)</>
             )}
           </button>
         )}
@@ -313,6 +385,14 @@ export default function StageListSection({
               <table className="w-full text-sm border-collapse">
                 <thead>
                   <tr>
+                    <TableHeader>
+                      <input
+                        type="checkbox"
+                        checked={selectedAntrianIds.size > 0 && selectedAntrianIds.size === waitingData.length}
+                        onChange={handleSelectAllAntrian}
+                        className="accent-[#e5c17b] w-4 h-4 rounded cursor-pointer"
+                      />
+                    </TableHeader>
                     <TableHeader>No.</TableHeader>
                     <TableHeader>No. PO</TableHeader>
                     <TableHeader>Artikel</TableHeader>
@@ -325,7 +405,7 @@ export default function StageListSection({
                 <tbody className="divide-y divide-[#2A2D31]">
                   {waitingData.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="px-4 py-12 text-center text-[#9aa0a6]">
+                      <td colSpan={8} className="px-4 py-12 text-center text-[#9aa0a6]">
                         <Package className="w-8 h-8 mx-auto mb-2 opacity-20" />
                         Tidak ada antrian di tahap {tahap}
                       </td>
@@ -333,6 +413,14 @@ export default function StageListSection({
                   ) : (
                     waitingData.map((item, idx) => (
                       <tr key={item.id} className="hover:bg-[#2A2D31]/40 transition-colors">
+                        <td className="px-4 py-3">
+                          <input
+                            type="checkbox"
+                            checked={selectedAntrianIds.has(item.id)}
+                            onChange={() => toggleSelectAntrian(item.id)}
+                            className="accent-[#e5c17b] w-4 h-4 rounded cursor-pointer"
+                          />
+                        </td>
                         <td className="px-4 py-3 text-xs font-bold text-[#9aa0a6]">
                           {(antrianPage - 1) * pageSize + idx + 1}
                         </td>
@@ -374,7 +462,7 @@ export default function StageListSection({
                     <TableHeader>
                       <input 
                         type="checkbox" 
-                        checked={selectedIds.size > 0 && selectedIds.size === sedangProsesData.length}
+                        checked={selectedProsesIds.size > 0 && selectedProsesIds.size === sedangProsesData.length}
                         onChange={handleSelectAll}
                         className="accent-[#e5c17b] w-4 h-4 rounded cursor-pointer"
                       />
@@ -401,7 +489,7 @@ export default function StageListSection({
                         <td className="px-4 py-3">
                           <input 
                             type="checkbox" 
-                            checked={selectedIds.has(item.id)}
+                            checked={selectedProsesIds.has(item.id)}
                             onChange={() => toggleSelect(item.id)}
                             className="accent-[#e5c17b] w-4 h-4 rounded cursor-pointer"
                           />
