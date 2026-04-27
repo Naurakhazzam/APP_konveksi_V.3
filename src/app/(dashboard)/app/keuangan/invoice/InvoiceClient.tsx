@@ -21,6 +21,7 @@ import type { InvoiceRow, InvoiceDetail, InvoicePembayaran } from '@/lib/actions
 import {
   getInvoiceList, getInvoiceDetail,
   createInvoice, addPembayaran, deletePembayaran, deleteInvoice,
+  getInvoiceTotalFromSJ,
 } from '@/lib/actions/keuangan/invoice.actions';
 
 // ─── CONSTANTS ───────────────────────────────────────────────────────────────
@@ -88,6 +89,8 @@ export default function InvoiceClient({ initialInvoices, klienList, sjList }: Pr
   const [showCreate, setShowCreate]       = useState(false);
   const [createForm, setCreateForm]       = useState(defaultCreateForm());
   const [creating, setCreating]           = useState(false);
+  const [calcLoading, setCalcLoading]     = useState(false);
+  const [sjBreakdown, setSjBreakdown]     = useState<{ no_po: string; model: string | null; warna: string; size: string; qty: number; harga_jual: number; subtotal: number }[]>([]);
 
   // Tambah bayar modal
   const [bayarInvoice, setBayarInvoice]   = useState<InvoiceRow | null>(null);
@@ -150,13 +153,28 @@ export default function InvoiceClient({ initialInvoices, klienList, sjList }: Pr
 
   // ─── CREATE INVOICE ───────────────────────────────────────────────────────
 
-  const handleSJChange = (sjId: string) => {
+  const handleSJChange = async (sjId: string) => {
     const sj = sjList.find(s => s.id === sjId);
     setCreateForm(f => ({
       ...f,
       surat_jalan_id: sjId,
       klien_id: sj ? sj.klien_id : f.klien_id,
+      total_nilai: '',
     }));
+    setSjBreakdown([]);
+
+    if (!sjId) return;
+
+    setCalcLoading(true);
+    try {
+      const result = await getInvoiceTotalFromSJ(sjId);
+      setSjBreakdown(result.breakdown);
+      setCreateForm(f => ({ ...f, total_nilai: String(result.total) }));
+    } catch (e: any) {
+      toast.error('Gagal menghitung total dari SJ');
+    } finally {
+      setCalcLoading(false);
+    }
   };
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -293,7 +311,7 @@ export default function InvoiceClient({ initialInvoices, klienList, sjList }: Pr
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h2 className="text-base font-bold text-[#e8eaed]">Daftar Invoice</h2>
         <Button
-          onClick={() => { setCreateForm(defaultCreateForm()); setShowCreate(true); }}
+          onClick={() => { setCreateForm(defaultCreateForm()); setSjBreakdown([]); setShowCreate(true); }}
           className="bg-[#e5c17b] text-[#0D0E10] hover:bg-[#d4b06a] font-bold text-xs h-9 px-4"
         >
           <Plus className="h-4 w-4 mr-1" /> Buat Invoice
@@ -481,27 +499,57 @@ export default function InvoiceClient({ initialInvoices, klienList, sjList }: Pr
       </div>
 
       {/* ─── MODAL: BUAT INVOICE ──────────────────────────────────────────── */}
-      <Dialog open={showCreate} onOpenChange={open => { if (!open) setShowCreate(false); }}>
+      <Dialog open={showCreate} onOpenChange={open => { if (!open) { setShowCreate(false); setSjBreakdown([]); } }}>
         <DialogContent className="bg-[#16181A] border-[#2A2D31] text-[#e8eaed] sm:max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-[#e5c17b]">Buat Invoice Baru</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleCreate} className="space-y-4 py-2">
 
-            {/* Tag ke SJ (opsional) */}
+            {/* Tag ke SJ */}
             <div>
               <label className={labelCls}>Tag ke Surat Jalan <span className="text-[#5f6368] normal-case font-normal">(opsional)</span></label>
               <select className={inputCls}
                 value={createForm.surat_jalan_id}
-                onChange={e => handleSJChange(e.target.value)}>
-                <option value="">-- Tidak ada --</option>
+                onChange={e => handleSJChange(e.target.value)}
+                disabled={calcLoading}>
+                <option value="">-- Tidak ada (input manual) --</option>
                 {sjList.map(sj => (
                   <option key={sj.id} value={sj.id}>
                     {sj.nomor_sj} — {sj.klien_nama} ({dateFmt(sj.tanggal)})
                   </option>
                 ))}
               </select>
+              {calcLoading && (
+                <p className="text-[10px] text-[#e5c17b] mt-1 flex items-center gap-1">
+                  <Loader2 className="h-3 w-3 animate-spin" /> Menghitung total dari SJ...
+                </p>
+              )}
             </div>
+
+            {/* Breakdown items dari SJ */}
+            {sjBreakdown.length > 0 && (
+              <div className="rounded-lg border border-[#2A2D31] overflow-hidden">
+                <div className="px-3 py-2 bg-[#1A1D1F] border-b border-[#2A2D31]">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-[#9aa0a6]">Rincian Item Surat Jalan</p>
+                </div>
+                <div className="divide-y divide-[#2A2D31]">
+                  {sjBreakdown.map((item, i) => (
+                    <div key={i} className="flex items-center justify-between px-3 py-2 bg-[#12141A]">
+                      <div>
+                        <p className="text-xs text-[#e8eaed]">
+                          {item.model ? `${item.model} · ` : ''}{item.warna} / {item.size}
+                        </p>
+                        <p className="text-[10px] text-[#9aa0a6]">
+                          {item.qty} pcs × {idrFmt(item.harga_jual)}
+                        </p>
+                      </div>
+                      <p className="text-xs font-mono font-bold text-[#e5c17b]">{idrFmt(item.subtotal)}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Klien */}
             <div>
@@ -530,11 +578,27 @@ export default function InvoiceClient({ initialInvoices, klienList, sjList }: Pr
             </div>
 
             <div>
-              <label className={labelCls}>Total Nilai Tagihan (Rp) *</label>
-              <input type="number" required min="1" placeholder="contoh: 5000000"
-                className={inputCls}
+              <label className={labelCls}>
+                Total Nilai Tagihan (Rp) *
+                {sjBreakdown.length > 0 && (
+                  <span className="ml-2 text-[#e5c17b] normal-case font-normal tracking-normal">
+                    — dihitung otomatis dari SJ
+                  </span>
+                )}
+              </label>
+              <input
+                type="number" required min="1"
+                placeholder="contoh: 5000000"
+                className={`${inputCls} ${sjBreakdown.length > 0 ? 'border-[#e5c17b]/30 text-[#e5c17b] font-bold' : ''}`}
                 value={createForm.total_nilai}
-                onChange={e => setCreateForm(f => ({ ...f, total_nilai: e.target.value }))} />
+                onChange={e => setCreateForm(f => ({ ...f, total_nilai: e.target.value }))}
+                readOnly={sjBreakdown.length > 0}
+              />
+              {sjBreakdown.length > 0 && (
+                <p className="text-[10px] text-[#9aa0a6] mt-1">
+                  Bisa diubah manual jika diperlukan (klik field lalu edit)
+                </p>
+              )}
             </div>
 
             <div>

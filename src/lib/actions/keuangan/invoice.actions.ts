@@ -374,3 +374,85 @@ export async function getSuratJalanForInvoice(): Promise<{ id: string; nomor_sj:
     tanggal:    sj.tanggal,
   }));
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// KALKULASI TOTAL DARI SURAT JALAN
+// Hitung SUM(qty_kirim × harga_jual) dari semua item di SJ
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function getInvoiceTotalFromSJ(
+  sj_id: string
+): Promise<{ total: number; breakdown: { no_po: string; model: string | null; warna: string; size: string; qty: number; harga_jual: number; subtotal: number }[] }> {
+  const supabase = await createClient();
+
+  // Ambil semua item SJ beserta qty_kirim
+  const { data: sjItems, error } = await supabase
+    .from('surat_jalan_item')
+    .select('qty_kirim, bundle_id')
+    .eq('surat_jalan_id', sj_id);
+
+  if (error) throw new Error(error.message);
+  if (!sjItems || sjItems.length === 0) return { total: 0, breakdown: [] };
+
+  // Ambil data bundle → po_item → produk secara terpisah (hindari schema cache issue)
+  const bundleIds = sjItems.map((i: any) => i.bundle_id);
+
+  const { data: bundles, error: bundleErr } = await supabase
+    .from('bundle')
+    .select('id, po_item_id, po:po_id(no_po)')
+    .in('id', bundleIds);
+
+  if (bundleErr) throw new Error(bundleErr.message);
+
+  const poItemIds = [...new Set((bundles ?? []).map((b: any) => b.po_item_id))];
+
+  const { data: poItems, error: poItemErr } = await supabase
+    .from('po_item')
+    .select('id, warna, size, produk_id')
+    .in('id', poItemIds);
+
+  if (poItemErr) throw new Error(poItemErr.message);
+
+  const produkIds = [...new Set((poItems ?? []).map((p: any) => p.produk_id))];
+
+  const { data: produks, error: produkErr } = await supabase
+    .from('produk')
+    .select('id, harga_jual, model_produk:model_id(nama)')
+    .in('id', produkIds);
+
+  if (produkErr) throw new Error(produkErr.message);
+
+  // Build lookup maps
+  const bundleMap: Record<string, any> = {};
+  (bundles ?? []).forEach((b: any) => { bundleMap[b.id] = b; });
+
+  const poItemMap: Record<string, any> = {};
+  (poItems ?? []).forEach((p: any) => { poItemMap[p.id] = p; });
+
+  const produkMap: Record<string, any> = {};
+  (produks ?? []).forEach((p: any) => { produkMap[p.id] = p; });
+
+  // Kalkulasi
+  let total = 0;
+  const breakdown = sjItems.map((item: any) => {
+    const bundle  = bundleMap[item.bundle_id];
+    const poItem  = bundle ? poItemMap[bundle.po_item_id] : null;
+    const produk  = poItem  ? produkMap[poItem.produk_id] : null;
+    const harga_jual = Number(produk?.harga_jual ?? 0);
+    const qty        = Number(item.qty_kirim ?? 0);
+    const subtotal   = harga_jual * qty;
+    total += subtotal;
+
+    return {
+      no_po:      (Array.isArray(bundle?.po) ? bundle.po[0]?.no_po : bundle?.po?.no_po) ?? '-',
+      model:      (Array.isArray(produk?.model_produk) ? produk.model_produk[0]?.nama : produk?.model_produk?.nama) ?? null,
+      warna:      poItem?.warna ?? '-',
+      size:       poItem?.size  ?? '-',
+      qty,
+      harga_jual,
+      subtotal,
+    };
+  });
+
+  return { total, breakdown };
+}
