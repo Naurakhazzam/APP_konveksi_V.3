@@ -30,21 +30,34 @@ export default function PrintHangTagLayout({ bundles }: Props) {
     <div className="hidden print:grid hang-tag-print-root grid-cols-4 gap-4 bg-white text-black p-4">
       <style>{`
         @media print {
-          @page {
-            size: A4 portrait;
-            margin: 0.5cm;
+          @page { size: A4 portrait; margin: 0.5cm; }
+
+          * {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+            color-adjust: exact !important;
           }
-          body * {
-            visibility: hidden;
+
+          html, body {
+            height: auto !important;
+            overflow: visible !important;
+            background: white !important;
           }
-          .hang-tag-print-root, .hang-tag-print-root * {
-            visibility: visible;
-          }
+
+          body * { visibility: hidden; }
+
+          .hang-tag-print-root,
+          .hang-tag-print-root * { visibility: visible; }
+
           .hang-tag-print-root {
             position: absolute;
-            left: 0;
             top: 0;
+            left: 0;
             width: 100%;
+            display: grid !important;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 0.75rem;
+            padding: 0.5rem;
           }
         }
       `}</style>
