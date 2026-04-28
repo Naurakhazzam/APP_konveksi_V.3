@@ -21,6 +21,7 @@ const ALL_APP_PATHS = [
   '/app/produksi/scan/packing',
   '/app/produksi/monitoring',
   '/app/produksi/approval-qty',
+  '/app/produksi/reject',
   '/app/pengiriman/buat-surat-jalan',
   '/app/pengiriman/riwayat',
   '/app/penggajian/rekap-gaji',
