@@ -213,19 +213,43 @@ export async function getDashboardKPI(
 
   if (scanError) throw new Error('scan_log: ' + scanError.message);
 
-  const weeklyCount: Record<number, number> = {};
+  const isSingleMonth = b_dari === b_sampai && t_dari === t_sampai;
+  const counts: Record<string, number> = {};
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+
   (scanData ?? []).forEach((row: any) => {
-    const day = new Date(row.created_at).getDate();
-    const minggu = Math.ceil(day / 7);
-    weeklyCount[minggu] = (weeklyCount[minggu] ?? 0) + 1;
+    const d = new Date(row.created_at);
+    if (isSingleMonth) {
+      const day = d.getDate();
+      const minggu = Math.ceil(day / 7);
+      counts[minggu] = (counts[minggu] ?? 0) + 1;
+    } else {
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      counts[key] = (counts[key] ?? 0) + 1;
+    }
   });
 
-  const chart_output_mingguan = Object.entries(weeklyCount)
-    .sort(([a], [b]) => Number(a) - Number(b))
-    .map(([minggu, jumlah]) => ({
-      label: `Minggu ${minggu}`,
-      jumlah,
-    }));
+  let chart_output_mingguan: { label: string; jumlah: number }[] = [];
+  
+  if (isSingleMonth) {
+    chart_output_mingguan = Object.entries(counts)
+      .sort(([a], [b]) => Number(a) - Number(b))
+      .map(([minggu, jumlah]) => ({
+        label: `Minggu ${minggu}`,
+        jumlah,
+      }));
+  } else {
+    chart_output_mingguan = Object.entries(counts)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, jumlah]) => {
+        const [yyyy, mm] = key.split('-');
+        const monthIndex = parseInt(mm, 10) - 1;
+        return {
+          label: `${monthNames[monthIndex]} ${yyyy}`,
+          jumlah,
+        };
+      });
+  }
 
   // ── Return ───────────────────────────────────────────────────────────────────
   return {

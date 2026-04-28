@@ -290,6 +290,11 @@ export default function DashboardClient({
     },
   ];
 
+  const isSingleMonth = bulanDari === bulanSampai && tahunDari === tahunSampai;
+  const chartTitle = isSingleMonth
+    ? 'Output Produksi per Minggu'
+    : 'Output Produksi per Bulan';
+
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
     <div className="flex flex-col gap-6">
@@ -411,7 +416,7 @@ export default function DashboardClient({
           style={{ background: '#16181A', border: '1px solid #2A2D31' }}
         >
           <div className="mb-5">
-            <h3 className="text-[14px] font-bold text-[#e8eaed]">Output Produksi per Minggu</h3>
+            <h3 className="text-[14px] font-bold text-[#e8eaed]">{chartTitle}</h3>
             <p className="text-[11px] text-[#9aa0a6] mt-0.5">
               Berdasarkan scan selesai —{' '}
               {BULAN_OPTIONS.find((b) => b.value === bulanDari)?.label} {tahunDari} s/d {BULAN_OPTIONS.find((b) => b.value === bulanSampai)?.label} {tahunSampai}
