@@ -77,29 +77,55 @@ export async function getLaporanGaji(filters?: {
 
   let total_upah_sudah_bayar = 0;
   let total_upah_belum_bayar = 0;
-  const historyList: { tanggal_bayar: string; karyawan_nama: string; jumlah_dibayar: number }[] = [];
 
   (ledgerData ?? []).forEach((row: any) => {
     const karyawanNama = (row.karyawan as any)?.nama ?? '-';
     ensureKaryawan(row.karyawan_id, karyawanNama);
     const amount = Math.abs(Number(row.total));
+    const isDeduction = row.tipe === 'reject_potong';
 
     if (row.status === 'lunas') {
-      total_upah_sudah_bayar += amount;
-      karyawanMap[row.karyawan_id].upah_sudah_bayar += amount;
-      if (row.tanggal_bayar) {
-        historyList.push({
-          tanggal_bayar: row.tanggal_bayar,
-          karyawan_nama: karyawanNama,
-          jumlah_dibayar: amount,
-        });
-      }
+      // Upah positif (selesai / rework) ditambah; potongan (reject_potong) dikurangi
+      const signedAmount = isDeduction ? -amount : amount;
+      total_upah_sudah_bayar += signedAmount;
+      karyawanMap[row.karyawan_id].upah_sudah_bayar += signedAmount;
     } else if (row.status === 'belum_lunas') {
-      total_upah_belum_bayar += amount;
-      karyawanMap[row.karyawan_id].upah_belum_bayar += amount;
+      const signedAmount = isDeduction ? -amount : amount;
+      total_upah_belum_bayar += signedAmount;
+      karyawanMap[row.karyawan_id].upah_belum_bayar += signedAmount;
     }
   });
 
+  // 3. Fetch history pembayaran dari gaji_payment (1 row = 1 event bayar)
+  let paymentQuery = supabase
+    .from('gaji_payment')
+    .select('tanggal_bayar, total_bayar, karyawan:karyawan_id(nama)')
+    .eq('tenant_id', TENANT_ID)
+    .order('tanggal_bayar', { ascending: false });
+
+  if (filters?.bulan && filters?.tahun) {
+    const mm = filters.bulan.padStart(2, '0');
+    const lastDay = new Date(Number(filters.tahun), Number(mm), 0).getDate();
+    paymentQuery = paymentQuery
+      .gte('tanggal_bayar', `${filters.tahun}-${mm}-01`)
+      .lte('tanggal_bayar', `${filters.tahun}-${mm}-${String(lastDay).padStart(2, '0')}`);
+  } else if (filters?.tahun) {
+    paymentQuery = paymentQuery
+      .gte('tanggal_bayar', `${filters.tahun}-01-01`)
+      .lte('tanggal_bayar', `${filters.tahun}-12-31`);
+  }
+
+  const { data: paymentData, error: paymentError } = await paymentQuery;
+
+  if (paymentError) throw new Error(paymentError.message);
+
+  const history_pembayaran = (paymentData ?? []).map((p: any) => ({
+    tanggal_bayar: p.tanggal_bayar,
+    karyawan_nama: (p.karyawan as any)?.nama ?? '-',
+    jumlah_dibayar: Number(p.total_bayar) || 0,
+  }));
+
+  // 4. Kasbon aggregation
   let total_kasbon_outstanding = 0;
   (kasbonData ?? []).forEach((row: any) => {
     const karyawanNama = (row.karyawan as any)?.nama ?? '-';
@@ -111,17 +137,16 @@ export async function getLaporanGaji(filters?: {
     }
   });
 
-  const per_karyawan = Object.entries(karyawanMap).map(([karyawan_id, v]) => ({
-    karyawan_id,
-    karyawan_nama: v.nama,
-    upah_sudah_bayar: v.upah_sudah_bayar,
-    upah_belum_bayar: v.upah_belum_bayar,
-    kasbon_sisa: v.kasbon_sisa,
-  })).sort((a, b) => a.karyawan_nama.localeCompare(b.karyawan_nama));
+  const per_karyawan = Object.entries(karyawanMap)
+    .map(([karyawan_id, v]) => ({
+      karyawan_id,
+      karyawan_nama: v.nama,
+      upah_sudah_bayar: v.upah_sudah_bayar,
+      upah_belum_bayar: v.upah_belum_bayar,
+      kasbon_sisa: v.kasbon_sisa,
+    }))
+    .sort((a, b) => a.karyawan_nama.localeCompare(b.karyawan_nama));
 
-  const history_pembayaran = historyList.sort(
-    (a, b) => new Date(b.tanggal_bayar).getTime() - new Date(a.tanggal_bayar).getTime()
-  );
 
   return {
     total_upah_sudah_bayar,
