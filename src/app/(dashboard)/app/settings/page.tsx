@@ -5,10 +5,11 @@ import { redirect } from 'next/navigation';
 import PinSetupSection from './PinSetupSection';
 import { getSettings, getKaryawanAktif } from '@/lib/actions/settings/settings.actions';
 import DefaultBoronganSection from './DefaultBoronganSection';
+import ResetDataSection from './ResetDataSection';
 
 export default async function SettingsPage() {
   const profile = await getCurrentUserProfile();
-  
+
   // Hanya owner yang boleh akses settings PIN
   if (!profile || profile.role !== 'owner') {
     redirect('/app');
@@ -31,6 +32,7 @@ export default async function SettingsPage() {
           currentId={settings.default_karyawan_borongan_id}
           karyawan={karyawan}
         />
+        <ResetDataSection />
       </div>
     </PageWrapper>
   );
