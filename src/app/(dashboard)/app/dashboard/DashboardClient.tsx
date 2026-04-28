@@ -182,24 +182,34 @@ function PieTooltip({ active, payload }: any) {
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface Props {
-  initialData : DashboardKPI;
-  initialBulan: string;
-  initialTahun: string;
+  initialData       : DashboardKPI;
+  initialBulanDari  : string;
+  initialTahunDari  : string;
+  initialBulanSampai: string;
+  initialTahunSampai: string;
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export default function DashboardClient({ initialData, initialBulan, initialTahun }: Props) {
+export default function DashboardClient({
+  initialData,
+  initialBulanDari,
+  initialTahunDari,
+  initialBulanSampai,
+  initialTahunSampai,
+}: Props) {
   const [data,  setData]  = useState<DashboardKPI>(initialData);
-  const [bulan, setBulan] = useState(initialBulan);
-  const [tahun, setTahun] = useState(initialTahun);
+  const [bulanDari,   setBulanDari]   = useState(initialBulanDari);
+  const [tahunDari,   setTahunDari]   = useState(initialTahunDari);
+  const [bulanSampai, setBulanSampai] = useState(initialBulanSampai);
+  const [tahunSampai, setTahunSampai] = useState(initialTahunSampai);
   const [isPending, startTransition] = useTransition();
 
   // ── Filter apply ────────────────────────────────────────────────────────────
   const handleTerapkan = () => {
     startTransition(async () => {
       try {
-        const fresh = await getDashboardKPI(bulan, tahun);
+        const fresh = await getDashboardKPI(bulanDari, tahunDari, bulanSampai, tahunSampai);
         setData(fresh);
       } catch (err) {
         console.error('Dashboard refresh error:', err);
@@ -294,11 +304,13 @@ export default function DashboardClient({ initialData, initialBulan, initialTahu
           <span className="text-[13px] font-semibold text-[#e8eaed]">Periode</span>
         </div>
 
-        {/* Dropdown Bulan */}
+        <span className="text-[13px] text-[#9aa0a6] mr-1">Dari</span>
+        
+        {/* Dropdown Bulan Dari */}
         <select
-          id="filter-bulan"
-          value={bulan}
-          onChange={(e) => setBulan(e.target.value)}
+          id="filter-bulan-dari"
+          value={bulanDari}
+          onChange={(e) => setBulanDari(e.target.value)}
           className="h-9 rounded-lg px-3 text-[13px] text-[#e8eaed] outline-none cursor-pointer transition-colors"
           style={{
             background  : '#0D0E10',
@@ -312,15 +324,47 @@ export default function DashboardClient({ initialData, initialBulan, initialTahu
           ))}
         </select>
 
-        {/* Input Tahun */}
+        {/* Input Tahun Dari */}
         <input
-          id="filter-tahun"
+          id="filter-tahun-dari"
           type="number"
           min={2020}
           max={2099}
-          value={tahun}
-          onChange={(e) => setTahun(e.target.value)}
-          className="h-9 w-24 rounded-lg px-3 text-[13px] text-[#e8eaed] outline-none transition-colors"
+          value={tahunDari}
+          onChange={(e) => setTahunDari(e.target.value)}
+          className="h-9 w-20 rounded-lg px-3 text-[13px] text-[#e8eaed] outline-none transition-colors"
+          style={{ background: '#0D0E10', border: '1px solid #2A2D31' }}
+        />
+
+        <span className="text-[13px] text-[#9aa0a6] mx-1">→</span>
+
+        {/* Dropdown Bulan Sampai */}
+        <select
+          id="filter-bulan-sampai"
+          value={bulanSampai}
+          onChange={(e) => setBulanSampai(e.target.value)}
+          className="h-9 rounded-lg px-3 text-[13px] text-[#e8eaed] outline-none cursor-pointer transition-colors"
+          style={{
+            background  : '#0D0E10',
+            border      : '1px solid #2A2D31',
+            appearance  : 'none',
+            paddingRight : '2rem',
+          }}
+        >
+          {BULAN_OPTIONS.map((b) => (
+            <option key={b.value} value={b.value}>{b.label}</option>
+          ))}
+        </select>
+
+        {/* Input Tahun Sampai */}
+        <input
+          id="filter-tahun-sampai"
+          type="number"
+          min={2020}
+          max={2099}
+          value={tahunSampai}
+          onChange={(e) => setTahunSampai(e.target.value)}
+          className="h-9 w-20 rounded-lg px-3 text-[13px] text-[#e8eaed] outline-none transition-colors"
           style={{ background: '#0D0E10', border: '1px solid #2A2D31' }}
         />
 
@@ -329,7 +373,7 @@ export default function DashboardClient({ initialData, initialBulan, initialTahu
           id="filter-terapkan"
           onClick={handleTerapkan}
           disabled={isPending}
-          className="flex items-center gap-2 h-9 px-5 rounded-lg text-[13px] font-bold transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+          className="flex items-center gap-2 h-9 px-5 rounded-lg text-[13px] font-bold transition-all disabled:opacity-60 disabled:cursor-not-allowed ml-2"
           style={{ background: '#e5c17b', color: '#0D0E10' }}
         >
           {isPending ? (
@@ -346,7 +390,7 @@ export default function DashboardClient({ initialData, initialBulan, initialTahu
         <span className="ml-auto text-[11px] text-[#9aa0a6]">
           Menampilkan:{' '}
           <span className="text-[#e5c17b] font-semibold">
-            {BULAN_OPTIONS.find((b) => b.value === bulan)?.label} {tahun}
+            {BULAN_OPTIONS.find((b) => b.value === bulanDari)?.label} {tahunDari} → {BULAN_OPTIONS.find((b) => b.value === bulanSampai)?.label} {tahunSampai}
           </span>
         </span>
       </div>
@@ -370,7 +414,7 @@ export default function DashboardClient({ initialData, initialBulan, initialTahu
             <h3 className="text-[14px] font-bold text-[#e8eaed]">Output Produksi per Minggu</h3>
             <p className="text-[11px] text-[#9aa0a6] mt-0.5">
               Berdasarkan scan selesai —{' '}
-              {BULAN_OPTIONS.find((b) => b.value === bulan)?.label} {tahun}
+              {BULAN_OPTIONS.find((b) => b.value === bulanDari)?.label} {tahunDari} s/d {BULAN_OPTIONS.find((b) => b.value === bulanSampai)?.label} {tahunSampai}
             </p>
           </div>
 

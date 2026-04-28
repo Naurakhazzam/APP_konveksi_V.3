@@ -12,16 +12,20 @@ export default async function DashboardPage() {
   }
 
   const now   = new Date();
-  const bulan = String(now.getMonth() + 1);
-  const tahun = String(now.getFullYear());
-  const data  = await getDashboardKPI(bulan, tahun);
+  const bulanSampai = String(now.getMonth() + 1);
+  const tahunSampai = String(now.getFullYear());
+  const bulanDari   = bulanSampai;
+  const tahunDari   = tahunSampai;
+  const data = await getDashboardKPI(bulanDari, tahunDari, bulanSampai, tahunSampai);
 
   return (
     <PageWrapper title="Dashboard" subtitle={`Selamat datang, ${profile.nama}`}>
       <DashboardClient
         initialData={data}
-        initialBulan={bulan}
-        initialTahun={tahun}
+        initialBulanDari={bulanDari}
+        initialTahunDari={tahunDari}
+        initialBulanSampai={bulanSampai}
+        initialTahunSampai={tahunSampai}
       />
     </PageWrapper>
   );

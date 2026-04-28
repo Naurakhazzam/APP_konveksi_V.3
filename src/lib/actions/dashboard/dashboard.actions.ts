@@ -30,32 +30,51 @@ export interface DashboardKPI {
 }
 
 // ─── Helper: Hitung batas tanggal dari bulan + tahun ────────────────────────
-function getDateRange(bulan: string, tahun: string): { start: string; end: string } {
+function getStartDate(bulan: string, tahun: string): string {
+  return `${tahun}-${bulan.padStart(2, '0')}-01`;
+}
+
+function getEndDate(bulan: string, tahun: string): string {
   const mm = bulan.padStart(2, '0');
   const lastDay = new Date(Number(tahun), Number(mm), 0).getDate();
-  return {
-    start: `${tahun}-${mm}-01`,
-    end: `${tahun}-${mm}-${String(lastDay).padStart(2, '0')}`,
-  };
+  return `${tahun}-${mm}-${String(lastDay).padStart(2, '0')}`;
 }
 
 // ─── Helper: Default bulan & tahun saat ini ──────────────────────────────────
-function resolveFilter(bulan?: string, tahun?: string): { bulan: string; tahun: string } {
+function resolveFilter(
+  bulan_dari?: string,
+  tahun_dari?: string,
+  bulan_sampai?: string,
+  tahun_sampai?: string
+): { bulan_dari: string; tahun_dari: string; bulan_sampai: string; tahun_sampai: string } {
   const now = new Date();
+  const currentMonth = String(now.getMonth() + 1);
+  const currentYear = String(now.getFullYear());
   return {
-    bulan: bulan ?? String(now.getMonth() + 1),
-    tahun: tahun ?? String(now.getFullYear()),
+    bulan_dari: bulan_dari ?? currentMonth,
+    tahun_dari: tahun_dari ?? currentYear,
+    bulan_sampai: bulan_sampai ?? currentMonth,
+    tahun_sampai: tahun_sampai ?? currentYear,
   };
 }
 
 // ─── Main Function ───────────────────────────────────────────────────────────
 export async function getDashboardKPI(
-  bulan?: string,
-  tahun?: string
+  bulan_dari?: string,
+  tahun_dari?: string,
+  bulan_sampai?: string,
+  tahun_sampai?: string
 ): Promise<DashboardKPI> {
   const supabase = await createClient();
-  const { bulan: b, tahun: t } = resolveFilter(bulan, tahun);
-  const { start, end } = getDateRange(b, t);
+  const {
+    bulan_dari: b_dari,
+    tahun_dari: t_dari,
+    bulan_sampai: b_sampai,
+    tahun_sampai: t_sampai,
+  } = resolveFilter(bulan_dari, tahun_dari, bulan_sampai, tahun_sampai);
+
+  const start = getStartDate(b_dari, t_dari);
+  const end = getEndDate(b_sampai, t_sampai);
 
   // ── 1. PO Aktif ─────────────────────────────────────────────────────────────
   const { count: po_aktif, error: poError } = await supabase
