@@ -103,6 +103,7 @@ const NAV_MENU = [
       { label: 'Overview Stok',    path: '/app/inventory/overview' },
       { label: 'Transaksi Keluar', path: '/app/inventory/transaksi-keluar' },
       { label: 'Alert Order',      path: '/app/inventory/alert-order' },
+      { label: 'Pemakaian Bahan',  path: '/app/inventory/pemakaian-bahan' },
     ]
   },
   { 

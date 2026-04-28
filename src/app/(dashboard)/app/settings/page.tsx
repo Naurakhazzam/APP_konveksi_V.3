@@ -3,6 +3,8 @@ import { getCurrentUserProfile } from '@/lib/auth/permissions';
 import { hasApprovalPin } from '@/lib/actions/settings/pin.actions';
 import { redirect } from 'next/navigation';
 import PinSetupSection from './PinSetupSection';
+import { getSettings, getKaryawanAktif } from '@/lib/actions/settings/settings.actions';
+import DefaultBoronganSection from './DefaultBoronganSection';
 
 export default async function SettingsPage() {
   const profile = await getCurrentUserProfile();
@@ -13,6 +15,10 @@ export default async function SettingsPage() {
   }
 
   const hasPin = await hasApprovalPin();
+  const [settings, karyawan] = await Promise.all([
+    getSettings(),
+    getKaryawanAktif(),
+  ]);
 
   return (
     <PageWrapper
@@ -21,6 +27,10 @@ export default async function SettingsPage() {
     >
       <div className="max-w-2xl space-y-6 mt-4">
         <PinSetupSection hasPinAlready={hasPin} />
+        <DefaultBoronganSection
+          currentId={settings.default_karyawan_borongan_id}
+          karyawan={karyawan}
+        />
       </div>
     </PageWrapper>
   );
