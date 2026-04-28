@@ -14,6 +14,7 @@ import {
   Settings,
   LogOut,
   Menu,
+  AlertTriangle,
 } from 'lucide-react';
 import { type UserProfile } from '@/lib/auth/permissions';
 import { signOutAction } from '@/lib/auth/actions';
@@ -44,6 +45,7 @@ const NAV_MENU = [
       { label: 'Packing',         path: '/app/produksi/scan/packing' },
       { label: 'Monitoring',      path: '/app/produksi/monitoring' },
       { label: 'Approval QTY',    path: '/app/produksi/approval-qty' },
+      { label: 'Reject',          path: '/app/produksi/reject',        icon: AlertTriangle },
     ]
   },
   { 
@@ -185,15 +187,17 @@ export function Sidebar({ profile, allowedNavIds, allowedPaths }: SidebarProps) 
                 <div className="ml-9 mt-1 flex flex-col space-y-1 border-l border-[#2A2D31] pl-2 mb-1">
                   {item.children.map(child => {
                     const childActive = pathname.startsWith(child.path);
+                    const ChildIcon = (child as { label: string; path: string; icon?: React.ElementType }).icon;
                     return (
                       <Link
                         key={child.path}
                         href={child.path}
                         onClick={() => setIsOpen(false)}
-                        className={`block rounded-lg px-3 py-2 text-xs transition-colors ${
+                        className={`flex items-center gap-2 rounded-lg px-3 py-2 text-xs transition-colors ${
                           childActive ? 'text-[#e5c17b] font-medium bg-[#16181A]' : 'text-[#777e85] hover:text-[#e8eaed]'
                         }`}
                       >
+                        {ChildIcon && <ChildIcon size={12} className="shrink-0" />}
                         {child.label}
                       </Link>
                     )

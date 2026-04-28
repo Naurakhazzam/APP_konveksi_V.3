@@ -29,9 +29,15 @@ import {
 } from 'lucide-react';
 import { TAHAP_CONFIG, getPrevTahap, type TahapKey } from '@/modules/produksi/constants/tahap';
 import ModalAlasanQty from '@/components/produksi/ModalAlasanQty';
+import ModalKonfirmasiQtySingle from '@/components/produksi/ModalKonfirmasiQtySingle';
 import ToastQtyLebih from '@/components/produksi/ToastQtyLebih';
 import RejectSection from '@/components/produksi/RejectSection';
 import PrintHangTagLayout from '../packing/PrintHangTagLayout';
+import {
+  buatReject,
+  getAlasanRejectList,
+  type AlasanRejectOption,
+} from '@/lib/actions/produksi/reject.actions';
 
 type ScanState =
   | { phase: 'IDLE' }
@@ -59,7 +65,14 @@ export default function ScanSimpleClient({ tahap, tahapLabel, mode = 'lanjut', k
   const [barcode, setBarcode] = useState('');
   const [qty, setQty] = useState(0);
   const [showModalAlasan, setShowModalAlasan] = useState(false);
+  const [showModalSingle, setShowModalSingle] = useState(false);
   const [showToastQtyLebih, setShowToastQtyLebih] = useState(false);
+  // ── Reject prompt state ─────────────────────────────────────────────────
+  const [showRejectPrompt, setShowRejectPrompt] = useState(false);
+  const [alasanList, setAlasanList] = useState<AlasanRejectOption[]>([]);
+  const [selectedAlasanId, setSelectedAlasanId] = useState('');
+  const [qtyReject, setQtyReject] = useState(0);
+  // ───────────────────────────────────────────────────────────────────────
   const [printData, setPrintData] = useState<{
     noUrut: string;
     model_nama: string | null;
@@ -237,15 +250,9 @@ export default function ScanSimpleClient({ tahap, tahapLabel, mode = 'lanjut', k
     }
   };
 
-  const handleSingle = async (alasan_qty_id?: string) => {
+  const handleSingle = async (qtySelesai: number, alasan_qty_id: string | null) => {
     if (state.phase !== 'LOADED') return;
     const bundle = state.bundle;
-    const qtyTerima = bundle.qty_per_bundle;
-
-    if (qty < qtyTerima && !alasan_qty_id) {
-      setShowModalAlasan(true);
-      return;
-    }
 
     setState({ phase: 'SUBMITTING', bundle });
     try {
@@ -254,16 +261,16 @@ export default function ScanSimpleClient({ tahap, tahapLabel, mode = 'lanjut', k
         barcode: bundle.barcode,
         tahap_baru: tahap,
         karyawan_id: karyawanId ?? '',
-        qty: qty,
+        qty: qtySelesai,
       });
       // Step 2: langsung selesai tahap ini
       const result = await scanSelesai({
         barcode: bundle.barcode,
         tahap: tahap,
         karyawan_id: karyawanId ?? null,
-        qty: qty,
+        qty: qtySelesai,
         catatan: undefined,
-        alasan_qty_id: alasan_qty_id ?? null,
+        alasan_qty_id: alasan_qty_id,
         tenant_id: 'STX-001',
       });
       if (tahap === 'packing') {
@@ -272,7 +279,7 @@ export default function ScanSimpleClient({ tahap, tahapLabel, mode = 'lanjut', k
           model_nama: bundle.model_nama ?? null,
           warna: bundle.warna,
           size: bundle.size,
-          qty: qty,
+          qty: qtySelesai,
         });
       }
       if (result.is_qty_lebih) {
@@ -333,12 +340,128 @@ export default function ScanSimpleClient({ tahap, tahapLabel, mode = 'lanjut', k
       } else {
         toast.success(`Pengerjaan ${tahapLabel} selesai`);
         setState({ phase: 'RESULT', gajiLedgerId: result.gaji_entry_id, upah: result.upah_nominal });
+        // Trigger reject prompt jika ada qty kurang
+        if (qty < qtyTerima) {
+          const selisih = qtyTerima - qty;
+          try {
+            const list = await getAlasanRejectList();
+            setAlasanList(list);
+            setSelectedAlasanId(list[0]?.id ?? '');
+            setQtyReject(selisih);
+            setShowRejectPrompt(true);
+          } catch {
+            // Prompt gagal dimuat — tidak blocking
+          }
+        }
       }
     } catch (err: any) {
       toast.error(err.message || 'Gagal proses penyelesaian');
       setState({ phase: 'LOADED', bundle });
     }
   }
+
+  // ── RejectPromptCard (inline) ────────────────────────────────────────────
+  const RejectPromptCard = () => {
+    const [submitting, setSubmitting] = useState(false);
+
+    const handleLogReject = async () => {
+      if (!selectedAlasanId || qtyReject < 1) {
+        toast.error('Pilih alasan dan pastikan qty > 0');
+        return;
+      }
+      setSubmitting(true);
+      try {
+        await buatReject({
+          alasan_reject_id: selectedAlasanId,
+          qty_reject: qtyReject,
+          tahap_ditemukan: tahap,
+          source: 'produksi',
+          bundle_id: undefined,
+        });
+        toast.success('Reject berhasil dicatat');
+        setShowRejectPrompt(false);
+      } catch (err: any) {
+        toast.error(err.message || 'Gagal log reject');
+      } finally {
+        setSubmitting(false);
+      }
+    };
+
+    return (
+      <div className="w-full max-w-sm mt-4 rounded-xl border border-red-800/30 bg-red-950/20 p-4 text-left">
+        {/* Header */}
+        <div className="flex items-center gap-2 mb-3">
+          <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-red-900/40">
+            <svg viewBox="0 0 12 12" className="w-3 h-3 text-red-400" fill="currentColor">
+              <path d="M6 1L11 10H1L6 1Z" />
+            </svg>
+          </span>
+          <p className="text-[13px] font-semibold text-red-300">
+            Qty kurang{' '}
+            <span className="font-bold text-red-200">{qtyReject} pcs</span>.
+            {' '}Log sebagai reject?
+          </p>
+        </div>
+
+        {/* Alasan Select */}
+        <div className="mb-3">
+          <label className="block text-[10px] font-bold uppercase tracking-widest text-[#9aa0a6] mb-1.5">
+            Alasan Reject
+          </label>
+          <select
+            value={selectedAlasanId}
+            onChange={(e) => setSelectedAlasanId(e.target.value)}
+            className="w-full bg-[#0D0E10] border border-red-800/40 rounded-lg px-3 py-2 text-[13px] text-[#e8eaed] outline-none focus:border-red-500/60"
+          >
+            {alasanList.length === 0 && (
+              <option value="">Memuat alasan...</option>
+            )}
+            {alasanList.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.jenis_nama} — {a.nama}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Qty Reject */}
+        <div className="mb-4">
+          <label className="block text-[10px] font-bold uppercase tracking-widest text-[#9aa0a6] mb-1.5">
+            Qty Reject (pcs)
+          </label>
+          <input
+            type="number"
+            min={1}
+            value={qtyReject}
+            onChange={(e) => setQtyReject(Number(e.target.value))}
+            className="w-full bg-[#0D0E10] border border-red-800/40 rounded-lg px-3 py-2 text-[13px] text-[#e8eaed] text-center font-bold outline-none focus:border-red-500/60"
+          />
+        </div>
+
+        {/* Actions */}
+        <div className="flex gap-2">
+          <button
+            onClick={() => setShowRejectPrompt(false)}
+            disabled={submitting}
+            className="flex-1 py-2 rounded-lg border border-[#2A2D31] text-[12px] font-semibold text-[#9aa0a6] hover:bg-[#2A2D31] transition-colors disabled:opacity-40"
+          >
+            Lewati
+          </button>
+          <button
+            onClick={handleLogReject}
+            disabled={submitting || !selectedAlasanId || qtyReject < 1}
+            className="flex-1 py-2 rounded-lg bg-red-700/80 hover:bg-red-700 text-[12px] font-bold text-white transition-colors disabled:opacity-40 flex items-center justify-center gap-1.5"
+          >
+            {submitting ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <>Ya, Log Reject</>
+            )}
+          </button>
+        </div>
+      </div>
+    );
+  };
 
   // UI Components
   const BundleInfoDisplay = ({ bundle }: { bundle: BundleForScan }) => (
@@ -521,7 +644,7 @@ export default function ScanSimpleClient({ tahap, tahapLabel, mode = 'lanjut', k
                     </button>
                     {isSingleMode ? (
                         <button
-                            onClick={() => handleSingle()}
+                            onClick={() => setShowModalSingle(true)}
                             className="px-10 py-4 rounded-2xl bg-[#e5c17b] hover:bg-[#d4b16a] text-[#0D0E10] text-xs font-black uppercase tracking-widest shadow-xl transition-all flex items-center justify-center gap-2"
                         >
                             <CheckCircle2 className="w-4 h-4" />
@@ -589,6 +712,8 @@ export default function ScanSimpleClient({ tahap, tahapLabel, mode = 'lanjut', k
               upahNominal={state.upah}
               onDone={() => {}}
             />
+            {/* Reject Prompt — muncul jika qty kurang dari target */}
+            {showRejectPrompt && <RejectPromptCard />}
           </div>
 
           <button
@@ -618,17 +743,32 @@ export default function ScanSimpleClient({ tahap, tahapLabel, mode = 'lanjut', k
         </div>
       )}
       {/* Extras */}
+      {/* Modal alasan untuk mode standard/lanjut (qty selesai < qty terima) */}
       <ModalAlasanQty
         isOpen={showModalAlasan}
         qtyTerima={state.phase === 'LOADED' ? (state.bundle.status_tahap?.[tahap]?.qty_terima ?? state.bundle.qty_per_bundle) : 0}
         qtyInput={qty}
         onConfirm={(id) => {
           setShowModalAlasan(false);
-          if (isSingleMode) handleSingle(id);
-          else handleSelesai(id);
+          handleSelesai(id);
         }}
         onCancel={() => setShowModalAlasan(false)}
       />
+
+      {/* Modal konfirmasi QTY untuk mode single — selalu muncul sebelum submit */}
+      <ModalKonfirmasiQtySingle
+        isOpen={showModalSingle}
+        tahapLabel={tahapLabel}
+        qtyDefault={state.phase === 'LOADED' ? state.bundle.qty_per_bundle : 0}
+        initialQty={qty}
+        onConfirm={(finalQty, alasanId) => {
+          setShowModalSingle(false);
+          setQty(finalQty);
+          handleSingle(finalQty, alasanId);
+        }}
+        onCancel={() => setShowModalSingle(false)}
+      />
+
       <ToastQtyLebih show={showToastQtyLebih} onClose={() => setShowToastQtyLebih(false)} />
 
       {/* Print Layout — hidden kecuali saat print */}
