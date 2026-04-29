@@ -151,6 +151,41 @@ export async function getOverheadBenang(
   };
 }
 
+// ─── Benang Serah Terima ─────────────────────────────────────────────────────
+
+export interface BenangSerahTerimaInput {
+  karyawan_id        : string;
+  inventory_item_id  : string;
+  qty                : number;
+  tanggal            : string;   // YYYY-MM-DD
+  bundle_ids         : string[]; // array of bundle UUIDs
+  keterangan?        : string | null;
+}
+
+/**
+ * Catat serah terima benang ke penjahit + kurangi stok inventory (atomic via RPC)
+ */
+export async function submitBenangSerahTerima(
+  items: BenangSerahTerimaInput[]
+): Promise<void> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  for (const item of items) {
+    const { error } = await supabase.rpc('catat_benang_serah_terima', {
+      p_karyawan_id       : item.karyawan_id,
+      p_inventory_item_id : item.inventory_item_id,
+      p_qty               : item.qty,
+      p_tanggal           : item.tanggal,
+      p_bundle_ids        : item.bundle_ids,
+      p_keterangan        : item.keterangan ?? null,
+      p_user_id           : user?.id ?? null,
+      p_tenant_id         : TENANT_ID,
+    });
+    if (error) throw new Error(`Gagal catat benang: ${error.message}`);
+  }
+}
+
 /**
  * Hapus catatan ambil benang + kembalikan stok inventory
  */

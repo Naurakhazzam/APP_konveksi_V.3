@@ -4,8 +4,9 @@ import React, { useState, useEffect } from 'react';
 import { type AntrianJahitBundle } from '@/lib/actions/produksi/scan.actions';
 import { scanJahitTerima } from '@/lib/actions/produksi/scan-mutations.actions';
 import { getAksesoriForKartuKerja, type ModelAksesori } from '@/lib/actions/produksi/model-aksesori.actions';
+import { getBenangItems, submitBenangSerahTerima, type BenangItem } from '@/lib/actions/inventory/benang.actions';
 import PrintKartuKerjaLayout, { type KartuBundle, type AksesoriItem } from '@/app/(dashboard)/app/produksi/antrian-cutting/PrintKartuKerjaLayout';
-import { X, User, Printer, Loader2, AlertCircle, Tag, PackageCheck } from 'lucide-react';
+import { X, User, Printer, Loader2, AlertCircle, Tag, PackageCheck, Wind, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface Props {
@@ -25,6 +26,19 @@ interface AggregatedAksesori {
   tahap_pakai: string;
 }
 
+// Row benang yang dipilih user
+interface BenangRow {
+  uid              : string;  // key lokal
+  inventory_item_id: string;
+  nama             : string;
+  satuan           : string;
+  qty              : string;  // string agar input bisa kosong
+}
+
+function genUid() {
+  return Math.random().toString(36).slice(2);
+}
+
 export default function ModalSerahTerimaJahit({ selectedBundles, karyawanList, onSuccess, onClose }: Props) {
   const [karyawanId, setKaryawanId]     = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -32,18 +46,32 @@ export default function ModalSerahTerimaJahit({ selectedBundles, karyawanList, o
   const [aksesoriMap, setAksesoriMap]   = useState<Record<string, ModelAksesori[]>>({});
   const [loadingAksesori, setLoadingAksesori] = useState(true);
 
-  // Load aksesori saat modal dibuka
+  // State benang
+  const [benangItems, setBenangItems]   = useState<BenangItem[]>([]);
+  const [loadingBenang, setLoadingBenang] = useState(true);
+  const [benangRows, setBenangRows]     = useState<BenangRow[]>([]);
+
+  // Load aksesori + benang saat modal dibuka
   useEffect(() => {
     if (!selectedBundles.length) return;
+
+    // Load aksesori
     const poItemIds = [...new Set(selectedBundles.map(b => b.po_item_id))];
     setLoadingAksesori(true);
     getAksesoriForKartuKerja(poItemIds)
       .then(map => setAksesoriMap(map))
       .catch(() => setAksesoriMap({}))
       .finally(() => setLoadingAksesori(false));
+
+    // Load daftar item benang dari inventory
+    setLoadingBenang(true);
+    getBenangItems()
+      .then(items => setBenangItems(items))
+      .catch(() => setBenangItems([]))
+      .finally(() => setLoadingBenang(false));
   }, []);  // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Agregasi aksesori jahit untuk semua bundle yang dipilih
+  // ── Agregasi aksesori jahit ──────────────────────────────────────────────
   const aggregatedAksesori: AggregatedAksesori[] = (() => {
     const map: Record<string, AggregatedAksesori> = {};
     for (const bundle of selectedBundles) {
@@ -69,10 +97,45 @@ export default function ModalSerahTerimaJahit({ selectedBundles, karyawanList, o
 
   const totalPcs = selectedBundles.reduce((s, b) => s + b.qty_per_bundle, 0);
 
+  // ── Handlers benang rows ─────────────────────────────────────────────────
+  function addBenangRow() {
+    setBenangRows(prev => [...prev, { uid: genUid(), inventory_item_id: '', nama: '', satuan: '', qty: '' }]);
+  }
+
+  function removeBenangRow(uid: string) {
+    setBenangRows(prev => prev.filter(r => r.uid !== uid));
+  }
+
+  function updateBenangRowItem(uid: string, itemId: string) {
+    const item = benangItems.find(b => b.id === itemId);
+    setBenangRows(prev => prev.map(r =>
+      r.uid === uid
+        ? { ...r, inventory_item_id: itemId, nama: item?.nama ?? '', satuan: item?.satuan ?? '', qty: r.qty }
+        : r
+    ));
+  }
+
+  function updateBenangRowQty(uid: string, qty: string) {
+    setBenangRows(prev => prev.map(r => r.uid === uid ? { ...r, qty } : r));
+  }
+
+  // ── Submit ───────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
     if (!karyawanId) {
       toast.error('Pilih karyawan penjahit terlebih dahulu');
       return;
+    }
+
+    // Validasi benang rows — item harus dipilih dan qty harus diisi (min 0)
+    for (const row of benangRows) {
+      if (!row.inventory_item_id) {
+        toast.error('Pilih item benang atau hapus baris yang kosong');
+        return;
+      }
+      if (row.qty === '' || row.qty === null || isNaN(parseFloat(row.qty)) || parseFloat(row.qty) < 0) {
+        toast.error(`Qty benang untuk ${row.nama || 'item'} harus diisi (minimal 0)`);
+        return;
+      }
     }
 
     const selectedKaryawan = karyawanList.find(k => k.id === karyawanId);
@@ -96,10 +159,31 @@ export default function ModalSerahTerimaJahit({ selectedBundles, karyawanList, o
       }
 
       if (warnings.length > 0) {
-        toast.warning(`Beberapa stok kurang: ${warnings.join(', ')}`);
+        toast.warning(`Beberapa stok aksesori kurang: ${warnings.join(', ')}`);
       }
 
-      // 2. Siapkan data untuk kartu kerja
+      // 2. Catat serah terima benang (jika ada)
+      if (benangRows.length > 0) {
+        const bundleIds = selectedBundles.map(b => b.id);
+        const today     = new Date().toISOString().split('T')[0];
+
+        // Hanya submit row dengan qty > 0 (qty 0 = tidak diserahkan, tidak perlu dicatat)
+        const benangToSubmit = benangRows.filter(r => parseFloat(r.qty) > 0);
+        if (benangToSubmit.length > 0) {
+          await submitBenangSerahTerima(
+            benangToSubmit.map(row => ({
+              karyawan_id       : karyawanId,
+              inventory_item_id : row.inventory_item_id,
+              qty               : parseFloat(row.qty),
+              tanggal           : today,
+              bundle_ids        : bundleIds,
+              keterangan        : `Serah terima jahit – ${selectedBundles.map(b => b.barcode).join(', ')}`,
+            }))
+          );
+        }
+      }
+
+      // 3. Siapkan data untuk kartu kerja
       const dataToPrint: KartuBundle[] = selectedBundles.map((b) => {
         const aks: AksesoriItem[] = (aksesoriMap[b.po_item_id] ?? []).map(item => ({
           nama        : item.inventory_item_nama,
@@ -134,7 +218,7 @@ export default function ModalSerahTerimaJahit({ selectedBundles, karyawanList, o
 
       setKartuData(dataToPrint);
 
-      // 3. Trigger print
+      // 4. Trigger print
       setTimeout(() => {
         window.print();
         toast.success(`Berhasil serah terima ${selectedBundles.length} bundle`);
@@ -148,6 +232,7 @@ export default function ModalSerahTerimaJahit({ selectedBundles, karyawanList, o
     }
   };
 
+  // ── Render ───────────────────────────────────────────────────────────────
   return (
     <>
       <div className="fixed inset-0 bg-black/75 flex items-center justify-center z-50 p-4 print:hidden">
@@ -265,6 +350,117 @@ export default function ModalSerahTerimaJahit({ selectedBundles, karyawanList, o
                 </div>
               )}
             </div>
+
+            {/* ── Benang yang Diserahkan ── */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[#e5c17b] flex items-center gap-2">
+                  <Wind size={14} /> Benang yang Diserahkan
+                </label>
+                <button
+                  type="button"
+                  onClick={addBenangRow}
+                  disabled={isSubmitting || loadingBenang}
+                  className="flex items-center gap-1 text-xs font-semibold text-[#e5c17b] hover:text-[#d4b06a] disabled:opacity-50 transition-colors"
+                >
+                  <Plus size={14} /> Tambah Benang
+                </button>
+              </div>
+
+              {loadingBenang ? (
+                <div className="flex items-center justify-center py-4 border border-[#2A2D31] rounded-xl bg-[#16181A]">
+                  <Loader2 className="w-4 h-4 animate-spin text-[#9aa0a6]" />
+                  <span className="ml-2 text-xs text-[#9aa0a6]">Memuat daftar benang...</span>
+                </div>
+              ) : benangRows.length === 0 ? (
+                <button
+                  type="button"
+                  onClick={addBenangRow}
+                  disabled={isSubmitting}
+                  className="w-full border border-dashed border-[#2A2D31] rounded-xl p-4 text-center bg-[#16181A] hover:border-[#e5c17b]/40 hover:bg-[#1e2022] transition-colors group"
+                >
+                  <Wind className="w-7 h-7 text-[#9aa0a6] group-hover:text-[#e5c17b]/60 mx-auto mb-1.5 transition-colors" />
+                  <p className="text-xs text-[#9aa0a6] group-hover:text-[#e8eaed] transition-colors">
+                    Klik untuk menambahkan benang yang diserahkan
+                  </p>
+                  <p className="text-[10px] text-[#9aa0a6]/50 mt-0.5">Opsional — stok akan berkurang saat submit</p>
+                </button>
+              ) : (
+                <div className="border border-[#2A2D31] rounded-xl overflow-hidden bg-[#16181A]">
+                  {/* Header */}
+                  <div className="grid grid-cols-[1fr_120px_32px] gap-2 px-4 py-2 bg-[#1A1D1F] border-b border-[#2A2D31]">
+                    <span className="text-[10px] uppercase tracking-wider text-[#9aa0a6] font-bold">Item Benang</span>
+                    <span className="text-[10px] uppercase tracking-wider text-[#9aa0a6] font-bold text-center">Qty</span>
+                    <span />
+                  </div>
+
+                  {/* Rows */}
+                  <div className="divide-y divide-[#2A2D31]">
+                    {benangRows.map((row) => {
+                      const selectedItem = benangItems.find(b => b.id === row.inventory_item_id);
+                      return (
+                        <div key={row.uid} className="grid grid-cols-[1fr_120px_32px] gap-2 px-4 py-2.5 items-center">
+                          {/* Pilih item */}
+                          <select
+                            value={row.inventory_item_id}
+                            onChange={e => updateBenangRowItem(row.uid, e.target.value)}
+                            disabled={isSubmitting}
+                            className="bg-[#0D0E10] border border-[#2A2D31] rounded-lg px-3 py-1.5 text-[#e8eaed] text-xs focus:ring-1 focus:ring-[#e5c17b] outline-none w-full"
+                          >
+                            <option value="">-- Pilih benang --</option>
+                            {benangItems.map(b => (
+                              <option key={b.id} value={b.id}>
+                                {b.nama} {b.stok_aktual < 0 ? `⚠ stok ${b.stok_aktual}` : `(stok: ${b.stok_aktual} ${b.satuan})`}
+                              </option>
+                            ))}
+                          </select>
+
+                          {/* Qty + satuan */}
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={row.qty}
+                              onChange={e => updateBenangRowQty(row.uid, e.target.value)}
+                              disabled={isSubmitting}
+                              placeholder="wajib isi"
+                              className={`bg-[#0D0E10] border rounded-lg px-2 py-1.5 text-[#e8eaed] text-xs focus:ring-1 focus:ring-[#e5c17b] outline-none w-full text-right ${
+                                row.qty === '' ? 'border-red-500/60' : 'border-[#2A2D31]'
+                              }`}
+                            />
+                            {selectedItem && (
+                              <span className="text-[10px] text-[#9aa0a6] shrink-0">{selectedItem.satuan}</span>
+                            )}
+                          </div>
+
+                          {/* Hapus */}
+                          <button
+                            type="button"
+                            onClick={() => removeBenangRow(row.uid)}
+                            disabled={isSubmitting}
+                            className="flex items-center justify-center w-7 h-7 rounded-lg text-[#9aa0a6] hover:text-[#e65c5c] hover:bg-[#2A2D31] transition-colors"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Tombol tambah di bawah */}
+                  <button
+                    type="button"
+                    onClick={addBenangRow}
+                    disabled={isSubmitting}
+                    className="w-full px-4 py-2 text-xs text-[#9aa0a6] hover:text-[#e5c17b] hover:bg-[#1A1D1F] transition-colors flex items-center gap-1 justify-center border-t border-[#2A2D31]"
+                  >
+                    <Plus size={12} /> Tambah baris
+                  </button>
+                </div>
+              )}
+            </div>
+
           </div>
 
           {/* Footer */}
