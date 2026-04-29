@@ -29,8 +29,6 @@ export async function getInventoryItems(): Promise<InventoryItem[]> {
   }));
 }
 
-// ─── Harga Referensi & Konversi Satuan ──────────────────────────────────────
-
 export interface HargaReferensiItem {
   id              : string;
   nama            : string;
@@ -41,9 +39,6 @@ export interface HargaReferensiItem {
   faktor_konversi : number | null;
 }
 
-/**
- * Ambil semua item inventory dengan info harga referensi & konversi
- */
 export async function getHargaReferensiItems(): Promise<HargaReferensiItem[]> {
   const supabase = await createClient();
 
@@ -66,9 +61,6 @@ export async function getHargaReferensiItems(): Promise<HargaReferensiItem[]> {
   }));
 }
 
-/**
- * Update harga_referensi saja untuk satu item
- */
 export async function updateHargaReferensi(item_id: string, harga: number): Promise<void> {
   const supabase = await createClient();
 
@@ -81,20 +73,21 @@ export async function updateHargaReferensi(item_id: string, harga: number): Prom
   if (error) throw new Error(error.message);
 }
 
-/**
- * Update satuan_beli, faktor_konversi, dan harga_referensi sekaligus
- */
 export async function updateKonversiSatuan(
   item_id         : string,
-  satuan_beli     : string,
-  faktor_konversi : number,
+  satuan_beli     : string | null,
+  faktor_konversi : number | null,
   harga_referensi : number,
 ): Promise<void> {
   const supabase = await createClient();
 
   const { error } = await supabase
     .from('inventory_item')
-    .update({ satuan_beli, faktor_konversi, harga_referensi })
+    .update({
+      satuan_beli     : satuan_beli ?? null,
+      faktor_konversi : faktor_konversi ?? null,
+      harga_referensi,
+    })
     .eq('id', item_id)
     .eq('tenant_id', TENANT_ID);
 
