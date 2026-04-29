@@ -116,11 +116,13 @@ export default function InventoryOverviewClient({ items, kategoriTrxList, warnaL
       const newItem: InventoryOverviewItem = {
         id: newId,
         ...input,
-        warna_id: input.warna_id ?? null,
-        stok_aktual: 0,
-        status: 'low', // Karena stok 0 dan min >= 0
-        batch_count: 0,
-        warna_nama: selectedWarna?.nama ?? null,
+        warna_id       : input.warna_id ?? null,
+        stok_aktual    : 0,
+        status         : 'low',
+        batch_count    : 0,
+        warna_nama     : selectedWarna?.nama ?? null,
+        satuan_beli    : null,
+        faktor_konversi: null,
       };
       setLocalItems(prev => [...prev, newItem].sort((a, b) => a.nama.localeCompare(b.nama)));
       setShowTambahItem(false);
