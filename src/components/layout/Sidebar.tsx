@@ -104,6 +104,7 @@ const NAV_MENU = [
       { label: 'Transaksi Keluar', path: '/app/inventory/transaksi-keluar' },
       { label: 'Alert Order',      path: '/app/inventory/alert-order' },
       { label: 'Pemakaian Bahan',  path: '/app/inventory/pemakaian-bahan' },
+      { label: 'Ambil Benang',     path: '/app/inventory/ambil-benang' },
       { label: 'Harga Referensi',  path: '/app/inventory/harga-referensi' },
     ]
   },
@@ -148,7 +149,6 @@ export function Sidebar({ profile, allowedNavIds, allowedPaths }: SidebarProps) 
     .filter((item) => allowedNavIds.includes(item.id))
     .map((item) => {
       if (!item.children) return item;
-      // Filter children berdasarkan allowedPaths
       const allowedChildren = item.children.filter(child =>
         allowedPaths.some(p => p === child.path || child.path.startsWith(p))
       );
@@ -243,7 +243,7 @@ export function Sidebar({ profile, allowedNavIds, allowedPaths }: SidebarProps) 
         <SidebarContent />
       </aside>
 
-      {/* Mobile Sidebar Trigger (only visible on mobile, positioned absolute or handled in TopBar) */}
+      {/* Mobile Sidebar */}
       <div className="lg:hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-50">
         <Sheet open={isOpen} onOpenChange={setIsOpen}>
           <SheetTrigger 
