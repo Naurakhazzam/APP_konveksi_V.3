@@ -17,15 +17,17 @@ async function resolveUserId() {
 // --- INTERFACES ---
 
 export interface InventoryOverviewItem {
-  id: string;
-  nama: string;
-  satuan: string;
-  stok_aktual: number;
-  stok_minimum: number;
-  status: 'normal' | 'low' | 'minus';
-  batch_count: number;
-  warna_id: string | null;
-  warna_nama: string | null;
+  id             : string;
+  nama           : string;
+  satuan         : string;
+  stok_aktual    : number;
+  stok_minimum   : number;
+  status         : 'normal' | 'low' | 'minus';
+  batch_count    : number;
+  warna_id       : string | null;
+  warna_nama     : string | null;
+  satuan_beli    : string | null;
+  faktor_konversi: number | null;
 }
 
 export interface InventoryBatch {
@@ -78,7 +80,7 @@ export async function getInventoryOverview(): Promise<InventoryOverviewItem[]> {
   // A. Fetch items (tanpa embedded join warna — pakai lookup manual agar tidak bergantung schema cache)
   const { data: items, error: itemError } = await supabase
     .from('inventory_item')
-    .select('id, nama, satuan, stok_aktual, stok_minimum, warna_id')
+    .select('id, nama, satuan, stok_aktual, stok_minimum, warna_id, satuan_beli, faktor_konversi')
     .eq('tenant_id', TENANT_ID)
     .order('nama');
 
@@ -121,10 +123,12 @@ export async function getInventoryOverview(): Promise<InventoryOverviewItem[]> {
       satuan:       item.satuan,
       stok_aktual:  stokNum,
       stok_minimum: minNum,
-      warna_id:     item.warna_id ?? null,
-      warna_nama:   item.warna_id ? (warnaMap[item.warna_id] ?? null) : null,
+      warna_id:      item.warna_id ?? null,
+      warna_nama:    item.warna_id ? (warnaMap[item.warna_id] ?? null) : null,
       status,
-      batch_count:  batchCountMap[item.id] ?? 0,
+      batch_count:   batchCountMap[item.id] ?? 0,
+      satuan_beli:   item.satuan_beli    ?? null,
+      faktor_konversi: item.faktor_konversi != null ? Number(item.faktor_konversi) : null,
     };
   });
 }

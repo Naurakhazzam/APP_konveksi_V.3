@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { 
   Plus, 
   Search, 
@@ -69,6 +69,22 @@ export default function InventoryOverviewClient({ items, kategoriTrxList, warnaL
   const [tambahLoading, setTambahLoading] = useState(false);
   const [stokMasukLoading, setStokMasukLoading] = useState(false);
 
+  // Konversi state untuk stok masuk
+  const [qtyBeli,      setQtyBeli]      = useState('');
+  const [hargaBeli,    setHargaBeli]    = useState('');
+
+  const konversiAktif = !!(selectedItem?.satuan_beli && selectedItem?.faktor_konversi);
+  const qtyPakai  = konversiAktif && qtyBeli
+    ? parseFloat(qtyBeli)  * (selectedItem!.faktor_konversi!) : null;
+  const hargaPerPakai = konversiAktif && hargaBeli && selectedItem?.faktor_konversi
+    ? Math.round(parseFloat(hargaBeli) / selectedItem!.faktor_konversi!) : null;
+
+  // reset konversi fields saat item ganti
+  useEffect(() => {
+    setQtyBeli('');
+    setHargaBeli('');
+  }, [selectedItem?.id]);
+
   // Filter items
   const filteredItems = useMemo(() => {
     return localItems.filter(item => 
@@ -124,8 +140,9 @@ export default function InventoryOverviewClient({ items, kategoriTrxList, warnaL
     setStokMasukLoading(true);
     const formData = new FormData(e.currentTarget);
     
-    const qty = Number(formData.get('qty'));
-    const harga_satuan = Number(formData.get('harga_satuan'));
+    // Kalau item punya konversi, pakai nilai yang sudah dikonversi
+    const qty         = konversiAktif && qtyPakai      ? qtyPakai      : Number(formData.get('qty'));
+    const harga_satuan = konversiAktif && hargaPerPakai ? hargaPerPakai : Number(formData.get('harga_satuan'));
 
     const input: StokMasukInput = {
       inventory_item_id: selectedItem.id,
@@ -453,31 +470,78 @@ export default function InventoryOverviewClient({ items, kategoriTrxList, warnaL
           )}
 
           <form onSubmit={handleStokMasuk} className="space-y-4 pt-2">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="qty">Qty Masuk</Label>
-                <Input 
-                  id="qty" 
-                  name="qty" 
-                  type="number" 
-                  step="0.001" 
-                  required 
-                  autoComplete="off"
-                  className="bg-[#16181A] border-[#2A2D31]"
-                />
+
+            {/* ── Input konversi (tampil jika item punya faktor_konversi) ── */}
+            {konversiAktif ? (
+              <div className="space-y-3">
+                <div className="bg-[#e5c17b]/5 border border-[#e5c17b]/20 rounded-xl px-4 py-2.5">
+                  <p className="text-xs text-[#e5c17b] font-medium">
+                    Konversi aktif: 1 {selectedItem!.satuan_beli} = {selectedItem!.faktor_konversi} {selectedItem!.satuan}
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="qty_beli">Qty Beli ({selectedItem!.satuan_beli})</Label>
+                    <Input
+                      id="qty_beli"
+                      type="number" step="0.001" min={0}
+                      value={qtyBeli}
+                      onChange={(e) => setQtyBeli(e.target.value)}
+                      required autoComplete="off"
+                      className="bg-[#16181A] border-[#2A2D31] focus:border-[#e5c17b]"
+                      placeholder="Contoh: 2"
+                    />
+                    {qtyPakai !== null && (
+                      <p className="text-xs text-[#e5c17b]">
+                        = {qtyPakai.toLocaleString('id-ID')} {selectedItem!.satuan}
+                      </p>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="harga_beli">Harga per {selectedItem!.satuan_beli} (Rp)</Label>
+                    <Input
+                      id="harga_beli"
+                      type="number" min={0}
+                      value={hargaBeli}
+                      onChange={(e) => setHargaBeli(e.target.value)}
+                      required autoComplete="off"
+                      className="bg-[#16181A] border-[#2A2D31] focus:border-[#e5c17b]"
+                      placeholder="Contoh: 50000"
+                    />
+                    {hargaPerPakai !== null && (
+                      <p className="text-xs text-[#e5c17b]">
+                        = Rp {hargaPerPakai.toLocaleString('id-ID')} / {selectedItem!.satuan}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                {/* hidden fields tetap diperlukan agar form action bisa baca */}
+                <input type="hidden" name="qty"          value={qtyPakai      ?? ''} />
+                <input type="hidden" name="harga_satuan" value={hargaPerPakai ?? ''} />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="harga_satuan">Harga Satuan (Rp)</Label>
-                <Input 
-                  id="harga_satuan" 
-                  name="harga_satuan" 
-                  type="number" 
-                  required 
-                  autoComplete="off"
-                  className="bg-[#16181A] border-[#2A2D31]"
-                />
+            ) : (
+              /* ── Input normal (tanpa konversi) ── */
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="qty">Qty Masuk ({selectedItem?.satuan})</Label>
+                  <Input
+                    id="qty" name="qty"
+                    type="number" step="0.001"
+                    required autoComplete="off"
+                    className="bg-[#16181A] border-[#2A2D31]"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="harga_satuan">Harga / {selectedItem?.satuan} (Rp)</Label>
+                  <Input
+                    id="harga_satuan" name="harga_satuan"
+                    type="number"
+                    required autoComplete="off"
+                    className="bg-[#16181A] border-[#2A2D31]"
+                  />
+                </div>
               </div>
-            </div>
+            )}
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
