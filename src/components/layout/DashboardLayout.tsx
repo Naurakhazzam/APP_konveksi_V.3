@@ -43,6 +43,7 @@ const ALL_APP_PATHS = [
   '/app/inventory/transaksi-keluar',
   '/app/inventory/alert-order',
   '/app/inventory/pemakaian-bahan',
+  '/app/inventory/harga-referensi',
   '/app/keuangan/ringkasan',
   '/app/keuangan/jurnal-produksi',
   '/app/keuangan/buku-kas',
