@@ -104,6 +104,7 @@ const NAV_MENU = [
       { label: 'Transaksi Keluar', path: '/app/inventory/transaksi-keluar' },
       { label: 'Alert Order',      path: '/app/inventory/alert-order' },
       { label: 'Pemakaian Bahan',  path: '/app/inventory/pemakaian-bahan' },
+      { label: 'Harga Referensi',  path: '/app/inventory/harga-referensi' },
     ]
   },
   { 
