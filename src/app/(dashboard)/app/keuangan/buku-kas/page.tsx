@@ -1,4 +1,4 @@
-import { getBukuKasEntries, getPOListForKas } from '@/lib/actions/keuangan/buku-kas.actions';
+import { getBukuKasEntries, getPOListForKas, getHppKomponenOverhead } from '@/lib/actions/keuangan/buku-kas.actions';
 import BukuKasClient from './BukuKasClient';
 
 export const metadata = {
@@ -7,11 +7,12 @@ export const metadata = {
 
 export default async function BukuKasPage() {
   try {
-    const [entries, poList] = await Promise.all([
+    const [entries, poList, kompoList] = await Promise.all([
       getBukuKasEntries(),
       getPOListForKas(),
+      getHppKomponenOverhead(),
     ]);
-    return <BukuKasClient initialEntries={entries} poList={poList} />;
+    return <BukuKasClient initialEntries={entries} poList={poList} kompoList={kompoList} />;
   } catch (e) {
     return (
       <div className="p-8 text-red-400">

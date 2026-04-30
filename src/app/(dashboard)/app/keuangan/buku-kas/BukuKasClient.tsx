@@ -13,6 +13,7 @@ import {
 import {
   type BukuKasEntry,
   type AddBukuKasInput,
+  type HppKomponenOption,
   KATEGORI_MASUK,
   KATEGORI_KELUAR,
 } from '@/lib/actions/keuangan/buku-kas.types';
@@ -43,6 +44,7 @@ const labelCls = 'block text-[10px] font-bold text-[#9aa0a6] uppercase tracking-
 interface Props {
   initialEntries: BukuKasEntry[];
   poList: { id: string; no_po: string }[];
+  kompoList: HppKomponenOption[];
 }
 
 // ─── DEFAULT FORM ─────────────────────────────────────────────────────────────
@@ -55,11 +57,12 @@ const makeDefaultForm = (tipe: 'masuk' | 'keluar') => ({
   keterangan: '',
   no_referensi: '',
   po_id: '',
+  komponen_id: '',
 });
 
 // ─── COMPONENT ───────────────────────────────────────────────────────────────
 
-export default function BukuKasClient({ initialEntries, poList }: Props) {
+export default function BukuKasClient({ initialEntries, poList, kompoList }: Props) {
   const [entries, setEntries] = useState<BukuKasEntry[]>(initialEntries);
   const [filterBulan, setFilterBulan] = useState('');
   const [filterTahun, setFilterTahun] = useState(String(new Date().getFullYear()));
@@ -125,6 +128,7 @@ export default function BukuKasClient({ initialEntries, poList }: Props) {
       keterangan:   form.keterangan,
       no_referensi: form.no_referensi || undefined,
       po_id:        form.po_id        || undefined,
+      komponen_id:  form.komponen_id   || undefined,
     };
     const result = await addBukuKas(input);
     setSubmitting(false);
@@ -432,6 +436,22 @@ export default function BukuKasClient({ initialEntries, poList }: Props) {
                 ))}
               </select>
             </div>
+
+            {modalTipe === 'keluar' && (
+              <div>
+                <label className={labelCls}>HPP Komponen Overhead <span className="text-[#5f6368] normal-case font-normal">(opsional)</span></label>
+                <select
+                  className={inputCls}
+                  value={form.komponen_id}
+                  onChange={e => setForm(f => ({ ...f, komponen_id: e.target.value }))}
+                >
+                  <option value="">-- Tidak ada --</option>
+                  {kompoList.map(k => (
+                    <option key={k.id} value={k.id}>{k.nama}</option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             <DialogFooter className="pt-2">
               <Button

@@ -3,9 +3,9 @@
 import { createClient } from '@/lib/supabase/server';
 import { getCurrentUserProfile } from '@/lib/auth/permissions';
 import { revalidatePath } from 'next/cache';
-import type { BukuKasEntry, AddBukuKasInput } from './buku-kas.types';
+import type { BukuKasEntry, AddBukuKasInput, HppKomponenOption } from './buku-kas.types';
 
-export type { BukuKasEntry, AddBukuKasInput } from './buku-kas.types';
+export type { BukuKasEntry, AddBukuKasInput, HppKomponenOption } from './buku-kas.types';
 
 const TENANT_ID = 'STX-001';
 
@@ -18,7 +18,7 @@ export async function getBukuKasEntries(filters?: {
 
   let query = supabase
     .from('buku_kas')
-    .select('id, tanggal, tipe, kategori, nominal, keterangan, no_referensi, po_id, created_at, po:po_id(no_po)')
+    .select('id, tanggal, tipe, kategori, nominal, keterangan, no_referensi, po_id, komponen_id, created_at, po:po_id(no_po)')
     .eq('tenant_id', TENANT_ID)
     .order('tanggal', { ascending: false })
     .order('created_at', { ascending: false });
@@ -53,6 +53,7 @@ export async function getBukuKasEntries(filters?: {
     no_referensi: item.no_referensi ?? null,
     po_id: item.po_id ?? null,
     po_no: (Array.isArray(item.po) ? item.po[0]?.no_po : item.po?.no_po) ?? null,
+    komponen_id: item.komponen_id ?? null,
     created_at: item.created_at,
   }));
 }
@@ -81,6 +82,7 @@ export async function addBukuKas(
     keterangan:   input.keterangan.trim(),
     no_referensi: input.no_referensi ?? null,
     po_id:        input.po_id ?? null,
+    komponen_id:  input.komponen_id ?? null,
     tenant_id:    TENANT_ID,
     created_by:   profile.id,
   });
@@ -119,6 +121,18 @@ export async function getPOListForKas(): Promise<{ id: string; no_po: string }[]
     .select('id, no_po')
     .eq('tenant_id', TENANT_ID)
     .order('created_at', { ascending: false });
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}
+
+export async function getHppKomponenOverhead(): Promise<HppKomponenOption[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('hpp_komponen')
+    .select('id, nama')
+    .eq('kategori', 'overhead')
+    .eq('tenant_id', TENANT_ID)
+    .order('nama');
   if (error) throw new Error(error.message);
   return data ?? [];
 }

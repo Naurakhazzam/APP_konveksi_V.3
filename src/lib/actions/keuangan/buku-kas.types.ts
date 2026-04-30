@@ -10,6 +10,7 @@ export interface BukuKasEntry {
   no_referensi: string | null;
   po_id: string | null;
   po_no: string | null;
+  komponen_id: string | null;
   created_at: string;
 }
 
@@ -21,6 +22,12 @@ export interface AddBukuKasInput {
   keterangan: string;
   no_referensi?: string;
   po_id?: string;
+  komponen_id?: string | null;
+}
+
+export interface HppKomponenOption {
+  id: string;
+  nama: string;
 }
 
 export const KATEGORI_MASUK = [

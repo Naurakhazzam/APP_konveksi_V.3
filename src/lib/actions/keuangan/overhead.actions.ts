@@ -50,12 +50,13 @@ export async function getOverheadRateInfo(): Promise<OverheadRateInfo> {
 
   const supabase = await createClient();
 
-  // Total Overhead (jurnal_entry: jenis = 'overhead')
+  // Total Overhead (buku_kas: tipe='keluar' + komponen_id IS NOT NULL)
   const { data: overheadData, error: ohError } = await supabase
-    .from('jurnal_entry')
+    .from('buku_kas')
     .select('nominal')
     .eq('tenant_id', TENANT_ID)
-    .eq('jenis', 'overhead')
+    .eq('tipe', 'keluar')
+    .not('komponen_id', 'is', null)
     .gte('tanggal', period.tanggal_mulai)
     .lte('tanggal', period.tanggal_akhir);
 
@@ -126,6 +127,16 @@ export async function getQtyShippedPerPO(
   });
 
   return resultMap;
+}
+
+export async function getOverheadPerPO(
+  po_id: string,
+  tanggal_mulai: string,
+  tanggal_akhir: string
+): Promise<number> {
+  const rateInfo = await getOverheadRateInfo();
+  const qtyMap   = await getQtyShippedPerPO(tanggal_mulai, tanggal_akhir);
+  return rateInfo.overhead_rate * (qtyMap[po_id] ?? 0);
 }
 
 export async function upsertOverheadPeriod(input: {
