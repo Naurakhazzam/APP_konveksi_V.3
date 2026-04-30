@@ -485,6 +485,9 @@ export default function LaporanPOClient({ initialData, overheadRateInfo }: Props
                   { label: 'HPP Estimasi', value: idrFmt(detailData.totals.hpp_estimasi), color: 'text-[#e8eaed]' },
                   { label: 'Biaya Bahan', value: idrFmt(detailData.totals.biaya_bahan), color: 'text-blue-400' },
                   { label: 'Biaya Upah', value: idrFmt(detailData.totals.biaya_upah), color: 'text-purple-400' },
+                  { label: 'Alokasi Overhead', value: idrFmt(detailData.totals.alokasi_overhead), color: 'text-amber-400' },
+                  { label: 'HPP Aktual (Direct)', value: idrFmt(detailData.totals.hpp_aktual), color: 'text-[#e8eaed]' },
+                  { label: 'HPP Aktual Final', value: idrFmt(detailData.totals.hpp_aktual_final), color: 'text-[#e5c17b]' },
                   {
                     label: 'Gap',
                     value: (detailData.totals.gap > 0 ? '+' : '') + idrFmt(detailData.totals.gap),
@@ -568,7 +571,11 @@ export default function LaporanPOClient({ initialData, overheadRateInfo }: Props
                               )}
                             </td>
                             <td className="p-2.5">
-                              <span className="text-xs bg-[#2A2D31] text-[#9aa0a6] px-2 py-0.5 rounded border border-[#3A3D41]">
+                              <span className={`text-xs px-2 py-0.5 rounded border ${
+                                row.jenis === 'overhead'
+                                  ? 'bg-amber-500/15 text-amber-400 border-amber-500/30'
+                                  : 'bg-[#2A2D31] text-[#9aa0a6] border-[#3A3D41]'
+                              }`}>
                                 {JENIS_LABEL[row.jenis] ?? row.jenis}
                               </span>
                             </td>
@@ -578,8 +585,8 @@ export default function LaporanPOClient({ initialData, overheadRateInfo }: Props
                           </tr>
                         ))}
                         <tr className="border-t-2 border-[#2A2D31] bg-[#1A1C1E]">
-                          <td colSpan={3} className="p-2.5 font-bold text-[#9aa0a6] text-xs uppercase">Total Aktual</td>
-                          <td className="p-2.5 text-right font-bold text-[#e8eaed]">{idrFmt(detailData.totals.hpp_aktual)}</td>
+                          <td colSpan={3} className="p-2.5 font-bold text-[#9aa0a6] text-xs uppercase">Total Aktual (incl. Overhead)</td>
+                          <td className="p-2.5 text-right font-bold text-[#e5c17b]">{idrFmt(detailData.totals.hpp_aktual_final)}</td>
                         </tr>
                       </tbody>
                     </table>

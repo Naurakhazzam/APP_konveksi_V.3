@@ -192,11 +192,13 @@ export interface POHPPDetail {
     nominal_po    : number;
   }[];
   totals: {
-    hpp_estimasi : number;
-    biaya_bahan  : number;
-    biaya_upah   : number;
-    hpp_aktual   : number;
-    gap          : number;
+    hpp_estimasi    : number;
+    biaya_bahan     : number;
+    biaya_upah      : number;
+    hpp_aktual      : number;
+    gap             : number;
+    alokasi_overhead: number;
+    hpp_aktual_final: number;
   };
 }
 
@@ -275,7 +277,15 @@ export async function getPOHPPDetail(po_id: string): Promise<POHPPDetail> {
 
   if (upahErr) throw new Error(upahErr.message);
 
-  // Gabung aktual_breakdown: pemakaian + upah
+  // 4. Overhead alokasi untuk PO ini
+  const rateInfo = await getOverheadRateInfo();
+  const qtyShippedMap = rateInfo.period
+    ? await getQtyShippedPerPO(rateInfo.period.tanggal_mulai, rateInfo.period.tanggal_akhir)
+    : {};
+  const qty_shipped_po   = qtyShippedMap[po_id] ?? 0;
+  const alokasi_overhead = Math.round(rateInfo.overhead_rate * qty_shipped_po);
+
+  // Gabung aktual_breakdown: pemakaian + upah + overhead
   const aktual_breakdown = [
     // Bahan kain & aksesori dari pemakaian (dinamis)
     ...(pemDetail ?? []).map((p: any) => ({
@@ -293,6 +303,14 @@ export async function getPOHPPDetail(po_id: string): Promise<POHPPDetail> {
       nominal_penuh: Number(j.nominal),
       nominal_po   : Number(j.nominal),
     })),
+    // Overhead alokasi
+    ...(alokasi_overhead > 0 ? [{
+      jenis        : 'overhead',
+      keterangan   : `Alokasi Overhead — ${qty_shipped_po} pcs × Rp ${Math.round(rateInfo.overhead_rate).toLocaleString('id-ID')}`,
+      tanggal      : rateInfo.period?.tanggal_mulai ?? '',
+      nominal_penuh: alokasi_overhead,
+      nominal_po   : alokasi_overhead,
+    }] : []),
   ];
 
   const biaya_bahan = aktual_breakdown
@@ -309,11 +327,13 @@ export async function getPOHPPDetail(po_id: string): Promise<POHPPDetail> {
     estimasi_breakdown,
     aktual_breakdown,
     totals: {
-      hpp_estimasi : total_hpp_estimasi,
+      hpp_estimasi    : total_hpp_estimasi,
       biaya_bahan,
       biaya_upah,
       hpp_aktual,
-      gap          : hpp_aktual - total_hpp_estimasi,
+      gap             : hpp_aktual - total_hpp_estimasi,
+      alokasi_overhead,
+      hpp_aktual_final: hpp_aktual + alokasi_overhead,
     },
   };
 }
