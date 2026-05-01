@@ -225,6 +225,15 @@ export default function ScanSimpleClient({ tahap, tahapLabel, mode = 'lanjut', k
       }
       toast.success(`Bundle diterima di tahap ${tahapLabel}`);
       await reloadBundle(bundle.barcode);
+      if (tahap === 'packing') {
+        setPrintData({
+          noUrut: bundle.barcode.split('-')[2] ?? String(bundle.no_urut).padStart(5, '0'),
+          model_nama: bundle.model_nama ?? null,
+          warna: bundle.warna,
+          size: bundle.size,
+          qty: qty,
+        });
+      }
     } catch (err: any) {
       toast.error(err.message || 'Gagal proses penerimaan');
       setState({ phase: 'LOADED', bundle });
@@ -636,6 +645,14 @@ export default function ScanSimpleClient({ tahap, tahapLabel, mode = 'lanjut', k
                 </div>
 
                 <div className="w-full md:w-auto flex flex-col md:flex-row gap-3">
+                    {tahap === 'packing' && printData && state.bundle.status_tahap?.packing?.status === 'terima' && (
+                       <button
+                         onClick={() => window.print()}
+                         className="w-full px-6 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2"
+                       >
+                         🖨️ Cetak {printData.qty} Label Hang Tag
+                       </button>
+                    )}
                     <button
                         onClick={resetToIdle}
                         className="px-6 py-4 rounded-2xl bg-[#2A2D31] hover:bg-[#32363a] text-[#e8eaed] text-xs font-bold tracking-wide transition-all"
