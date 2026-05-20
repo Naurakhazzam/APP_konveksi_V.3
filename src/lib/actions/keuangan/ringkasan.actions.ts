@@ -68,17 +68,26 @@ export async function getRingkasanKeuangan(
 
   if (bukuKasBulanErr) throw new Error(bukuKasBulanErr.message);
 
+  // Upah bulan berjalan: baca dari gaji_ledger (earned, belum/sudah lunas)
+  const { data: gajiLedgerBulanIni, error: gajiLedgerBulanErr } = await supabase
+    .from('gaji_ledger')
+    .select('total')
+    .eq('tenant_id', TENANT_ID)
+    .in('status', ['belum_lunas', 'lunas'])
+    .gte('tanggal', `${currentTahun}-${mm}-01`)
+    .lte('tanggal', `${currentTahun}-${mm}-${String(lastDayCurrent).padStart(2, '0')}`);
+
+  if (gajiLedgerBulanErr) throw new Error(gajiLedgerBulanErr.message);
+
   let total_pemasukan = 0;
   let direct_bahan = 0;
-  let direct_upah = 0;
   let overhead = 0;
 
-  // Fallback: pemasukan manual dari jurnal_entry jenis='masuk'
+  // Fallback: direct_bahan & overhead dari jurnal_entry
   (jurnalBulanIni ?? []).forEach((j: any) => {
     const nominal = Number(j.nominal);
     if (j.jenis === 'masuk') total_pemasukan += nominal;
     else if (j.jenis === 'direct_bahan') direct_bahan += nominal;
-    else if (j.jenis === 'direct_upah') direct_upah += nominal;
     else if (j.jenis === 'overhead') overhead += nominal;
   });
 
@@ -86,6 +95,11 @@ export async function getRingkasanKeuangan(
   (bukuKasBulanIni ?? []).forEach((k: any) => {
     total_pemasukan += Number(k.nominal);
   });
+
+  // direct_upah dari gaji_ledger (upah earned bulan berjalan)
+  const direct_upah = (gajiLedgerBulanIni ?? []).reduce(
+    (s: number, r: any) => s + Math.abs(Number(r.total)), 0
+  );
 
   const total_pengeluaran = direct_bahan + direct_upah + overhead;
 
@@ -127,6 +141,17 @@ export async function getRingkasanKeuangan(
 
   if (bukuKas6Err) throw new Error(bukuKas6Err.message);
 
+  // Gaji ledger 6 bulan terakhir (upah earned, belum/sudah lunas)
+  const { data: gajiLedger6Bulan, error: gajiLedger6Err } = await supabase
+    .from('gaji_ledger')
+    .select('total, tanggal')
+    .eq('tenant_id', TENANT_ID)
+    .in('status', ['belum_lunas', 'lunas'])
+    .gte('tanggal', `${firstMonth.yyyy}-${firstMonth.mm}-01`)
+    .lte('tanggal', `${lastMonth.yyyy}-${lastMonth.mm}-${String(lastDayOfRange).padStart(2, '0')}`);
+
+  if (gajiLedger6Err) throw new Error(gajiLedger6Err.message);
+
   const tren_6_bulan = months.map(month => {
     const monthJurnal = (jurnal6Bulan ?? []).filter((j: any) => {
       const d = j.tanggal as string;
@@ -138,13 +163,17 @@ export async function getRingkasanKeuangan(
       return d.startsWith(`${month.yyyy}-${month.mm}`);
     });
 
-    let db = 0, du = 0, ov = 0, pm = 0;
+    const monthGajiLedger = (gajiLedger6Bulan ?? []).filter((g: any) => {
+      const d = g.tanggal as string;
+      return d.startsWith(`${month.yyyy}-${month.mm}`);
+    });
 
-    // Fallback: pemasukan manual dari jurnal_entry jenis='masuk'
+    let db = 0, ov = 0, pm = 0;
+
+    // direct_bahan & overhead dari jurnal_entry; pemasukan manual sebagai fallback
     monthJurnal.forEach((j: any) => {
       const n = Number(j.nominal);
       if (j.jenis === 'direct_bahan') db += n;
-      else if (j.jenis === 'direct_upah') du += n;
       else if (j.jenis === 'overhead') ov += n;
       else if (j.jenis === 'masuk') pm += n;
     });
@@ -153,6 +182,11 @@ export async function getRingkasanKeuangan(
     monthBukuKas.forEach((k: any) => {
       pm += Number(k.nominal);
     });
+
+    // direct_upah dari gaji_ledger (upah earned per bulan)
+    const du = monthGajiLedger.reduce(
+      (s: number, g: any) => s + Math.abs(Number(g.total)), 0
+    );
 
     return {
       bulan: month.bulan,
