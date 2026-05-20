@@ -54,12 +54,31 @@ export async function getLaporanBulan(
 
   if (error) throw new Error(error.message);
 
+  // Buku kas tipe='masuk' untuk range bulan (DP klien, pelunasan, dll)
+  const { data: bukuKasData, error: bukuKasErr } = await supabase
+    .from('buku_kas')
+    .select('nominal, kategori')
+    .eq('tenant_id', TENANT_ID)
+    .eq('tipe', 'masuk')
+    .gte('tanggal', `${tahun}-${mm}-01`)
+    .lte('tanggal', `${tahun}-${mm}-${String(lastDay).padStart(2, '0')}`);
+
+  if (bukuKasErr) throw new Error(bukuKasErr.message);
+
   // ─── Pemasukan: group by kategori ───
   const pemasukanMap: Record<string, number> = {};
+
+  // Fallback: pemasukan manual dari jurnal_entry jenis='masuk'
   (jurnalData ?? []).forEach((j: any) => {
     if (j.jenis !== 'masuk') return;
     const nama = (j.kategori_trx as any)?.nama ?? 'Lainnya';
     pemasukanMap[nama] = (pemasukanMap[nama] || 0) + Number(j.nominal);
+  });
+
+  // Gabungkan pemasukan dari buku_kas
+  (bukuKasData ?? []).forEach((k: any) => {
+    const nama = (k.kategori as string) || 'Lainnya';
+    pemasukanMap[nama] = (pemasukanMap[nama] || 0) + Number(k.nominal);
   });
 
   const pemasukan = Object.entries(pemasukanMap).map(([kategori_nama, total]) => ({
