@@ -65,6 +65,17 @@ export async function getLaporanBulan(
 
   if (bukuKasErr) throw new Error(bukuKasErr.message);
 
+  // Upah bulan ini: baca dari gaji_ledger (earned, belum/sudah lunas)
+  const { data: gajiLedgerData, error: gajiLedgerErr } = await supabase
+    .from('gaji_ledger')
+    .select('total')
+    .eq('tenant_id', TENANT_ID)
+    .in('status', ['belum_lunas', 'lunas'])
+    .gte('tanggal', `${tahun}-${mm}-01`)
+    .lte('tanggal', `${tahun}-${mm}-${String(lastDay).padStart(2, '0')}`);
+
+  if (gajiLedgerErr) throw new Error(gajiLedgerErr.message);
+
   // ─── Pemasukan: group by kategori ───
   const pemasukanMap: Record<string, number> = {};
 
@@ -89,10 +100,20 @@ export async function getLaporanBulan(
 
   // ─── Pengeluaran: group by jenis ───
   const pengeluaranMap: Record<string, number> = {};
+
+  // Fallback: direct_bahan, direct_upah, overhead dari jurnal_entry
   (jurnalData ?? []).forEach((j: any) => {
     if (!['direct_bahan', 'direct_upah', 'overhead'].includes(j.jenis)) return;
     pengeluaranMap[j.jenis] = (pengeluaranMap[j.jenis] || 0) + Number(j.nominal);
   });
+
+  // Gabungkan direct_upah dari gaji_ledger (upah earned, belum/sudah lunas)
+  const upahLedger = (gajiLedgerData ?? []).reduce(
+    (s: number, r: any) => s + Math.abs(Number(r.total)), 0
+  );
+  if (upahLedger > 0) {
+    pengeluaranMap['direct_upah'] = (pengeluaranMap['direct_upah'] || 0) + upahLedger;
+  }
 
   const pengeluaran = (['direct_bahan', 'direct_upah', 'overhead'] as const)
     .filter((jenis) => (pengeluaranMap[jenis] ?? 0) > 0)
