@@ -64,12 +64,26 @@ export default function HargaReferensiClient({ items }: Props) {
 
   const saveEdit = async (id: string) => {
     const harga = parseFloat(editValue.replace(/[^0-9.]/g, ''));
-    if (isNaN(harga) || harga < 0) { toast.error('Harga tidak valid'); return; }
+    // Bug 3 fix: tolak harga 0 atau negatif
+    if (isNaN(harga) || harga <= 0) { toast.error('Harga harus lebih dari 0'); return; }
     setSavingId(id);
     try {
       await updateHargaReferensi(id, harga);
-      setLocalItems(prev => prev.map(i => i.id === id ? { ...i, harga_referensi: harga } : i));
-      toast.success('Harga referensi diperbarui');
+      const item = localItems.find(i => i.id === id);
+      const hadKonversi = !!(item?.satuan_beli && item?.faktor_konversi);
+      // Bug 2 fix: clear konversi di local state (server sudah di-clear via action)
+      setLocalItems(prev => prev.map(i =>
+        i.id === id
+          ? { ...i, harga_referensi: harga, satuan_beli: null, faktor_konversi: null }
+          : i
+      ));
+      if (hadKonversi) {
+        toast.success('Harga referensi diperbarui', {
+          description: 'Data konversi satuan dihapus karena harga diubah secara manual. Gunakan ⚙ untuk set ulang konversi.',
+        });
+      } else {
+        toast.success('Harga referensi diperbarui');
+      }
       cancelEdit();
     } catch (err: any) {
       toast.error(err.message || 'Gagal menyimpan');
@@ -114,6 +128,14 @@ export default function HargaReferensiClient({ items }: Props) {
     const faktor = parseFloat(konversiFaktor);
     if (konversiSatuanBeli && (isNaN(faktor) || faktor <= 0)) {
       toast.error('Faktor konversi harus > 0');
+      return;
+    }
+    // Bug 1 fix: jika faktor berubah dari nilai asli tapi harga_beli kosong,
+    // harga referensi tidak bisa dihitung ulang → wajib isi harga_beli.
+    const faktorAsli = konversiItem.faktor_konversi;
+    const faktorBerubah = konversiSatuanBeli && !isNaN(faktor) && faktor !== faktorAsli;
+    if (faktorBerubah && !konversiHargaBeli) {
+      toast.error('Faktor konversi berubah — isi Harga Beli untuk hitung ulang harga referensi');
       return;
     }
     // harga_referensi: pakai preview kalau ada, otherwise harga_referensi lama

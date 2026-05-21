@@ -64,9 +64,15 @@ export async function getHargaReferensiItems(): Promise<HargaReferensiItem[]> {
 export async function updateHargaReferensi(item_id: string, harga: number): Promise<void> {
   const supabase = await createClient();
 
+  // Saat edit harga manual (via pensil), konversi satuan di-clear agar tidak inkonsisten.
+  // Jika user ingin pertahankan konversi, gunakan modal konversi (⚙).
   const { error } = await supabase
     .from('inventory_item')
-    .update({ harga_referensi: harga })
+    .update({
+      harga_referensi : harga,
+      satuan_beli     : null,
+      faktor_konversi : null,
+    })
     .eq('id', item_id)
     .eq('tenant_id', TENANT_ID);
 
