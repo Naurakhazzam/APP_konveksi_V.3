@@ -71,7 +71,7 @@ export async function getRingkasanKeuangan(
   // Upah bulan berjalan: baca dari gaji_ledger (earned, belum/sudah lunas)
   const { data: gajiLedgerBulanIni, error: gajiLedgerBulanErr } = await supabase
     .from('gaji_ledger')
-    .select('total')
+    .select('total, tipe')
     .eq('tenant_id', TENANT_ID)
     .in('status', ['belum_lunas', 'lunas'])
     .gte('tanggal', `${currentTahun}-${mm}-01`)
@@ -97,8 +97,12 @@ export async function getRingkasanKeuangan(
   });
 
   // direct_upah dari gaji_ledger (upah earned bulan berjalan)
+  // selesai + rework = biaya positif; reject_potong = potongan (dikurangi)
   const direct_upah = (gajiLedgerBulanIni ?? []).reduce(
-    (s: number, r: any) => s + Math.abs(Number(r.total)), 0
+    (s: number, r: any) => {
+      const t = Number(r.total);
+      return r.tipe === 'reject_potong' ? s - t : s + t;
+    }, 0
   );
 
   const total_pengeluaran = direct_bahan + direct_upah + overhead;
@@ -144,7 +148,7 @@ export async function getRingkasanKeuangan(
   // Gaji ledger 6 bulan terakhir (upah earned, belum/sudah lunas)
   const { data: gajiLedger6Bulan, error: gajiLedger6Err } = await supabase
     .from('gaji_ledger')
-    .select('total, tanggal')
+    .select('total, tipe, tanggal')
     .eq('tenant_id', TENANT_ID)
     .in('status', ['belum_lunas', 'lunas'])
     .gte('tanggal', `${firstMonth.yyyy}-${firstMonth.mm}-01`)
@@ -183,9 +187,12 @@ export async function getRingkasanKeuangan(
       pm += Number(k.nominal);
     });
 
-    // direct_upah dari gaji_ledger (upah earned per bulan)
+    // direct_upah dari gaji_ledger (upah earned per bulan, net reject_potong)
     const du = monthGajiLedger.reduce(
-      (s: number, g: any) => s + Math.abs(Number(g.total)), 0
+      (s: number, g: any) => {
+        const t = Number(g.total);
+        return g.tipe === 'reject_potong' ? s - t : s + t;
+      }, 0
     );
 
     return {
@@ -201,14 +208,17 @@ export async function getRingkasanKeuangan(
   // ─── 3. Upah outstanding ───
   const { data: ledgerData, error: ledgerErr } = await supabase
     .from('gaji_ledger')
-    .select('total')
+    .select('total, tipe')
     .eq('tenant_id', TENANT_ID)
     .eq('status', 'belum_lunas');
 
   if (ledgerErr) throw new Error(ledgerErr.message);
 
   const upah_outstanding = (ledgerData ?? []).reduce(
-    (s: number, r: any) => s + Math.abs(Number(r.total)), 0
+    (s: number, r: any) => {
+      const t = Number(r.total);
+      return r.tipe === 'reject_potong' ? s - t : s + t;
+    }, 0
   );
 
   // ─── 4. PO Boncos (reuse from Phase B) ───

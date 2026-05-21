@@ -253,6 +253,18 @@ export async function addPembayaran(
 
   if (error) return { success: false, error: error.message };
 
+  // Update invoice.total_bayar dan status secara eksplisit
+  // (sebagai safety net — DB trigger juga menangani ini)
+  const newTotalBayar = Number(inv.total_bayar) + input.jumlah;
+  const newStatus     = newTotalBayar >= Number(inv.total_nilai) ? 'lunas'
+                      : newTotalBayar > 0                        ? 'dp'
+                      :                                            'belum_bayar';
+  await supabase
+    .from('invoice')
+    .update({ total_bayar: newTotalBayar, status: newStatus })
+    .eq('id', input.invoice_id)
+    .eq('tenant_id', TENANT_ID);
+
   revalidatePath(REVALIDATE);
   return { success: true };
 }
@@ -270,6 +282,17 @@ export async function deletePembayaran(
     return { success: false, error: 'Hanya owner yang dapat menghapus pembayaran.' };
 
   const supabase = await createClient();
+
+  // Ambil invoice_id sebelum hapus (untuk recalculate)
+  const { data: bayar } = await supabase
+    .from('invoice_pembayaran')
+    .select('invoice_id')
+    .eq('id', id)
+    .eq('tenant_id', TENANT_ID)
+    .single();
+
+  if (!bayar) return { success: false, error: 'Data pembayaran tidak ditemukan.' };
+
   const { error } = await supabase
     .from('invoice_pembayaran')
     .delete()
@@ -277,6 +300,32 @@ export async function deletePembayaran(
     .eq('tenant_id', TENANT_ID);
 
   if (error) return { success: false, error: error.message };
+
+  // Hitung ulang total_bayar dari semua pembayaran tersisa
+  const [{ data: remaining }, { data: inv }] = await Promise.all([
+    supabase
+      .from('invoice_pembayaran')
+      .select('jumlah')
+      .eq('invoice_id', bayar.invoice_id)
+      .eq('tenant_id', TENANT_ID),
+    supabase
+      .from('invoice')
+      .select('total_nilai')
+      .eq('id', bayar.invoice_id)
+      .single(),
+  ]);
+
+  const newTotalBayar = (remaining ?? []).reduce((s: number, p: any) => s + Number(p.jumlah), 0);
+  const totalNilai    = Number((inv as any)?.total_nilai ?? 0);
+  const newStatus     = newTotalBayar === 0   ? 'belum_bayar'
+                      : newTotalBayar >= totalNilai ? 'lunas'
+                      :                              'dp';
+
+  await supabase
+    .from('invoice')
+    .update({ total_bayar: newTotalBayar, status: newStatus })
+    .eq('id', bayar.invoice_id)
+    .eq('tenant_id', TENANT_ID);
 
   revalidatePath(REVALIDATE);
   return { success: true };

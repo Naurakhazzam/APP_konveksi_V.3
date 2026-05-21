@@ -56,10 +56,10 @@ export async function getLaporanLR(
   // ── Query 1: Pendapatan dari invoice_pembayaran ──────────────────────────
   const { data: pembayaranData } = await supabase
     .from('invoice_pembayaran')
-    .select('nominal, tanggal_bayar, invoice_id')
+    .select('jumlah, tanggal, invoice_id')
     .eq('tenant_id', TENANT_ID)
-    .gte('tanggal_bayar', date_dari)
-    .lte('tanggal_bayar', date_sampai);
+    .gte('tanggal', date_dari)
+    .lte('tanggal', date_sampai);
 
   // ── Query 2: Jurnal entry (HPP + overhead) ───────────────────────────────
   const { data: jurnalData } = await supabase
@@ -102,8 +102,8 @@ export async function getLaporanLR(
   }
 
   (pembayaranData ?? []).forEach((p: any) => {
-    const bln = new Date(p.tanggal_bayar).getMonth() + 1;
-    ensureBulan(bln).pendapatan += Number(p.nominal);
+    const bln = new Date(p.tanggal).getMonth() + 1;
+    ensureBulan(bln).pendapatan += Number(p.jumlah);
   });
 
   (jurnalData ?? []).forEach((j: any) => {
