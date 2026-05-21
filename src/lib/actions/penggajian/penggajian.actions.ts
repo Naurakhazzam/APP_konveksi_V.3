@@ -1,6 +1,7 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
+import { getSettings } from '@/lib/actions/settings/settings.actions';
 
 const TENANT_ID = 'STX-001';
 
@@ -313,9 +314,10 @@ export async function prosesBayar(input: {
 
   if (kError) throw new Error('Data karyawan tidak ditemukan');
 
-  // 2. Hitung gaji pokok prorata (gapok / 6 hari * hari_kerja)
-  const gapok = Number(karyawan.gaji_pokok) || 0;
-  const gapok_prorata = (gapok / 6) * input.hari_kerja;
+  // 2. Hitung gaji pokok prorata — pembagi diambil dari settings (default 6)
+  const settings      = await getSettings();
+  const gapok         = Number(karyawan.gaji_pokok) || 0;
+  const gapok_prorata = (gapok / settings.hari_kerja_seminggu) * input.hari_kerja;
 
   // 3. (D1) Trace PO IDs dari entry ledger
   const tag_po_ids = await getPoIdsFromLedgerEntries(supabase, input.entry_ids);

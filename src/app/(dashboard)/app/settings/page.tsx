@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation';
 import PinSetupSection from './PinSetupSection';
 import { getSettings, getKaryawanAktif } from '@/lib/actions/settings/settings.actions';
 import DefaultBoronganSection from './DefaultBoronganSection';
+import HariKerjaSection from './HariKerjaSection';
 import ResetDataSection from './ResetDataSection';
 
 export default async function SettingsPage() {
@@ -32,6 +33,7 @@ export default async function SettingsPage() {
           currentId={settings.default_karyawan_borongan_id}
           karyawan={karyawan}
         />
+        <HariKerjaSection currentValue={settings.hari_kerja_seminggu} />
         <ResetDataSection />
       </div>
     </PageWrapper>

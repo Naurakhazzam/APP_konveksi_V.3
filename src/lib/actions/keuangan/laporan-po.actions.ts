@@ -42,8 +42,25 @@ export async function getLaporanPOList(filters?: {
 }): Promise<POLaporanItem[]> {
   const supabase = await createClient();
 
-  // Step 1 — Fetch semua PO dengan hpp estimasi
-  const { data: poData, error: poError } = await supabase
+  // Hitung rentang tanggal untuk filter DB-level (performa: filter di query, bukan JS)
+  let dateStart: string | undefined;
+  let dateEnd  : string | undefined;
+  if (filters?.tahun) {
+    const tahun = parseInt(filters.tahun);
+    if (filters?.bulan) {
+      const bulan    = parseInt(filters.bulan);
+      dateStart      = `${tahun}-${String(bulan).padStart(2, '0')}-01`;
+      const nb       = bulan === 12 ? 1 : bulan + 1;
+      const ny       = bulan === 12 ? tahun + 1 : tahun;
+      dateEnd        = `${ny}-${String(nb).padStart(2, '0')}-01`;
+    } else {
+      dateStart = `${tahun}-01-01`;
+      dateEnd   = `${tahun + 1}-01-01`;
+    }
+  }
+
+  // Step 1 — Fetch PO dengan filter tanggal di DB (bukan JS filter)
+  let poQuery = supabase
     .from('po')
     .select(`
       id, no_po, tanggal_order,
@@ -59,6 +76,10 @@ export async function getLaporanPOList(filters?: {
     .eq('tenant_id', TENANT_ID)
     .order('tanggal_order', { ascending: false });
 
+  if (dateStart) poQuery = poQuery.gte('tanggal_order', dateStart);
+  if (dateEnd)   poQuery = poQuery.lt('tanggal_order', dateEnd);
+
+  const { data: poData, error: poError } = await poQuery;
   if (poError) throw new Error(poError.message);
 
   // Step 2 — Biaya bahan dari pemakaian (dinamis & retroaktif)
@@ -67,12 +88,10 @@ export async function getLaporanPOList(filters?: {
 
   if (biayaError) throw new Error(biayaError.message);
 
-  // Step 3 — Biaya upah dari jurnal direct_upah
+  // Step 3 — Biaya upah per PO dari gaji_ledger (fix double-count:
+  //           trace gaji_ledger → bundle → po_item, bukan jurnal_entry.tag_po_ids)
   const { data: upahData, error: upahError } = await supabase
-    .from('jurnal_entry')
-    .select('id, nominal, tag_po_ids')
-    .eq('tenant_id', TENANT_ID)
-    .eq('jenis', 'direct_upah');
+    .rpc('get_biaya_upah_per_po', { p_tenant_id: TENANT_ID });
 
   if (upahError) throw new Error(upahError.message);
 
@@ -85,14 +104,13 @@ export async function getLaporanPOList(filters?: {
     });
   });
 
-  // Filter bulan/tahun
-  const filteredData = (poData ?? []).filter((po: any) => {
-    if (!filters?.bulan && !filters?.tahun) return true;
-    const d = new Date(po.tanggal_order);
-    if (filters.bulan && String(d.getMonth() + 1).padStart(2, '0') !== filters.bulan) return false;
-    if (filters.tahun && String(d.getFullYear()) !== filters.tahun) return false;
-    return true;
+  // Build upah map: po_id → biaya_upah (akurat per pekerjaan aktual)
+  const upahMap = new Map<string, number>();
+  (upahData ?? []).forEach((u: any) => {
+    upahMap.set(String(u.po_id), Number(u.biaya_upah) || 0);
   });
+
+  const filteredData = poData ?? [];
 
   const rateInfo = await getOverheadRateInfo();
   const qtyShippedMap = rateInfo.period
@@ -119,13 +137,8 @@ export async function getLaporanPOList(filters?: {
     const bp          = biayaMap.get(po.id);
     const biaya_bahan = (bp?.biaya_bahan_kain ?? 0) + (bp?.biaya_aksesori ?? 0);
 
-    // Biaya Upah dari jurnal
-    const biaya_upah = (upahData ?? [])
-      .filter((j: any) => {
-        const tags: string[] = j.tag_po_ids ?? [];
-        return tags.includes(po.id);
-      })
-      .reduce((sum: number, j: any) => sum + Number(j.nominal), 0);
+    // Biaya Upah — dari gaji_ledger per PO (akurat, tidak double-count)
+    const biaya_upah = upahMap.get(po.id) ?? 0;
 
     const hpp_aktual = biaya_bahan + biaya_upah;
     const gap        = hpp_aktual - hpp_estimasi;
@@ -267,13 +280,9 @@ export async function getPOHPPDetail(po_id: string): Promise<POHPPDetail> {
 
   if (pemErr) throw new Error(pemErr.message);
 
-  // 3. Aktual Breakdown upah dari jurnal
-  const { data: upahData, error: upahErr } = await supabase
-    .from('jurnal_entry')
-    .select('jenis, keterangan, tanggal, nominal, tag_po_ids')
-    .eq('tenant_id', TENANT_ID)
-    .eq('jenis', 'direct_upah')
-    .filter('tag_po_ids', 'cs', `["${po_id}"]`);
+  // 3. Aktual Breakdown upah — dari gaji_ledger per PO (fix double-count)
+  const { data: upahDetail, error: upahErr } = await supabase
+    .rpc('get_biaya_upah_detail_po', { p_po_id: po_id, p_tenant_id: TENANT_ID });
 
   if (upahErr) throw new Error(upahErr.message);
 
@@ -285,7 +294,7 @@ export async function getPOHPPDetail(po_id: string): Promise<POHPPDetail> {
   const qty_shipped_po   = qtyShippedMap[po_id] ?? 0;
   const alokasi_overhead = Math.round(rateInfo.overhead_rate * qty_shipped_po);
 
-  // Gabung aktual_breakdown: pemakaian + upah + overhead
+  // Gabung aktual_breakdown: pemakaian + upah (gaji_ledger) + overhead
   const aktual_breakdown = [
     // Bahan kain & aksesori dari pemakaian (dinamis)
     ...(pemDetail ?? []).map((p: any) => ({
@@ -295,13 +304,13 @@ export async function getPOHPPDetail(po_id: string): Promise<POHPPDetail> {
       nominal_penuh: Number(p.subtotal),
       nominal_po   : Number(p.subtotal),
     })),
-    // Upah dari jurnal
-    ...(upahData ?? []).map((j: any) => ({
-      jenis        : j.jenis,
-      keterangan   : j.keterangan,
-      tanggal      : j.tanggal,
-      nominal_penuh: Number(j.nominal),
-      nominal_po   : Number(j.nominal),
+    // Upah dari gaji_ledger (akurat per pekerjaan aktual, tidak double-count)
+    ...(upahDetail ?? []).map((u: any) => ({
+      jenis        : 'direct_upah',
+      keterangan   : `${u.karyawan_nama} — ${u.keterangan} (${Number(u.qty_bundle)} pcs)`,
+      tanggal      : u.tanggal ?? '',
+      nominal_penuh: Number(u.total),
+      nominal_po   : Number(u.total),
     })),
     // Overhead alokasi
     ...(alokasi_overhead > 0 ? [{
