@@ -162,6 +162,13 @@ export default function ModalSelesaiCutting({ selectedBundleIds, onSuccess, onCl
       if (valid.length === 0) {
         return `Artikel ${group.warna} - ${group.size} belum memiliki bahan. Minimal 1 bahan wajib diisi.`;
       }
+      for (const r of valid) {
+        if (r.rate_per_pcs > 3) {
+          const item = inventoryItems.find(i => i.id === r.inventory_item_id);
+          const nama = item?.nama ?? 'bahan';
+          return `Rate pemakaian ${nama} untuk artikel ${group.warna} - ${group.size} melebihi batas (${r.rate_per_pcs} > 3 ${item?.satuan ?? 'unit'}/pcs). Periksa kembali sebelum menyimpan.`;
+        }
+      }
     }
     return null;
   };
@@ -337,6 +344,7 @@ export default function ModalSelesaiCutting({ selectedBundleIds, onSuccess, onCl
                           {rows.map(row => {
                             const item = inventoryItems.find(i => i.id === row.inventory_item_id);
                             const total = row.rate_per_pcs * qtyArtikel;
+                            const rateOver = row.rate_per_pcs > 3;
                             return (
                               <div key={row.rowId} className="grid grid-cols-[1fr_120px_100px_32px] gap-2 items-center">
                                 <select
@@ -356,14 +364,15 @@ export default function ModalSelesaiCutting({ selectedBundleIds, onSuccess, onCl
                                   <input
                                     type="number"
                                     min={0}
+                                    max={3}
                                     step={0.01}
                                     placeholder="0"
                                     value={row.rate_per_pcs === 0 ? '' : row.rate_per_pcs}
                                     onChange={e => updateBahan(group.key, row.rowId, 'rate_per_pcs', parseFloat(e.target.value) || 0)}
-                                    className={`${inputCls} w-full text-center`}
+                                    className={`${inputCls} w-full text-center ${rateOver ? 'border-red-500 text-red-400 ring-1 ring-red-500' : ''}`}
                                   />
-                                  <span className="text-[10px] text-[#9aa0a6] whitespace-nowrap">
-                                    {item?.satuan ?? ''}
+                                  <span className={`text-[10px] whitespace-nowrap ${rateOver ? 'text-red-400' : 'text-[#9aa0a6]'}`}>
+                                    {rateOver ? '⚠' : ''} {item?.satuan ?? ''}
                                   </span>
                                 </div>
 

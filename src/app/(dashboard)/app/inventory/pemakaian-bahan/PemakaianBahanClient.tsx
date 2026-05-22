@@ -253,6 +253,7 @@ export default function PemakaianBahanClient({
                   <th className="px-5 py-3 text-[11px] font-semibold text-[#9aa0a6] uppercase tracking-wider">Size</th>
                   <th className="px-5 py-3 text-[11px] font-semibold text-[#9aa0a6] uppercase tracking-wider">Nama Bahan</th>
                   <th className="px-5 py-3 text-[11px] font-semibold text-[#9aa0a6] uppercase tracking-wider">Qty Pakai</th>
+                  <th className="px-5 py-3 text-[11px] font-semibold text-[#9aa0a6] uppercase tracking-wider text-center">Rate/pcs</th>
                   <th className="px-5 py-3 text-[11px] font-semibold text-[#9aa0a6] uppercase tracking-wider">Satuan</th>
                   <th className="px-5 py-3 text-[11px] font-semibold text-[#9aa0a6] uppercase tracking-wider text-right">Harga/Unit</th>
                   <th className="px-5 py-3 text-[11px] font-semibold text-[#9aa0a6] uppercase tracking-wider text-right">Total Biaya</th>
@@ -281,6 +282,16 @@ export default function PemakaianBahanClient({
                     </td>
                     <td className="px-5 py-3 text-[13px] font-medium text-[#e8eaed] whitespace-nowrap">
                       {row.qty_pakai.toLocaleString('id-ID')}
+                    </td>
+                    <td className="px-5 py-3 text-[13px] text-center whitespace-nowrap">
+                      {row.rate_per_pcs !== null ? (
+                        <span className={`inline-flex items-center gap-1 font-medium ${row.rate_per_pcs > 3 ? 'text-red-400' : 'text-[#e8eaed]'}`}>
+                          {row.rate_per_pcs > 3 && <span title="Rate melebihi batas 3">⚠</span>}
+                          {row.rate_per_pcs.toFixed(2)}
+                        </span>
+                      ) : (
+                        <span className="text-[#9aa0a6]">—</span>
+                      )}
                     </td>
                     <td className="px-5 py-3 text-[13px] text-[#9aa0a6] whitespace-nowrap">
                       {row.satuan}
