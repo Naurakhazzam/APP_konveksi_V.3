@@ -71,6 +71,7 @@ export async function getSuratJalanSiapValidasi(): Promise<SuratJalanSiapValidas
       nomor_sj,
       tanggal,
       status,
+      tanggal_validasi,
       klien:klien_id (nama),
       surat_jalan_item (
         id,
@@ -81,7 +82,7 @@ export async function getSuratJalanSiapValidasi(): Promise<SuratJalanSiapValidas
           barcode,
           po:po_id (no_po),
           po_item:po_item_id (
-            harga_satuan,
+            hpp_estimasi,
             warna,
             size,
             produk:produk_id (
@@ -92,7 +93,7 @@ export async function getSuratJalanSiapValidasi(): Promise<SuratJalanSiapValidas
       )
     `)
     .eq('tenant_id', TENANT_ID)
-    .in('status', ['dikirim', 'selisih_kurang', 'selisih_lebih'])
+    .or('status.in.(dikirim,selisih_kurang,selisih_lebih),and(status.eq.final,tanggal_validasi.is.null)')
     .order('tanggal', { ascending: false });
 
   if (error) throw new Error(`Gagal memuat SJ siap validasi: ${error.message}`);
@@ -110,7 +111,7 @@ export async function getSuratJalanSiapValidasi(): Promise<SuratJalanSiapValidas
         size: b?.po_item?.size ?? '-',
         qty_kirim: it.qty_kirim ?? 0,
         qty_diterima: it.qty_diterima ?? null,
-        harga_satuan: b?.po_item?.harga_satuan ?? 0,
+        harga_satuan: b?.po_item?.hpp_estimasi ?? 0,
       };
     });
 
