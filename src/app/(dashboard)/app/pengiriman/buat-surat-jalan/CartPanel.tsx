@@ -126,7 +126,7 @@ export default function CartPanel({
               {group.bundles.map(b => (
                 <div
                   key={b.id}
-                  className="flex items-center gap-2 px-3 py-2 bg-[#1A1D1F] hover:bg-[#0D0E10]/40 transition-colors"
+                  className="flex items-center gap-2 px-3 py-2 bg-[#16181A] hover:bg-[#1A1D1F] transition-colors"
                 >
                   {/* Barcode */}
                   <span className="flex-1 font-mono text-[10px] text-[#9aa0a6] truncate">

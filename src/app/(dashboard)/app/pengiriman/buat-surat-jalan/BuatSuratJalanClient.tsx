@@ -323,10 +323,10 @@ export default function BuatSuratJalanClient({ initialBundles }: { initialBundle
                               key={b.id}
                               className={`border-b border-[#2A2D31]/60 transition-colors ${
                                 isSelected
-                                  ? 'bg-[#e5c17b]/8'
+                                  ? 'bg-[#e5c17b]/10'
                                   : isDisabled
-                                  ? 'opacity-40 bg-[#080909]'
-                                  : 'bg-[#0D0E10]/80 hover:bg-[#0D0E10]'
+                                  ? 'opacity-40 bg-[#0D0E10]'
+                                  : 'bg-[#16181A] hover:bg-[#1A1D1F]'
                               }`}
                             >
                               {/* indent spacer */}
