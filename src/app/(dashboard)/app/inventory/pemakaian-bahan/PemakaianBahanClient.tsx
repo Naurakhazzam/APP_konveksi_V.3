@@ -204,7 +204,7 @@ export default function PemakaianBahanClient({
             <p className="text-[12px] text-[#9aa0a6] mt-1.5">Estimasi Biaya Bahan</p>
           </div>
           <p className="text-[11px] text-[#9aa0a6] border-t border-[#2A2D31] pt-2.5 mt-auto">
-            Berdasarkan rate per pcs
+            Berdasarkan harga referensi bahan
           </p>
         </div>
 
@@ -254,7 +254,7 @@ export default function PemakaianBahanClient({
                   <th className="px-5 py-3 text-[11px] font-semibold text-[#9aa0a6] uppercase tracking-wider">Nama Bahan</th>
                   <th className="px-5 py-3 text-[11px] font-semibold text-[#9aa0a6] uppercase tracking-wider">Qty Pakai</th>
                   <th className="px-5 py-3 text-[11px] font-semibold text-[#9aa0a6] uppercase tracking-wider">Satuan</th>
-                  <th className="px-5 py-3 text-[11px] font-semibold text-[#9aa0a6] uppercase tracking-wider text-right">Rate/pcs</th>
+                  <th className="px-5 py-3 text-[11px] font-semibold text-[#9aa0a6] uppercase tracking-wider text-right">Harga/Unit</th>
                   <th className="px-5 py-3 text-[11px] font-semibold text-[#9aa0a6] uppercase tracking-wider text-right">Total Biaya</th>
                 </tr>
               </thead>
@@ -286,10 +286,10 @@ export default function PemakaianBahanClient({
                       {row.satuan}
                     </td>
                     <td className="px-5 py-3 text-[13px] text-[#9aa0a6] text-right whitespace-nowrap">
-                      {row.rate_per_pcs !== null ? formatRupiah(row.rate_per_pcs) : '—'}
+                      {row.harga_per_unit > 0 ? formatRupiah(row.harga_per_unit) : '—'}
                     </td>
                     <td className="px-5 py-3 text-[13px] font-medium text-[#e8eaed] text-right whitespace-nowrap">
-                      {row.rate_per_pcs !== null ? formatRupiah(row.total_biaya) : '—'}
+                      {row.harga_per_unit > 0 ? formatRupiah(row.total_biaya) : '—'}
                     </td>
                   </tr>
                 ))}

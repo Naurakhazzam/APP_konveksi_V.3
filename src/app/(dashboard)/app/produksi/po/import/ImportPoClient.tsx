@@ -89,7 +89,8 @@ export default function ImportPoClient({ klienList }: Props) {
 
       // Parse raw rows dan normalisasi nama kolom
       // (handle variasi: spasi vs underscore, case berbeda)
-      const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws);
+      // Gunakan defval: '' agar baris kosong tetap muncul
+      const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '' });
       if (rawRows.length === 0) {
         toast.error('File Excel kosong');
         return;
@@ -105,14 +106,39 @@ export default function ImportPoClient({ klienList }: Props) {
         return undefined;
       }
 
-      const rows: ExcelRow[] = rawRows.map(row => ({
-        Nomor_PO:       String(findCol(row, 'Nomor_PO', 'nomor_po', 'No_PO') ?? ''),
-        SKU_Klien:      String(findCol(row, 'SKU_Klien', 'sku_klien', 'SKU') ?? ''),
-        Nama_Produk:    String(findCol(row, 'Nama_Produk', 'nama_produk', 'Nama') ?? ''),
-        Total_QTY:      Number(findCol(row, 'Total_QTY', 'total_qty', 'QTY', 'qty') ?? 0),
-        QTY_Per_Bundle: Number(findCol(row, 'QTY_Per_Bundle', 'qty_per_bundle', 'Per_Bundle') ?? 0),
-        Catatan_PO:     String(findCol(row, 'Catatan_PO', 'catatan_po', 'Catatan') ?? ''),
-      }));
+      // ── Fill-down: sub-baris (tanpa Nomor_PO/SKU) mewarisi baris di atasnya ──
+      // Setiap baris = 1 bundle: Total_QTY di-set sama dengan QTY_Per_Bundle-nya.
+      let lastPO    = '';
+      let lastSKU   = '';
+      let lastNama  = '';
+      let lastCatat = '';
+
+      const rows: ExcelRow[] = rawRows
+        .map(row => {
+          const nomor   = String(findCol(row, 'Nomor_PO', 'nomor_po', 'No_PO')     ?? '').trim();
+          const sku     = String(findCol(row, 'SKU_Klien', 'sku_klien', 'SKU')      ?? '').trim();
+          const nama    = String(findCol(row, 'Nama_Produk', 'nama_produk', 'Nama') ?? '').trim();
+          const catatan = String(findCol(row, 'Catatan_PO', 'catatan_po', 'Catatan') ?? '').trim();
+          const qpb     = Number(findCol(row, 'QTY_Per_Bundle', 'qty_per_bundle', 'Per_Bundle') ?? 0);
+
+          // Fill-down: pakai nilai dari baris sebelumnya jika kosong
+          if (nomor)   lastPO    = nomor;
+          if (sku)     lastSKU   = sku;
+          if (nama)    lastNama  = nama;
+          if (catatan) lastCatat = catatan;
+
+          return {
+            Nomor_PO:       lastPO,
+            SKU_Klien:      lastSKU,
+            Nama_Produk:    lastNama,
+            // Setiap baris = 1 bundle → Total_QTY = QTY_Per_Bundle
+            Total_QTY:      qpb,
+            QTY_Per_Bundle: qpb,
+            Catatan_PO:     lastCatat,
+          };
+        })
+        // Buang baris yang tidak punya QTY (baris kosong/header sisa)
+        .filter(row => row.QTY_Per_Bundle > 0);
 
       // Basic client-side validation
       const errors: string[] = [];
