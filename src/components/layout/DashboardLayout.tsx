@@ -24,6 +24,7 @@ const ALL_APP_PATHS = [
   '/app/produksi/reject',
   '/app/pengiriman/buat-surat-jalan',
   '/app/pengiriman/riwayat',
+  '/app/pengiriman/validasi',
   '/app/penggajian/rekap-gaji',
   '/app/penggajian/kasbon',
   '/app/penggajian/slip-gaji',

@@ -57,6 +57,7 @@ const NAV_MENU = [
     children: [
       { label: 'Buat Surat Jalan', path: '/app/pengiriman/buat-surat-jalan' },
       { label: 'Riwayat Kirim',    path: '/app/pengiriman/riwayat' },
+      { label: 'Validasi Kirim',   path: '/app/pengiriman/validasi' },
     ]
   },
   { 
