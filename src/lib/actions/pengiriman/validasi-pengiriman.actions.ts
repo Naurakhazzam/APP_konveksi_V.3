@@ -170,6 +170,7 @@ export async function approveQtyLebihPengiriman(
   approval_id: string,
   pin: string,
   action: 'approved' | 'rejected' = 'approved',
+  catatan?: string,
 ): Promise<{ status: string }> {
   const userId = await resolveUserId();
   const supabase = await createClient();
@@ -193,7 +194,7 @@ export async function approveQtyLebihPengiriman(
   // 3. Jalankan RPC approve_qty_lebih_pengiriman
   const { data, error } = await supabase.rpc('approve_qty_lebih_pengiriman', {
     p_approval_id: approval_id,
-    p_action: action,
+    p_catatan: action === 'approved' ? (catatan ?? '') : 'Ditolak',
     p_user_id: userId,
     p_tenant_id: TENANT_ID,
   });
