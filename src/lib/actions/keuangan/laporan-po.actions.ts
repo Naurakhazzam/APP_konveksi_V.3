@@ -420,17 +420,29 @@ export async function getPOHPPPerSize(po_id: string): Promise<POHPPPerSizeRow[]>
 
   const poItemIds = poItems.map((pi: any) => pi.id);
 
-  // ── 2. Biaya kain: pemakaian_bahan per po_item ────────────────────────────
-  // pemakaian_bahan.po_item_id → FK langsung ke po_item
-  // harga = inventory_batch.harga_satuan (FIFO) fallback inventory_item.harga_referensi
+  // ── 2. Bundles: fetch dulu, dipakai bersama oleh aksesori + upah ──────────
+  const { data: bundles, error: bErr } = await supabase
+    .from('bundle')
+    .select('id, po_item_id')
+    .in('po_item_id', poItemIds)
+    .eq('tenant_id', TENANT_ID);
+
+  const bundlePoItemMap = new Map<string, string>();
+  const bundleIds: string[] = [];
+  if (!bErr && bundles) {
+    bundles.forEach((b: any) => {
+      bundlePoItemMap.set(b.id, b.po_item_id);
+      bundleIds.push(b.id);
+    });
+  }
+
+  // ── 3. Biaya kain: pemakaian_bahan per po_item ───────────────────────────
+  // pemakaian_bahan.po_item_id → FK langsung ke po_item ✅
+  // harga_pakai = total biaya per record (qty × harga FIFO, sudah tersimpan di DB)
+  // Fallback: qty_pakai × harga_referensi jika harga_pakai belum terisi
   const { data: bahanRows, error: bahanErr } = await supabase
     .from('pemakaian_bahan')
-    .select(`
-      po_item_id,
-      qty_pakai,
-      inventory_batch:inventory_batch_id ( harga_satuan ),
-      inventory_item:inventory_item_id ( harga_referensi )
-    `)
+    .select('po_item_id, harga_pakai, qty_pakai, inventory_item:inventory_item_id ( harga_referensi )')
     .in('po_item_id', poItemIds)
     .eq('tenant_id', TENANT_ID);
 
@@ -439,51 +451,36 @@ export async function getPOHPPPerSize(po_id: string): Promise<POHPPPerSizeRow[]>
   const kainMap = new Map<string, number>();
   (bahanRows ?? []).forEach((r: any) => {
     const id    = String(r.po_item_id);
-    const qty   = Number(r.qty_pakai) || 0;
-    const harga = Number(r.inventory_batch?.harga_satuan) > 0
-      ? Number(r.inventory_batch.harga_satuan)
-      : Number(r.inventory_item?.harga_referensi) || 0;
-    kainMap.set(id, (kainMap.get(id) ?? 0) + qty * harga);
+    const total = Number(r.harga_pakai) > 0
+      ? Number(r.harga_pakai)
+      : (Number(r.qty_pakai) || 0) * (Number(r.inventory_item?.harga_referensi) || 0);
+    kainMap.set(id, (kainMap.get(id) ?? 0) + total);
   });
 
-  // ── 3. Biaya aksesori: pemakaian_aksesori per po_item ────────────────────
-  // harga = inventory_item.harga_referensi (retroactive)
-  const { data: aksesoriRows, error: aksErr } = await supabase
-    .from('pemakaian_aksesori')
-    .select(`
-      po_item_id,
-      qty_pakai,
-      inventory_item:inventory_item_id ( harga_referensi )
-    `)
-    .in('po_item_id', poItemIds)
-    .eq('tenant_id', TENANT_ID);
-
-  // aksesori boleh gagal (tabel mungkin pakai FK berbeda) — degrade gracefully
+  // ── 4. Biaya aksesori: pemakaian_aksesori via bundle_id ──────────────────
+  // PENTING: pemakaian_aksesori tidak punya kolom po_item_id — query via bundle_id
   const aksesoriMap = new Map<string, number>();
-  if (!aksErr && aksesoriRows) {
-    (aksesoriRows as any[]).forEach((r: any) => {
-      const id    = String(r.po_item_id);
-      const qty   = Number(r.qty_pakai) || 0;
-      const harga = Number(r.inventory_item?.harga_referensi) || 0;
-      aksesoriMap.set(id, (aksesoriMap.get(id) ?? 0) + qty * harga);
-    });
+  if (bundleIds.length > 0) {
+    const { data: aksesoriRows, error: aksErr } = await supabase
+      .from('pemakaian_aksesori')
+      .select('bundle_id, qty_pakai, inventory_item:inventory_item_id ( harga_referensi )')
+      .in('bundle_id', bundleIds)
+      .eq('tenant_id', TENANT_ID);
+
+    if (!aksErr && aksesoriRows) {
+      (aksesoriRows as any[]).forEach((r: any) => {
+        const poItemId = bundlePoItemMap.get(r.bundle_id);
+        if (!poItemId) return;
+        const qty   = Number(r.qty_pakai) || 0;
+        const harga = Number(r.inventory_item?.harga_referensi) || 0;
+        aksesoriMap.set(poItemId, (aksesoriMap.get(poItemId) ?? 0) + qty * harga);
+      });
+    }
   }
 
-  // ── 4. Biaya upah: gaji_ledger → bundle → po_item ────────────────────────
-  // gaji_ledger.sumber_id = bundle.id, bundle.po_item_id
-  const { data: bundles, error: bErr } = await supabase
-    .from('bundle')
-    .select('id, po_item_id')
-    .in('po_item_id', poItemIds)
-    .eq('tenant_id', TENANT_ID);
-
+  // ── 5. Biaya upah: gaji_ledger → bundle → po_item ────────────────────────
   const upahMap = new Map<string, number>();
-  if (!bErr && bundles && bundles.length > 0) {
-    const bundleIds          = bundles.map((b: any) => b.id);
-    const bundlePoItemMap    = new Map<string, string>(
-      bundles.map((b: any) => [b.id, b.po_item_id])
-    );
-
+  if (bundleIds.length > 0) {
     const { data: gajiRows, error: gajiErr } = await supabase
       .from('gaji_ledger')
       .select('sumber_id, nominal, tipe')
@@ -501,11 +498,11 @@ export async function getPOHPPPerSize(po_id: string): Promise<POHPPPerSizeRow[]>
     }
   }
 
-  // ── 5. Overhead rate (dari periode aktif) ─────────────────────────────────
+  // ── 6. Overhead rate (dari periode aktif) ─────────────────────────────────
   const rateInfo = await getOverheadRateInfo();
   const overhead_rate = rateInfo.overhead_rate;
 
-  // ── 6. Build rows ─────────────────────────────────────────────────────────
+  // ── 7. Build rows ─────────────────────────────────────────────────────────
   const rows: POHPPPerSizeRow[] = (poItems as any[]).map((pi: any) => {
     const po_item_id     = String(pi.id);
     const qty_order      = Number(pi.qty_order) || 0;
@@ -563,13 +560,15 @@ export async function getPOHPPPerSize(po_id: string): Promise<POHPPPerSizeRow[]>
  * Wrapper untuk mendapat HPPPerSizeResult (sesuai interface baru di Step 2).
  */
 export async function getPOHPPPerSizeResult(po_id: string): Promise<HPPPerSizeResult> {
-  const rateInfo = await getOverheadRateInfo();
-  const rows     = await getPOHPPPerSize(po_id);
+  const [rows, rateInfo] = await Promise.all([
+    getPOHPPPerSize(po_id),
+    getOverheadRateInfo(),
+  ]);
   return {
     rows: rows.map(r => ({
       warna          : r.warna,
       size           : r.size,
-      qty            : r.qty_order,
+      qty            : r.qty,
       biaya_kain     : r.biaya_kain,
       biaya_aksesori : r.biaya_aksesori,
       biaya_upah     : r.biaya_upah,
