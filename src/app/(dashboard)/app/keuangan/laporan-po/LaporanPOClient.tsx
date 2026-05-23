@@ -647,102 +647,89 @@ export default function LaporanPOClient({ initialData, overheadRateInfo }: Props
               {activeDetailTab === 'hpp-size' && (
                 <div>
                   {isLoadingHpp ? (
-                    <div className="flex items-center justify-center h-32">
-                      <Loader2 className="h-5 w-5 animate-spin text-[#e5c17b]" />
-                      <span className="ml-2 text-sm text-[#9aa0a6]">Menghitung HPP per size...</span>
+                    <div className="flex justify-center py-12">
+                      <span className="text-[#9aa0a6] text-sm">Memuat data HPP...</span>
                     </div>
-                  ) : !hppPerSizeData || hppPerSizeData.rows.length === 0 ? (
-                    <div className="p-8 rounded-lg border border-[#2A2D31] text-center text-[#5f6368] text-sm">
-                      Tidak ada data size untuk PO ini
-                    </div>
-                  ) : (
-                    <div className="rounded-lg border border-[#2A2D31] overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead className="bg-[#1A1C1E]">
-                          <tr>
-                            <th className="text-left p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider whitespace-nowrap">Warna / Size</th>
-                            <th className="text-right p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider">Qty</th>
-                            <th className="text-right p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider">Kain</th>
-                            <th className="text-right p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider">Aksesori</th>
-                            <th className="text-right p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider">Upah</th>
-                            <th className="text-right p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider">OH</th>
-                            <th className="text-right p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider">Total HPP</th>
-                            <th className="text-right p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider whitespace-nowrap">HPP/pcs</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {hppPerSizeData.rows.map((row, i) => {
-                            return (
-                              <tr key={i} className="border-t border-[#2A2D31] hover:bg-[#1A1C1E]/50">
-                                <td className="p-2.5">
-                                  <div className="font-medium text-[#e8eaed] text-xs">{row.warna}</div>
-                                  <div className="text-[10px] text-[#9aa0a6] font-mono">{row.size}</div>
-                                </td>
-                                <td className="p-2.5 text-right text-xs text-[#e8eaed]">
-                                  {row.qty.toLocaleString('id-ID')}
-                                </td>
-                                <td className="p-2.5 text-right text-xs text-blue-400">
-                                   {row.biaya_kain > 0 ? idrFmt(row.biaya_kain) : <span className="text-[#3A3D41]">—</span>}
-                                 </td>
-                                 <td className="p-2.5 text-right text-xs text-cyan-400">
-                                   {row.biaya_aksesori > 0 ? idrFmt(row.biaya_aksesori) : <span className="text-[#3A3D41]">—</span>}
-                                 </td>
-                                 <td className="p-2.5 text-right text-xs text-purple-400">
-                                   {row.biaya_upah > 0 ? idrFmt(row.biaya_upah) : <span className="text-[#3A3D41]">—</span>}
-                                 </td>
-                                 <td className="p-2.5 text-right text-xs text-amber-400">
-                                   {row.overhead > 0 ? idrFmt(row.overhead) : <span className="text-[#3A3D41]">—</span>}
-                                 </td>
-                                 <td className="p-2.5 text-right">
-                                   <span className="text-xs font-bold text-[#e5c17b]">
-                                     {row.total_hpp > 0 ? idrFmt(row.total_hpp) : <span className="text-[#3A3D41]">—</span>}
-                                   </span>
-                                </td>
-                                <td className="p-2.5 text-right">
-                                  <span className="text-xs font-mono text-[#e8eaed]">
-                                    {row.hpp_per_pcs > 0 ? idrFmt(row.hpp_per_pcs) : <span className="text-[#3A3D41]">—</span>}
-                                  </span>
-                                </td>
+                  ) : hppPerSizeData ? (
+                    <>
+                      {/* Overhead rate info */}
+                      <div className="mb-4 px-3 py-2 rounded-lg bg-[#2A2D31] border border-[#3a3d41] text-xs text-[#9aa0a6]">
+                        Overhead rate aktual: <span className="text-[#e5c17b] font-semibold">
+                          {idrFmt(hppPerSizeData.overhead_rate_per_pcs)}/pcs
+                        </span>
+                      </div>
+
+                      {/* Table */}
+                      <div className="overflow-x-auto rounded-xl border border-[#3a3d41]">
+                        <table className="w-full text-[13px]">
+                          <thead>
+                            <tr className="bg-[#2A2D31]">
+                              <th className="px-4 py-3 text-left text-[11px] font-semibold text-[#9aa0a6] uppercase">Warna</th>
+                              <th className="px-4 py-3 text-center text-[11px] font-semibold text-[#9aa0a6] uppercase">Size</th>
+                              <th className="px-4 py-3 text-right text-[11px] font-semibold text-[#9aa0a6] uppercase">Qty</th>
+                              <th className="px-4 py-3 text-right text-[11px] font-semibold text-[#9aa0a6] uppercase">Biaya Kain</th>
+                              <th className="px-4 py-3 text-right text-[11px] font-semibold text-[#9aa0a6] uppercase">Aksesori</th>
+                              <th className="px-4 py-3 text-right text-[11px] font-semibold text-[#9aa0a6] uppercase">Upah</th>
+                              <th className="px-4 py-3 text-right text-[11px] font-semibold text-[#9aa0a6] uppercase">Overhead</th>
+                              <th className="px-4 py-3 text-right text-[11px] font-semibold text-[#9aa0a6] uppercase">Total HPP</th>
+                              <th className="px-4 py-3 text-right text-[11px] font-semibold text-[#e5c17b] uppercase">HPP/pcs</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-[#3a3d41]">
+                            {hppPerSizeData.rows.map((row, i) => (
+                              <tr key={i} className="hover:bg-[#2A2D31]/50 transition-colors">
+                                <td className="px-4 py-2.5 text-[#e8eaed] font-medium">{row.warna}</td>
+                                <td className="px-4 py-2.5 text-center text-[#e8eaed]">{row.size}</td>
+                                <td className="px-4 py-2.5 text-right text-[#9aa0a6]">{row.qty.toLocaleString('id-ID')}</td>
+                                <td className="px-4 py-2.5 text-right text-[#e8eaed]">{idrFmt(Math.round(row.biaya_kain))}</td>
+                                <td className="px-4 py-2.5 text-right text-[#e8eaed]">{idrFmt(Math.round(row.biaya_aksesori))}</td>
+                                <td className="px-4 py-2.5 text-right text-[#e8eaed]">{idrFmt(Math.round(row.biaya_upah))}</td>
+                                <td className="px-4 py-2.5 text-right text-[#9aa0a6]">{idrFmt(Math.round(row.overhead))}</td>
+                                <td className="px-4 py-2.5 text-right font-semibold text-[#e8eaed]">{idrFmt(Math.round(row.total_hpp))}</td>
+                                <td className="px-4 py-2.5 text-right font-bold text-[#e5c17b]">{idrFmt(Math.round(row.hpp_per_pcs))}</td>
                               </tr>
-                            );
-                          })}
+                            ))}
+                          </tbody>
+                          {/* Total row */}
+                          <tfoot>
+                            <tr className="bg-[#2A2D31] border-t-2 border-[#3a3d41]">
+                              <td colSpan={2} className="px-4 py-3 text-[12px] font-bold text-[#e8eaed]">TOTAL</td>
+                              <td className="px-4 py-3 text-right text-[12px] font-bold text-[#e8eaed]">
+                                {hppPerSizeData.rows.reduce((s, r) => s + r.qty, 0).toLocaleString('id-ID')}
+                              </td>
+                              <td className="px-4 py-3 text-right text-[12px] font-bold text-[#e8eaed]">
+                                {idrFmt(Math.round(hppPerSizeData.rows.reduce((s, r) => s + r.biaya_kain, 0)))}
+                              </td>
+                              <td className="px-4 py-3 text-right text-[12px] font-bold text-[#e8eaed]">
+                                {idrFmt(Math.round(hppPerSizeData.rows.reduce((s, r) => s + r.biaya_aksesori, 0)))}
+                              </td>
+                              <td className="px-4 py-3 text-right text-[12px] font-bold text-[#e8eaed]">
+                                {idrFmt(Math.round(hppPerSizeData.rows.reduce((s, r) => s + r.biaya_upah, 0)))}
+                              </td>
+                              <td className="px-4 py-3 text-right text-[12px] font-bold text-[#9aa0a6]">
+                                {idrFmt(Math.round(hppPerSizeData.rows.reduce((s, r) => s + r.overhead, 0)))}
+                              </td>
+                              <td className="px-4 py-3 text-right text-[12px] font-bold text-[#e8eaed]">
+                                {idrFmt(Math.round(hppPerSizeData.rows.reduce((s, r) => s + r.total_hpp, 0)))}
+                              </td>
+                              <td className="px-4 py-3 text-right text-[12px] font-bold text-[#e5c17b]">—</td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
 
-                          {/* Footer total row */}
-                          <tr className="border-t-2 border-[#2A2D31] bg-[#1A1C1E]">
-                            <td className="p-2.5 text-xs font-bold text-[#9aa0a6] uppercase">Total</td>
-                            <td className="p-2.5 text-right text-xs font-bold text-[#e8eaed]">
-                              {hppPerSizeData.rows.reduce((s, r) => s + r.qty, 0).toLocaleString('id-ID')}
-                            </td>
-                            <td className="p-2.5 text-right text-xs font-bold text-blue-400">
-                              {idrFmt(hppPerSizeData.rows.reduce((s, r) => s + r.biaya_kain, 0))}
-                            </td>
-                            <td className="p-2.5 text-right text-xs font-bold text-cyan-400">
-                              {idrFmt(hppPerSizeData.rows.reduce((s, r) => s + r.biaya_aksesori, 0))}
-                            </td>
-                            <td className="p-2.5 text-right text-xs font-bold text-purple-400">
-                              {idrFmt(hppPerSizeData.rows.reduce((s, r) => s + r.biaya_upah, 0))}
-                            </td>
-                            <td className="p-2.5 text-right text-xs font-bold text-amber-400">
-                              {idrFmt(hppPerSizeData.rows.reduce((s, r) => s + r.overhead, 0))}
-                            </td>
-                            <td className="p-2.5 text-right text-xs font-bold text-[#e5c17b]">
-                              {idrFmt(hppPerSizeData.rows.reduce((s, r) => s + r.total_hpp, 0))}
-                            </td>
-                            <td className="p-2.5" />
-                          </tr>
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-
-                  {/* Note jika RPC belum ada */}
-                  {hppPerSizeData.rows.length > 0 && hppPerSizeData.rows.every(r => r.biaya_kain === 0 && r.biaya_aksesori === 0 && r.biaya_upah === 0) && (
-                    <div className="mt-3 p-3 rounded-lg bg-blue-900/20 border border-blue-700/30 text-xs text-blue-300">
-                      ℹ Biaya kain diambil dari <code className="font-mono">pemakaian_bahan</code> (FIFO),
-                      aksesori dari <code className="font-mono">pemakaian_aksesori</code> (harga_referensi),
-                      upah dari <code className="font-mono">gaji_ledger</code>.
-                      Nilai 0 berarti belum ada pemakaian tercatat untuk size tersebut.
-                    </div>
+                      {/* Note jika RPC belum ada */}
+                      {hppPerSizeData.rows.length > 0 && hppPerSizeData.rows.every(r => r.biaya_kain === 0 && r.biaya_aksesori === 0 && r.biaya_upah === 0) && (
+                        <div className="mt-4 p-3 rounded-lg bg-blue-900/20 border border-blue-700/30 text-xs text-blue-300">
+                          ℹ Biaya kain diambil dari <code className="font-mono">pemakaian_bahan</code> (FIFO),
+                          aksesori dari <code className="font-mono">pemakaian_aksesori</code> (harga_referensi),
+                          upah dari <code className="font-mono">gaji_ledger</code>.
+                          Nilai 0 berarti belum ada pemakaian tercatat untuk size tersebut.
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <p className="text-center text-[#9aa0a6] text-sm py-12">Tidak ada data HPP</p>
                   )}
                 </div>
               )}

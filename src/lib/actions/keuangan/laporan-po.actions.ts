@@ -349,7 +349,7 @@ export async function getPOHPPDetail(po_id: string): Promise<POHPPDetail> {
 
 // ─── HPP per Size ─────────────────────────────────────────────────────────────
 
-const SIZE_ORDER = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL'];
+const SIZE_ORDER = ['XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL', '3XL', '4XL'];
 
 function sizeRank(s: string): number {
   const idx = SIZE_ORDER.indexOf(s.toUpperCase());
@@ -553,12 +553,8 @@ export async function getPOHPPPerSize(po_id: string): Promise<POHPPPerSizeRow[]>
     };
   });
 
-  // Sort: warna ASC, size by standard garment order
-  rows.sort((a, b) => {
-    const w = a.warna.localeCompare(b.warna);
-    if (w !== 0) return w;
-    return sizeRank(a.size) - sizeRank(b.size);
-  });
+  // Sort rows: warna ASC, size by rank
+  rows.sort((a, b) => a.warna.localeCompare(b.warna) || sizeRank(a.size) - sizeRank(b.size));
 
   return rows;
 }
