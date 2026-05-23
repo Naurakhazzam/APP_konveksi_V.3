@@ -13,10 +13,10 @@ import {
 import {
   getLaporanPOList,
   getPOHPPDetail,
-  getPOHPPPerSize,
+  getPOHPPPerSizeResult,
   type POLaporanItem,
   type POHPPDetail,
-  type POHPPPerSizeRow,
+  type HPPPerSizeResult,
 } from '@/lib/actions/keuangan/laporan-po.actions';
 import { type OverheadRateInfo } from '@/lib/actions/keuangan/overhead.actions';
 
@@ -129,8 +129,9 @@ export default function LaporanPOClient({ initialData, overheadRateInfo }: Props
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailData, setDetailData] = useState<POHPPDetail | null>(null);
   const [detailPO, setDetailPO] = useState<POLaporanItem | null>(null);
-  const [activeTab, setActiveTab] = useState<'ringkasan' | 'aktual' | 'per_size'>('ringkasan');
-  const [hppPerSizeData, setHppPerSizeData] = useState<POHPPPerSizeRow[]>([]);
+  const [activeDetailTab, setActiveDetailTab] = useState<'ringkasan' | 'jurnal' | 'hpp-size'>('ringkasan');
+  const [hppPerSizeData, setHppPerSizeData] = useState<HPPPerSizeResult | null>(null);
+  const [isLoadingHpp, setIsLoadingHpp] = useState(false);
 
   // ─── SUMMARY ───────────────────────────────────────────────────────────
   const totalEstimasi = data.reduce((s, p) => s + p.hpp_estimasi, 0);
@@ -213,17 +214,13 @@ export default function LaporanPOClient({ initialData, overheadRateInfo }: Props
   const handleOpenDetail = async (po: POLaporanItem) => {
     setDetailPO(po);
     setDetailData(null);
-    setHppPerSizeData([]);
-    setActiveTab('ringkasan');
+    setHppPerSizeData(null);
+    setActiveDetailTab('ringkasan');
     setDetailOpen(true);
     setDetailLoading(true);
     try {
-      const [result, sizeResult] = await Promise.all([
-        getPOHPPDetail(po.po_id),
-        getPOHPPPerSize(po.po_id),
-      ]);
+      const result = await getPOHPPDetail(po.po_id);
       setDetailData(result);
-      setHppPerSizeData(sizeResult);
     } catch (e: any) {
       toast.error('Gagal memuat detail: ' + e.message);
       setDetailOpen(false);
@@ -231,6 +228,21 @@ export default function LaporanPOClient({ initialData, overheadRateInfo }: Props
       setDetailLoading(false);
     }
   };
+
+  async function handleHppTabClick() {
+    setActiveDetailTab('hpp-size');
+    if (!hppPerSizeData && detailPO) {
+      setIsLoadingHpp(true);
+      try {
+        const data = await getPOHPPPerSizeResult(detailPO.po_id);
+        setHppPerSizeData(data);
+      } catch {
+        toast.error('Gagal memuat HPP per size');
+      } finally {
+        setIsLoadingHpp(false);
+      }
+    }
+  }
 
   // ─── RENDER ────────────────────────────────────────────────────────────
   return (
@@ -490,19 +502,23 @@ export default function LaporanPOClient({ initialData, overheadRateInfo }: Props
             <div className="space-y-4 py-2">
 
               {/* ── Tab Bar ── */}
-              <div className="flex gap-1 p-1 rounded-xl bg-[#0D0E10] border border-[#2A2D31]">
-                {([
+              <div className="flex border-b border-[#3a3d41] mb-1">
+                {[
                   { key: 'ringkasan', label: 'Ringkasan' },
-                  { key: 'aktual',    label: 'Jurnal Aktual' },
-                  { key: 'per_size',  label: 'HPP per Size' },
-                ] as const).map(tab => (
+                  { key: 'jurnal',    label: 'Jurnal Aktual' },
+                  { key: 'hpp-size',  label: 'HPP per Size' },
+                ].map(tab => (
                   <button
                     key={tab.key}
-                    onClick={() => setActiveTab(tab.key)}
-                    className={`flex-1 px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
-                      activeTab === tab.key
-                        ? 'bg-[#1A1D1F] text-[#e5c17b] shadow'
-                        : 'text-[#9aa0a6] hover:text-[#e8eaed]'
+                    onClick={() =>
+                      tab.key === 'hpp-size'
+                        ? handleHppTabClick()
+                        : setActiveDetailTab(tab.key as 'ringkasan' | 'jurnal')
+                    }
+                    className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${
+                      activeDetailTab === tab.key
+                        ? 'border-[#e5c17b] text-[#e5c17b]'
+                        : 'border-transparent text-[#9aa0a6] hover:text-[#e8eaed]'
                     }`}
                   >
                     {tab.label}
@@ -511,7 +527,7 @@ export default function LaporanPOClient({ initialData, overheadRateInfo }: Props
               </div>
 
               {/* ── TAB 1: RINGKASAN ── */}
-              {activeTab === 'ringkasan' && (
+              {activeDetailTab === 'ringkasan' && (
                 <div className="space-y-4">
                   {/* Totals cards */}
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -573,7 +589,7 @@ export default function LaporanPOClient({ initialData, overheadRateInfo }: Props
               )}
 
               {/* ── TAB 2: JURNAL AKTUAL ── */}
-              {activeTab === 'aktual' && (
+              {activeDetailTab === 'jurnal' && (
                 <div>
                   {detailData.aktual_breakdown.length === 0 ? (
                     <div className="p-8 rounded-lg border border-[#2A2D31] text-center text-[#5f6368] text-sm">
@@ -628,9 +644,14 @@ export default function LaporanPOClient({ initialData, overheadRateInfo }: Props
               )}
 
               {/* ── TAB 3: HPP PER SIZE ── */}
-              {activeTab === 'per_size' && (
+              {activeDetailTab === 'hpp-size' && (
                 <div>
-                  {hppPerSizeData.length === 0 ? (
+                  {isLoadingHpp ? (
+                    <div className="flex items-center justify-center h-32">
+                      <Loader2 className="h-5 w-5 animate-spin text-[#e5c17b]" />
+                      <span className="ml-2 text-sm text-[#9aa0a6]">Menghitung HPP per size...</span>
+                    </div>
+                  ) : !hppPerSizeData || hppPerSizeData.rows.length === 0 ? (
                     <div className="p-8 rounded-lg border border-[#2A2D31] text-center text-[#5f6368] text-sm">
                       Tidak ada data size untuk PO ini
                     </div>
@@ -641,106 +662,46 @@ export default function LaporanPOClient({ initialData, overheadRateInfo }: Props
                           <tr>
                             <th className="text-left p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider whitespace-nowrap">Warna / Size</th>
                             <th className="text-right p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider">Qty</th>
-                            <th className="text-right p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider">Est. HPP</th>
                             <th className="text-right p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider">Kain</th>
                             <th className="text-right p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider">Aksesori</th>
                             <th className="text-right p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider">Upah</th>
                             <th className="text-right p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider">OH</th>
-                            <th className="text-right p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider">HPP Final</th>
+                            <th className="text-right p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider">Total HPP</th>
                             <th className="text-right p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider whitespace-nowrap">HPP/pcs</th>
-                            <th className="text-right p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider">Nilai</th>
-                            <th className="text-right p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider">Profit</th>
-                            <th className="text-right p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider">Margin</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {hppPerSizeData.map((row, i) => {
-                            const gapEst = row.hpp_aktual - row.hpp_estimasi;
+                          {hppPerSizeData.rows.map((row, i) => {
                             return (
-                              <tr key={i} className={`border-t border-[#2A2D31] ${
-                                row.profit > 0 ? 'hover:bg-green-500/5' : row.profit < 0 ? 'hover:bg-red-500/5' : 'hover:bg-[#1A1C1E]/50'
-                              }`}>
+                              <tr key={i} className="border-t border-[#2A2D31] hover:bg-[#1A1C1E]/50">
                                 <td className="p-2.5">
                                   <div className="font-medium text-[#e8eaed] text-xs">{row.warna}</div>
                                   <div className="text-[10px] text-[#9aa0a6] font-mono">{row.size}</div>
                                 </td>
                                 <td className="p-2.5 text-right text-xs text-[#e8eaed]">
-                                  {row.qty_order.toLocaleString('id-ID')}
-                                </td>
-                                <td className="p-2.5 text-right text-xs text-[#9aa0a6]">
-                                  {row.hpp_estimasi > 0 ? idrFmt(row.hpp_estimasi) : <span className="text-[#3A3D41]">—</span>}
+                                  {row.qty.toLocaleString('id-ID')}
                                 </td>
                                 <td className="p-2.5 text-right text-xs text-blue-400">
                                    {row.biaya_kain > 0 ? idrFmt(row.biaya_kain) : <span className="text-[#3A3D41]">—</span>}
                                  </td>
-
-                                 {/* Biaya Aksesori */}
                                  <td className="p-2.5 text-right text-xs text-cyan-400">
                                    {row.biaya_aksesori > 0 ? idrFmt(row.biaya_aksesori) : <span className="text-[#3A3D41]">—</span>}
                                  </td>
-
-                                 {/* Biaya Upah */}
                                  <td className="p-2.5 text-right text-xs text-purple-400">
                                    {row.biaya_upah > 0 ? idrFmt(row.biaya_upah) : <span className="text-[#3A3D41]">—</span>}
                                  </td>
-
-                                 {/* Overhead */}
                                  <td className="p-2.5 text-right text-xs text-amber-400">
                                    {row.overhead > 0 ? idrFmt(row.overhead) : <span className="text-[#3A3D41]">—</span>}
                                  </td>
-
-                                 {/* HPP Final (total_hpp) */}
                                  <td className="p-2.5 text-right">
                                    <span className="text-xs font-bold text-[#e5c17b]">
                                      {row.total_hpp > 0 ? idrFmt(row.total_hpp) : <span className="text-[#3A3D41]">—</span>}
                                    </span>
-                                  {row.hpp_estimasi > 0 && row.hpp_aktual > 0 && (
-                                    <span className={`block text-[9px] font-mono ${
-                                      gapEst > 0 ? 'text-red-400' : gapEst < 0 ? 'text-green-400' : 'text-[#5f6368]'
-                                    }`}>
-                                      {gapEst > 0 ? '+' : ''}{idrFmt(gapEst)}
-                                    </span>
-                                  )}
                                 </td>
-
-                                {/* HPP per pcs */}
                                 <td className="p-2.5 text-right">
                                   <span className="text-xs font-mono text-[#e8eaed]">
                                     {row.hpp_per_pcs > 0 ? idrFmt(row.hpp_per_pcs) : <span className="text-[#3A3D41]">—</span>}
                                   </span>
-                                </td>
-
-                                {/* Nilai Project */}
-                                <td className="p-2.5 text-right text-xs text-[#e8eaed]">
-                                  {row.nilai_project > 0 ? idrFmt(row.nilai_project) : (
-                                    <span className="text-orange-400 text-[10px]">Harga belum diset</span>
-                                  )}
-                                </td>
-
-                                {/* Profit */}
-                                <td className="p-2.5 text-right">
-                                  {row.nilai_project === 0 ? (
-                                    <span className="text-[#3A3D41] text-xs">—</span>
-                                  ) : (
-                                    <span className={`text-xs font-bold ${
-                                      row.profit > 0 ? 'text-green-400' : row.profit < 0 ? 'text-red-400' : 'text-[#9aa0a6]'
-                                    }`}>
-                                      {row.profit > 0 ? '+' : ''}{idrFmt(row.profit)}
-                                    </span>
-                                  )}
-                                </td>
-
-                                {/* Margin */}
-                                <td className="p-2.5 text-right">
-                                  {row.nilai_project === 0 ? (
-                                    <span className="text-[#3A3D41] text-xs">—</span>
-                                  ) : (
-                                    <span className={`text-xs font-bold ${
-                                      row.margin_pct > 0 ? 'text-green-400' : row.margin_pct < 0 ? 'text-red-400' : 'text-[#9aa0a6]'
-                                    }`}>
-                                      {row.margin_pct}%
-                                    </span>
-                                  )}
                                 </td>
                               </tr>
                             );
@@ -750,44 +711,24 @@ export default function LaporanPOClient({ initialData, overheadRateInfo }: Props
                           <tr className="border-t-2 border-[#2A2D31] bg-[#1A1C1E]">
                             <td className="p-2.5 text-xs font-bold text-[#9aa0a6] uppercase">Total</td>
                             <td className="p-2.5 text-right text-xs font-bold text-[#e8eaed]">
-                              {hppPerSizeData.reduce((s, r) => s + r.qty_order, 0).toLocaleString('id-ID')}
-                            </td>
-                            <td className="p-2.5 text-right text-xs font-bold text-[#e8eaed]">
-                              {idrFmt(hppPerSizeData.reduce((s, r) => s + r.hpp_estimasi, 0))}
+                              {hppPerSizeData.rows.reduce((s, r) => s + r.qty, 0).toLocaleString('id-ID')}
                             </td>
                             <td className="p-2.5 text-right text-xs font-bold text-blue-400">
-                              {idrFmt(hppPerSizeData.reduce((s, r) => s + r.biaya_kain, 0))}
+                              {idrFmt(hppPerSizeData.rows.reduce((s, r) => s + r.biaya_kain, 0))}
                             </td>
                             <td className="p-2.5 text-right text-xs font-bold text-cyan-400">
-                              {idrFmt(hppPerSizeData.reduce((s, r) => s + r.biaya_aksesori, 0))}
+                              {idrFmt(hppPerSizeData.rows.reduce((s, r) => s + r.biaya_aksesori, 0))}
                             </td>
                             <td className="p-2.5 text-right text-xs font-bold text-purple-400">
-                              {idrFmt(hppPerSizeData.reduce((s, r) => s + r.biaya_upah, 0))}
+                              {idrFmt(hppPerSizeData.rows.reduce((s, r) => s + r.biaya_upah, 0))}
                             </td>
                             <td className="p-2.5 text-right text-xs font-bold text-amber-400">
-                              {idrFmt(hppPerSizeData.reduce((s, r) => s + r.overhead, 0))}
+                              {idrFmt(hppPerSizeData.rows.reduce((s, r) => s + r.overhead, 0))}
                             </td>
                             <td className="p-2.5 text-right text-xs font-bold text-[#e5c17b]">
-                              {idrFmt(hppPerSizeData.reduce((s, r) => s + r.total_hpp, 0))}
+                              {idrFmt(hppPerSizeData.rows.reduce((s, r) => s + r.total_hpp, 0))}
                             </td>
                             <td className="p-2.5" />
-                            <td className="p-2.5 text-right text-xs font-bold text-[#e8eaed]">
-                              {idrFmt(hppPerSizeData.reduce((s, r) => s + r.nilai_project, 0))}
-                            </td>
-                            <td className="p-2.5 text-right text-xs font-bold">
-                              {(() => {
-                                const tot = hppPerSizeData.reduce((s, r) => s + r.profit, 0);
-                                return <span className={tot > 0 ? 'text-green-400' : tot < 0 ? 'text-red-400' : 'text-[#9aa0a6]'}>{tot > 0 ? '+' : ''}{idrFmt(tot)}</span>;
-                              })()}
-                            </td>
-                            <td className="p-2.5 text-right text-xs font-bold">
-                              {(() => {
-                                const totVal = hppPerSizeData.reduce((s, r) => s + r.nilai_project, 0);
-                                const totPro = hppPerSizeData.reduce((s, r) => s + r.profit, 0);
-                                const m = totVal > 0 ? Math.round((totPro / totVal) * 100) : 0;
-                                return <span className={m > 0 ? 'text-green-400' : m < 0 ? 'text-red-400' : 'text-[#9aa0a6]'}>{m}%</span>;
-                              })()}
-                            </td>
                           </tr>
                         </tbody>
                       </table>
@@ -795,7 +736,7 @@ export default function LaporanPOClient({ initialData, overheadRateInfo }: Props
                   )}
 
                   {/* Note jika RPC belum ada */}
-                  {hppPerSizeData.length > 0 && hppPerSizeData.every(r => r.biaya_bahan === 0 && r.biaya_upah === 0) && (
+                  {hppPerSizeData.rows.length > 0 && hppPerSizeData.rows.every(r => r.biaya_kain === 0 && r.biaya_aksesori === 0 && r.biaya_upah === 0) && (
                     <div className="mt-3 p-3 rounded-lg bg-blue-900/20 border border-blue-700/30 text-xs text-blue-300">
                       ℹ Biaya kain diambil dari <code className="font-mono">pemakaian_bahan</code> (FIFO),
                       aksesori dari <code className="font-mono">pemakaian_aksesori</code> (harga_referensi),
