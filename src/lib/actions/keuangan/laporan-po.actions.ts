@@ -450,12 +450,11 @@ export async function getPOHPPPerSize(po_id: string): Promise<POHPPPerSizeRow[]>
   }
 
   // Build kain map
+  // Selalu pakai qty × harga_referensi — konsisten & robust untuk data lama maupun baru
   const kainMap = new Map<string, number>();
   (bahanRows ?? []).forEach((r: any) => {
     const id    = String(r.po_item_id);
-    const total = Number(r.harga_pakai) > 0
-      ? Number(r.harga_pakai)
-      : (Number(r.qty_pakai) || 0) * (Number(r.inventory_item?.harga_referensi) || 0);
+    const total = (Number(r.qty_pakai) || 0) * (Number(r.inventory_item?.harga_referensi) || 0);
     kainMap.set(id, (kainMap.get(id) ?? 0) + total);
   });
 
