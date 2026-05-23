@@ -420,13 +420,26 @@ export async function getPOHPPPerSize(po_id: string): Promise<POHPPPerSizeRow[]>
 
   const poItemIds = poItems.map((pi: any) => pi.id);
 
-  // ── 2. Bundles: fetch dulu, dipakai bersama oleh aksesori + upah ──────────
-  const { data: bundles, error: bErr } = await supabase
-    .from('bundle')
-    .select('id, po_item_id')
-    .in('po_item_id', poItemIds)
-    .eq('tenant_id', TENANT_ID);
+  // ── 2-3. Paralel: bundles + pemakaian_bahan + overhead (independen satu sama lain)
+  const [
+    { data: bundles,   error: bErr     },
+    { data: bahanRows, error: bahanErr },
+    rateInfo,
+  ] = await Promise.all([
+    supabase.from('bundle')
+      .select('id, po_item_id')
+      .in('po_item_id', poItemIds)
+      .eq('tenant_id', TENANT_ID),
+    supabase.from('pemakaian_bahan')
+      .select('po_item_id, harga_pakai, qty_pakai, inventory_item:inventory_item_id ( harga_referensi )')
+      .in('po_item_id', poItemIds)
+      .eq('tenant_id', TENANT_ID),
+    getOverheadRateInfo(),
+  ]);
 
+  if (bahanErr) throw new Error('pemakaian_bahan: ' + bahanErr.message);
+
+  // Build bundle maps
   const bundlePoItemMap = new Map<string, string>();
   const bundleIds: string[] = [];
   if (!bErr && bundles) {
@@ -436,18 +449,7 @@ export async function getPOHPPPerSize(po_id: string): Promise<POHPPPerSizeRow[]>
     });
   }
 
-  // ── 3. Biaya kain: pemakaian_bahan per po_item ───────────────────────────
-  // pemakaian_bahan.po_item_id → FK langsung ke po_item ✅
-  // harga_pakai = total biaya per record (qty × harga FIFO, sudah tersimpan di DB)
-  // Fallback: qty_pakai × harga_referensi jika harga_pakai belum terisi
-  const { data: bahanRows, error: bahanErr } = await supabase
-    .from('pemakaian_bahan')
-    .select('po_item_id, harga_pakai, qty_pakai, inventory_item:inventory_item_id ( harga_referensi )')
-    .in('po_item_id', poItemIds)
-    .eq('tenant_id', TENANT_ID);
-
-  if (bahanErr) throw new Error('pemakaian_bahan: ' + bahanErr.message);
-
+  // Build kain map
   const kainMap = new Map<string, number>();
   (bahanRows ?? []).forEach((r: any) => {
     const id    = String(r.po_item_id);
@@ -457,16 +459,27 @@ export async function getPOHPPPerSize(po_id: string): Promise<POHPPPerSizeRow[]>
     kainMap.set(id, (kainMap.get(id) ?? 0) + total);
   });
 
-  // ── 4. Biaya aksesori: pemakaian_aksesori via bundle_id ──────────────────
-  // PENTING: pemakaian_aksesori tidak punya kolom po_item_id — query via bundle_id
+  // ── 4-5. Paralel: aksesori + upah (keduanya butuh bundleIds)
   const aksesoriMap = new Map<string, number>();
-  if (bundleIds.length > 0) {
-    const { data: aksesoriRows, error: aksErr } = await supabase
-      .from('pemakaian_aksesori')
-      .select('bundle_id, qty_pakai, inventory_item:inventory_item_id ( harga_referensi )')
-      .in('bundle_id', bundleIds)
-      .eq('tenant_id', TENANT_ID);
+  const upahMap     = new Map<string, number>();
 
+  if (bundleIds.length > 0) {
+    const [
+      { data: aksesoriRows, error: aksErr },
+      { data: gajiRows,     error: gajiErr },
+    ] = await Promise.all([
+      supabase.from('pemakaian_aksesori')
+        .select('bundle_id, qty_pakai, inventory_item:inventory_item_id ( harga_referensi )')
+        .in('bundle_id', bundleIds)
+        .eq('tenant_id', TENANT_ID),
+      supabase.from('gaji_ledger')
+        .select('sumber_id, total, tipe')
+        .in('sumber_id', bundleIds)
+        .in('tipe', ['selesai', 'rework'])
+        .eq('tenant_id', TENANT_ID),
+    ]);
+
+    // Aksesori
     if (!aksErr && aksesoriRows) {
       (aksesoriRows as any[]).forEach((r: any) => {
         const poItemId = bundlePoItemMap.get(r.bundle_id);
@@ -476,30 +489,19 @@ export async function getPOHPPPerSize(po_id: string): Promise<POHPPPerSizeRow[]>
         aksesoriMap.set(poItemId, (aksesoriMap.get(poItemId) ?? 0) + qty * harga);
       });
     }
-  }
 
-  // ── 5. Biaya upah: gaji_ledger → bundle → po_item ────────────────────────
-  const upahMap = new Map<string, number>();
-  if (bundleIds.length > 0) {
-    const { data: gajiRows, error: gajiErr } = await supabase
-      .from('gaji_ledger')
-      .select('sumber_id, nominal, tipe')
-      .in('sumber_id', bundleIds)
-      .in('tipe', ['selesai', 'rework'])
-      .eq('tenant_id', TENANT_ID);
-
+    // Upah
     if (!gajiErr && gajiRows) {
       (gajiRows as any[]).forEach((r: any) => {
         if (r.tipe === 'reject_potong') return;
         const poItemId = bundlePoItemMap.get(r.sumber_id);
         if (!poItemId) return;
-        upahMap.set(poItemId, (upahMap.get(poItemId) ?? 0) + (Number(r.nominal) || 0));
+        upahMap.set(poItemId, (upahMap.get(poItemId) ?? 0) + (Number(r.total) || 0));
       });
     }
   }
 
-  // ── 6. Overhead rate (dari periode aktif) ─────────────────────────────────
-  const rateInfo = await getOverheadRateInfo();
+  // ── 6. Overhead rate sudah di-fetch paralel di atas
   const overhead_rate = rateInfo.overhead_rate;
 
   // ── 7. Build rows ─────────────────────────────────────────────────────────
@@ -550,10 +552,38 @@ export async function getPOHPPPerSize(po_id: string): Promise<POHPPPerSizeRow[]>
     };
   });
 
-  // Sort rows: warna ASC, size by rank
-  rows.sort((a, b) => a.warna.localeCompare(b.warna) || sizeRank(a.size) - sizeRank(b.size));
+  // Aggregate by warna+size: jika ada beberapa po_item dengan warna+size sama, gabungkan
+  const aggMap = new Map<string, POHPPPerSizeRow>();
+  rows.forEach(row => {
+    const key = `${row.warna}||${row.size}`;
+    const ex  = aggMap.get(key);
+    if (!ex) {
+      aggMap.set(key, { ...row });
+    } else {
+      ex.qty              += row.qty;
+      ex.biaya_kain       += row.biaya_kain;
+      ex.biaya_aksesori   += row.biaya_aksesori;
+      ex.biaya_bahan      += row.biaya_bahan;
+      ex.biaya_upah       += row.biaya_upah;
+      ex.overhead         += row.overhead;
+      ex.alokasi_overhead += row.alokasi_overhead;
+      ex.hpp_aktual       += row.hpp_aktual;
+      ex.hpp_aktual_final += row.hpp_aktual_final;
+      ex.total_hpp        += row.total_hpp;
+      ex.hpp_estimasi     += row.hpp_estimasi;
+      ex.nilai_project    += row.nilai_project;
+      ex.profit           += row.profit;
+      // Recalculate derived fields setelah aggregate
+      ex.hpp_per_pcs = ex.qty > 0 ? Math.round(ex.total_hpp / ex.qty) : 0;
+      ex.margin_pct  = ex.nilai_project > 0
+        ? Math.round((ex.profit / ex.nilai_project) * 100) : 0;
+    }
+  });
 
-  return rows;
+  const finalRows = Array.from(aggMap.values());
+  finalRows.sort((a, b) => a.warna.localeCompare(b.warna) || sizeRank(a.size) - sizeRank(b.size));
+
+  return finalRows;
 }
 
 /**
