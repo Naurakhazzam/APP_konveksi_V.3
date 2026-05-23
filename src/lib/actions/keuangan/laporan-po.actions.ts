@@ -349,16 +349,37 @@ export async function getPOHPPDetail(po_id: string): Promise<POHPPDetail> {
 
 // ─── HPP per Size ─────────────────────────────────────────────────────────────
 
-export interface POHPPPerSizeRow {
+const SIZE_ORDER = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL'];
+
+function sizeRank(s: string): number {
+  const idx = SIZE_ORDER.indexOf(s.toUpperCase());
+  return idx === -1 ? 99 : idx;
+}
+
+export interface HPPPerSizeRow {
+  warna          : string;
+  size           : string;
+  qty            : number;
+  biaya_kain     : number;
+  biaya_aksesori : number;
+  biaya_upah     : number;
+  overhead       : number;
+  total_hpp      : number;
+  hpp_per_pcs    : number;
+}
+
+export interface HPPPerSizeResult {
+  rows                : HPPPerSizeRow[];
+  overhead_rate_per_pcs: number;
+}
+
+// Keep old interface for backward-compat with existing UI
+export interface POHPPPerSizeRow extends HPPPerSizeRow {
   po_item_id      : string;
-  warna           : string;
-  size            : string;
-  qty_order       : number;
   harga_jual      : number;
   hpp_estimasi    : number;
-  biaya_bahan     : number;
-  biaya_upah      : number;
-  hpp_aktual      : number;
+  biaya_bahan     : number;   // biaya_kain + biaya_aksesori
+  hpp_aktual      : number;   // biaya_bahan + biaya_upah
   alokasi_overhead: number;
   hpp_aktual_final: number;
   hpp_per_pcs     : number;
@@ -368,121 +389,198 @@ export interface POHPPPerSizeRow {
 }
 
 /**
- * Hitung HPP per size/warna (per po_item) untuk satu PO.
- * Menggabungkan BOM estimasi + aktual bahan, upah, overhead per po_item.
+ * Hitung HPP per warna+size untuk satu PO.
+ *
+ * Sumber data (sesuai skema aktual):
+ *   Kain     : pemakaian_bahan.po_item_id → po_item (warna, size)
+ *              harga = inventory_batch.harga_satuan (FIFO) ‖ inventory_item.harga_referensi
+ *   Aksesori : pemakaian_aksesori.po_item_id → po_item
+ *              harga = inventory_item.harga_referensi (retroactive)
+ *   Upah     : gaji_ledger.sumber_id = bundle_id → bundle.po_item_id → po_item
+ *              tipe IN ('selesai','rework'), EXCLUDE 'reject_potong'
+ *   Overhead : overhead_rate × qty_order per size
  */
 export async function getPOHPPPerSize(po_id: string): Promise<POHPPPerSizeRow[]> {
   const supabase = await createClient();
 
-  // 1. Fetch po_item dengan BOM dan harga_jual
+  // ── 1. po_item: warna, size, qty_order, harga_jual, BOM ──────────────────
   const { data: poItems, error: piErr } = await supabase
     .from('po_item')
     .select(`
-      id,
-      warna,
-      size,
-      qty_order,
+      id, warna, size, qty_order,
       produk:produk_id (
         harga_jual,
-        hpp_item (
-          qty,
-          harga_satuan
-        )
+        hpp_item ( qty, harga_satuan )
       )
     `)
     .eq('po_id', po_id);
 
-  if (piErr) throw new Error(piErr.message);
+  if (piErr) throw new Error('po_item: ' + piErr.message);
+  if (!poItems || poItems.length === 0) return [];
 
-  // 2. Biaya bahan aktual per po_item via RPC (jika ada)
-  const bahanMap = new Map<string, number>();
-  const { data: bahanDetail, error: bahanErr } = await supabase
-    .rpc('get_biaya_pemakaian_per_po_item', {
-      p_po_id    : po_id,
-      p_tenant_id: TENANT_ID,
-    });
-  if (!bahanErr && bahanDetail) {
-    (bahanDetail as any[]).forEach((r: any) => {
-      bahanMap.set(String(r.po_item_id), (bahanMap.get(String(r.po_item_id)) ?? 0) + (Number(r.subtotal) || 0));
+  const poItemIds = poItems.map((pi: any) => pi.id);
+
+  // ── 2. Biaya kain: pemakaian_bahan per po_item ────────────────────────────
+  // pemakaian_bahan.po_item_id → FK langsung ke po_item
+  // harga = inventory_batch.harga_satuan (FIFO) fallback inventory_item.harga_referensi
+  const { data: bahanRows, error: bahanErr } = await supabase
+    .from('pemakaian_bahan')
+    .select(`
+      po_item_id,
+      qty_pakai,
+      inventory_batch:inventory_batch_id ( harga_satuan ),
+      inventory_item:inventory_item_id ( harga_referensi )
+    `)
+    .in('po_item_id', poItemIds)
+    .eq('tenant_id', TENANT_ID);
+
+  if (bahanErr) throw new Error('pemakaian_bahan: ' + bahanErr.message);
+
+  const kainMap = new Map<string, number>();
+  (bahanRows ?? []).forEach((r: any) => {
+    const id    = String(r.po_item_id);
+    const qty   = Number(r.qty_pakai) || 0;
+    const harga = Number(r.inventory_batch?.harga_satuan) > 0
+      ? Number(r.inventory_batch.harga_satuan)
+      : Number(r.inventory_item?.harga_referensi) || 0;
+    kainMap.set(id, (kainMap.get(id) ?? 0) + qty * harga);
+  });
+
+  // ── 3. Biaya aksesori: pemakaian_aksesori per po_item ────────────────────
+  // harga = inventory_item.harga_referensi (retroactive)
+  const { data: aksesoriRows, error: aksErr } = await supabase
+    .from('pemakaian_aksesori')
+    .select(`
+      po_item_id,
+      qty_pakai,
+      inventory_item:inventory_item_id ( harga_referensi )
+    `)
+    .in('po_item_id', poItemIds)
+    .eq('tenant_id', TENANT_ID);
+
+  // aksesori boleh gagal (tabel mungkin pakai FK berbeda) — degrade gracefully
+  const aksesoriMap = new Map<string, number>();
+  if (!aksErr && aksesoriRows) {
+    (aksesoriRows as any[]).forEach((r: any) => {
+      const id    = String(r.po_item_id);
+      const qty   = Number(r.qty_pakai) || 0;
+      const harga = Number(r.inventory_item?.harga_referensi) || 0;
+      aksesoriMap.set(id, (aksesoriMap.get(id) ?? 0) + qty * harga);
     });
   }
 
-  // 3. Biaya upah per po_item via RPC (jika ada)
+  // ── 4. Biaya upah: gaji_ledger → bundle → po_item ────────────────────────
+  // gaji_ledger.sumber_id = bundle.id, bundle.po_item_id
+  const { data: bundles, error: bErr } = await supabase
+    .from('bundle')
+    .select('id, po_item_id')
+    .in('po_item_id', poItemIds)
+    .eq('tenant_id', TENANT_ID);
+
   const upahMap = new Map<string, number>();
-  const { data: upahDetail, error: upahErr } = await supabase
-    .rpc('get_biaya_upah_per_po_item', {
-      p_po_id    : po_id,
-      p_tenant_id: TENANT_ID,
-    });
-  if (!upahErr && upahDetail) {
-    (upahDetail as any[]).forEach((r: any) => {
-      upahMap.set(String(r.po_item_id), Number(r.biaya_upah) || 0);
-    });
+  if (!bErr && bundles && bundles.length > 0) {
+    const bundleIds          = bundles.map((b: any) => b.id);
+    const bundlePoItemMap    = new Map<string, string>(
+      bundles.map((b: any) => [b.id, b.po_item_id])
+    );
+
+    const { data: gajiRows, error: gajiErr } = await supabase
+      .from('gaji_ledger')
+      .select('sumber_id, nominal, tipe')
+      .in('sumber_id', bundleIds)
+      .in('tipe', ['selesai', 'rework'])
+      .eq('tenant_id', TENANT_ID);
+
+    if (!gajiErr && gajiRows) {
+      (gajiRows as any[]).forEach((r: any) => {
+        if (r.tipe === 'reject_potong') return;
+        const poItemId = bundlePoItemMap.get(r.sumber_id);
+        if (!poItemId) return;
+        upahMap.set(poItemId, (upahMap.get(poItemId) ?? 0) + (Number(r.nominal) || 0));
+      });
+    }
   }
 
-  // 4. Overhead rate
+  // ── 5. Overhead rate (dari periode aktif) ─────────────────────────────────
   const rateInfo = await getOverheadRateInfo();
+  const overhead_rate = rateInfo.overhead_rate;
 
-  // 5. Qty shipped per po_item dalam periode overhead aktif
-  const qtyShippedPerItem = new Map<string, number>();
-  if (rateInfo.period) {
-    const { data: sjItems } = await supabase
-      .from('surat_jalan_item')
-      .select(`
-        qty_kirim,
-        bundle:bundle_id ( po_item_id ),
-        surat_jalan:surat_jalan_id ( tanggal )
-      `)
-      .gte('surat_jalan.tanggal', rateInfo.period.tanggal_mulai)
-      .lte('surat_jalan.tanggal', rateInfo.period.tanggal_akhir);
+  // ── 6. Build rows ─────────────────────────────────────────────────────────
+  const rows: POHPPPerSizeRow[] = (poItems as any[]).map((pi: any) => {
+    const po_item_id     = String(pi.id);
+    const qty_order      = Number(pi.qty_order) || 0;
+    const harga_jual     = Number(pi.produk?.harga_jual) || 0;
 
-    (sjItems ?? []).forEach((sji: any) => {
-      const poItemId = sji.bundle?.po_item_id;
-      if (poItemId) {
-        qtyShippedPerItem.set(
-          String(poItemId),
-          (qtyShippedPerItem.get(String(poItemId)) ?? 0) + Number(sji.qty_kirim)
-        );
-      }
-    });
-  }
-
-  // 6. Build rows
-  const rows: POHPPPerSizeRow[] = (poItems ?? []).map((pi: any) => {
-    const po_item_id = String(pi.id);
-    const qty_order  = Number(pi.qty_order) || 0;
-    const harga_jual = Number(pi.produk?.harga_jual) || 0;
-
+    // HPP Estimasi dari BOM
     const hpp_estimasi = (pi.produk?.hpp_item ?? []).reduce(
       (s: number, hi: any) => s + Number(hi.qty) * Number(hi.harga_satuan) * qty_order, 0
     );
 
-    const biaya_bahan      = bahanMap.get(po_item_id) ?? 0;
-    const biaya_upah       = upahMap.get(po_item_id)  ?? 0;
-    const hpp_aktual       = biaya_bahan + biaya_upah;
-    const qty_ship         = qtyShippedPerItem.get(po_item_id) ?? 0;
-    const alokasi_overhead = Math.round(rateInfo.overhead_rate * qty_ship);
-    const hpp_aktual_final = hpp_aktual + alokasi_overhead;
-    const hpp_per_pcs      = qty_order > 0 ? Math.round(hpp_aktual_final / qty_order) : 0;
-    const nilai_project    = qty_order * harga_jual;
-    const profit           = nilai_project - hpp_aktual_final;
-    const margin_pct       = nilai_project > 0
-      ? Math.round((profit / nilai_project) * 100)
-      : 0;
+    const biaya_kain     = kainMap.get(po_item_id)     ?? 0;
+    const biaya_aksesori = aksesoriMap.get(po_item_id) ?? 0;
+    const biaya_upah     = upahMap.get(po_item_id)     ?? 0;
+    const biaya_bahan    = biaya_kain + biaya_aksesori;
+    const hpp_aktual     = biaya_bahan + biaya_upah;
+    const overhead       = Math.round(overhead_rate * qty_order);
+    const total_hpp      = hpp_aktual + overhead;
+    const hpp_per_pcs    = qty_order > 0 ? Math.round(total_hpp / qty_order) : 0;
+    const nilai_project  = qty_order * harga_jual;
+    const profit         = nilai_project - total_hpp;
+    const margin_pct     = nilai_project > 0
+      ? Math.round((profit / nilai_project) * 100) : 0;
 
     return {
-      po_item_id, warna: pi.warna || '-', size: pi.size || '-',
-      qty_order, harga_jual, hpp_estimasi,
-      biaya_bahan, biaya_upah, hpp_aktual,
-      alokasi_overhead, hpp_aktual_final, hpp_per_pcs,
-      nilai_project, profit, margin_pct,
+      po_item_id,
+      warna           : pi.warna || '-',
+      size            : pi.size  || '-',
+      qty             : qty_order,
+      qty_order,
+      harga_jual,
+      hpp_estimasi,
+      biaya_kain,
+      biaya_aksesori,
+      biaya_bahan,
+      biaya_upah,
+      overhead,
+      alokasi_overhead: overhead,
+      total_hpp,
+      hpp_aktual,
+      hpp_aktual_final: total_hpp,
+      hpp_per_pcs,
+      nilai_project,
+      profit,
+      margin_pct,
     };
   });
 
+  // Sort: warna ASC, size by standard garment order
   rows.sort((a, b) => {
     const w = a.warna.localeCompare(b.warna);
-    return w !== 0 ? w : a.size.localeCompare(b.size);
+    if (w !== 0) return w;
+    return sizeRank(a.size) - sizeRank(b.size);
   });
 
   return rows;
+}
+
+/**
+ * Wrapper untuk mendapat HPPPerSizeResult (sesuai interface baru di Step 2).
+ */
+export async function getPOHPPPerSizeResult(po_id: string): Promise<HPPPerSizeResult> {
+  const rateInfo = await getOverheadRateInfo();
+  const rows     = await getPOHPPPerSize(po_id);
+  return {
+    rows: rows.map(r => ({
+      warna          : r.warna,
+      size           : r.size,
+      qty            : r.qty_order,
+      biaya_kain     : r.biaya_kain,
+      biaya_aksesori : r.biaya_aksesori,
+      biaya_upah     : r.biaya_upah,
+      overhead       : r.overhead,
+      total_hpp      : r.total_hpp,
+      hpp_per_pcs    : r.hpp_per_pcs,
+    })),
+    overhead_rate_per_pcs: rateInfo.overhead_rate,
+  };
 }

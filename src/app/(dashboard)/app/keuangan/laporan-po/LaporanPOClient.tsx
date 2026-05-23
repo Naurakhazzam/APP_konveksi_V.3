@@ -642,7 +642,8 @@ export default function LaporanPOClient({ initialData, overheadRateInfo }: Props
                             <th className="text-left p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider whitespace-nowrap">Warna / Size</th>
                             <th className="text-right p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider">Qty</th>
                             <th className="text-right p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider">Est. HPP</th>
-                            <th className="text-right p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider">Bahan</th>
+                            <th className="text-right p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider">Kain</th>
+                            <th className="text-right p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider">Aksesori</th>
                             <th className="text-right p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider">Upah</th>
                             <th className="text-right p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider">OH</th>
                             <th className="text-right p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider">HPP Final</th>
@@ -659,42 +660,40 @@ export default function LaporanPOClient({ initialData, overheadRateInfo }: Props
                               <tr key={i} className={`border-t border-[#2A2D31] ${
                                 row.profit > 0 ? 'hover:bg-green-500/5' : row.profit < 0 ? 'hover:bg-red-500/5' : 'hover:bg-[#1A1C1E]/50'
                               }`}>
-                                {/* Warna / Size */}
                                 <td className="p-2.5">
                                   <div className="font-medium text-[#e8eaed] text-xs">{row.warna}</div>
                                   <div className="text-[10px] text-[#9aa0a6] font-mono">{row.size}</div>
                                 </td>
-
-                                {/* Qty */}
                                 <td className="p-2.5 text-right text-xs text-[#e8eaed]">
                                   {row.qty_order.toLocaleString('id-ID')}
                                 </td>
-
-                                {/* HPP Estimasi */}
                                 <td className="p-2.5 text-right text-xs text-[#9aa0a6]">
                                   {row.hpp_estimasi > 0 ? idrFmt(row.hpp_estimasi) : <span className="text-[#3A3D41]">—</span>}
                                 </td>
-
-                                {/* Biaya Bahan */}
                                 <td className="p-2.5 text-right text-xs text-blue-400">
-                                  {row.biaya_bahan > 0 ? idrFmt(row.biaya_bahan) : <span className="text-[#3A3D41]">—</span>}
-                                </td>
+                                   {row.biaya_kain > 0 ? idrFmt(row.biaya_kain) : <span className="text-[#3A3D41]">—</span>}
+                                 </td>
 
-                                {/* Biaya Upah */}
-                                <td className="p-2.5 text-right text-xs text-purple-400">
-                                  {row.biaya_upah > 0 ? idrFmt(row.biaya_upah) : <span className="text-[#3A3D41]">—</span>}
-                                </td>
+                                 {/* Biaya Aksesori */}
+                                 <td className="p-2.5 text-right text-xs text-cyan-400">
+                                   {row.biaya_aksesori > 0 ? idrFmt(row.biaya_aksesori) : <span className="text-[#3A3D41]">—</span>}
+                                 </td>
 
-                                {/* Overhead */}
-                                <td className="p-2.5 text-right text-xs text-amber-400">
-                                  {row.alokasi_overhead > 0 ? idrFmt(row.alokasi_overhead) : <span className="text-[#3A3D41]">—</span>}
-                                </td>
+                                 {/* Biaya Upah */}
+                                 <td className="p-2.5 text-right text-xs text-purple-400">
+                                   {row.biaya_upah > 0 ? idrFmt(row.biaya_upah) : <span className="text-[#3A3D41]">—</span>}
+                                 </td>
 
-                                {/* HPP Aktual Final */}
-                                <td className="p-2.5 text-right">
-                                  <span className="text-xs font-bold text-[#e5c17b]">
-                                    {row.hpp_aktual_final > 0 ? idrFmt(row.hpp_aktual_final) : <span className="text-[#3A3D41]">—</span>}
-                                  </span>
+                                 {/* Overhead */}
+                                 <td className="p-2.5 text-right text-xs text-amber-400">
+                                   {row.overhead > 0 ? idrFmt(row.overhead) : <span className="text-[#3A3D41]">—</span>}
+                                 </td>
+
+                                 {/* HPP Final (total_hpp) */}
+                                 <td className="p-2.5 text-right">
+                                   <span className="text-xs font-bold text-[#e5c17b]">
+                                     {row.total_hpp > 0 ? idrFmt(row.total_hpp) : <span className="text-[#3A3D41]">—</span>}
+                                   </span>
                                   {row.hpp_estimasi > 0 && row.hpp_aktual > 0 && (
                                     <span className={`block text-[9px] font-mono ${
                                       gapEst > 0 ? 'text-red-400' : gapEst < 0 ? 'text-green-400' : 'text-[#5f6368]'
@@ -757,16 +756,19 @@ export default function LaporanPOClient({ initialData, overheadRateInfo }: Props
                               {idrFmt(hppPerSizeData.reduce((s, r) => s + r.hpp_estimasi, 0))}
                             </td>
                             <td className="p-2.5 text-right text-xs font-bold text-blue-400">
-                              {idrFmt(hppPerSizeData.reduce((s, r) => s + r.biaya_bahan, 0))}
+                              {idrFmt(hppPerSizeData.reduce((s, r) => s + r.biaya_kain, 0))}
+                            </td>
+                            <td className="p-2.5 text-right text-xs font-bold text-cyan-400">
+                              {idrFmt(hppPerSizeData.reduce((s, r) => s + r.biaya_aksesori, 0))}
                             </td>
                             <td className="p-2.5 text-right text-xs font-bold text-purple-400">
                               {idrFmt(hppPerSizeData.reduce((s, r) => s + r.biaya_upah, 0))}
                             </td>
                             <td className="p-2.5 text-right text-xs font-bold text-amber-400">
-                              {idrFmt(hppPerSizeData.reduce((s, r) => s + r.alokasi_overhead, 0))}
+                              {idrFmt(hppPerSizeData.reduce((s, r) => s + r.overhead, 0))}
                             </td>
                             <td className="p-2.5 text-right text-xs font-bold text-[#e5c17b]">
-                              {idrFmt(hppPerSizeData.reduce((s, r) => s + r.hpp_aktual_final, 0))}
+                              {idrFmt(hppPerSizeData.reduce((s, r) => s + r.total_hpp, 0))}
                             </td>
                             <td className="p-2.5" />
                             <td className="p-2.5 text-right text-xs font-bold text-[#e8eaed]">
@@ -794,9 +796,11 @@ export default function LaporanPOClient({ initialData, overheadRateInfo }: Props
 
                   {/* Note jika RPC belum ada */}
                   {hppPerSizeData.length > 0 && hppPerSizeData.every(r => r.biaya_bahan === 0 && r.biaya_upah === 0) && (
-                    <div className="mt-3 p-3 rounded-lg bg-amber-900/20 border border-amber-700/30 text-xs text-amber-300">
-                      ⚠ Biaya bahan & upah per size masih 0 — RPC <code className="font-mono">get_biaya_pemakaian_per_po_item</code> dan <code className="font-mono">get_biaya_upah_per_po_item</code> belum dibuat di database.
-                      Halaman ini menampilkan estimasi BOM saja.
+                    <div className="mt-3 p-3 rounded-lg bg-blue-900/20 border border-blue-700/30 text-xs text-blue-300">
+                      ℹ Biaya kain diambil dari <code className="font-mono">pemakaian_bahan</code> (FIFO),
+                      aksesori dari <code className="font-mono">pemakaian_aksesori</code> (harga_referensi),
+                      upah dari <code className="font-mono">gaji_ledger</code>.
+                      Nilai 0 berarti belum ada pemakaian tercatat untuk size tersebut.
                     </div>
                   )}
                 </div>
