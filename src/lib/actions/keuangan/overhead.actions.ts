@@ -14,10 +14,12 @@ export interface OverheadPeriod {
 }
 
 export interface OverheadRateInfo {
-  period: OverheadPeriod | null;
-  total_overhead: number;
+  period           : OverheadPeriod | null;
+  total_overhead   : number;   // OH aktual yang keluar dari kas
   total_qty_shipped: number;
-  overhead_rate: number;
+  overhead_rate    : number;   // total_overhead / total_qty_shipped
+  total_dialokasikan: number;  // rate x sum(qty_shipped per PO) = total yg ditanggung PO
+  selisih          : number;   // total_dialokasikan - total_overhead (+ = over, - = under)
 }
 
 export async function getActivePeriod(): Promise<OverheadPeriod | null> {
@@ -41,22 +43,24 @@ export async function getOverheadRateInfo(): Promise<OverheadRateInfo> {
 
   if (!period) {
     return {
-      period: null,
-      total_overhead: 0,
-      total_qty_shipped: 0,
-      overhead_rate: 0,
+      period            : null,
+      total_overhead    : 0,
+      total_qty_shipped : 0,
+      overhead_rate     : 0,
+      total_dialokasikan: 0,
+      selisih           : 0,
     };
   }
 
   const supabase = await createClient();
 
-  // Total Overhead (buku_kas: tipe='keluar' + komponen_id IS NOT NULL)
+  // Total Overhead aktual dari buku_kas — kategori Biaya Overhead + Biaya Operasional
   const { data: overheadData, error: ohError } = await supabase
     .from('buku_kas')
     .select('nominal')
     .eq('tenant_id', TENANT_ID)
     .eq('tipe', 'keluar')
-    .not('komponen_id', 'is', null)
+    .in('kategori', ['Biaya Overhead', 'Biaya Operasional'])
     .gte('tanggal', period.tanggal_mulai)
     .lte('tanggal', period.tanggal_akhir);
 
@@ -84,13 +88,21 @@ export async function getOverheadRateInfo(): Promise<OverheadRateInfo> {
     return sum + sjItemsSum;
   }, 0);
 
-  const overhead_rate = total_qty_shipped > 0 ? total_overhead / total_qty_shipped : 0;
+  const overhead_rate      = total_qty_shipped > 0 ? total_overhead / total_qty_shipped : 0;
+  // total_dialokasikan = rate x total shipped = sama dengan total_overhead
+  // (karena rate dihitung dari total_overhead/total_shipped).
+  // Nilai ini berguna ketika rate di-round atau ada PO belum shipped,
+  // sehingga total dialokasikan bisa != total aktual.
+  const total_dialokasikan = Math.round(overhead_rate) * total_qty_shipped;
+  const selisih            = total_dialokasikan - total_overhead;
 
   return {
     period,
     total_overhead,
     total_qty_shipped,
     overhead_rate,
+    total_dialokasikan,
+    selisih,
   };
 }
 

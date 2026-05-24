@@ -13,10 +13,8 @@ import {
 import {
   getLaporanPOList,
   getPOHPPDetail,
-  getPOHPPPerSizeResult,
   type POLaporanItem,
   type POHPPDetail,
-  type HPPPerSizeResult,
 } from '@/lib/actions/keuangan/laporan-po.actions';
 import { type OverheadRateInfo } from '@/lib/actions/keuangan/overhead.actions';
 
@@ -129,9 +127,6 @@ export default function LaporanPOClient({ initialData, overheadRateInfo }: Props
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailData, setDetailData] = useState<POHPPDetail | null>(null);
   const [detailPO, setDetailPO] = useState<POLaporanItem | null>(null);
-  const [activeDetailTab, setActiveDetailTab] = useState<'ringkasan' | 'jurnal' | 'hpp-size'>('ringkasan');
-  const [hppPerSizeData, setHppPerSizeData] = useState<HPPPerSizeResult | null>(null);
-  const [isLoadingHpp, setIsLoadingHpp] = useState(false);
 
   // ─── SUMMARY ───────────────────────────────────────────────────────────
   const totalEstimasi = data.reduce((s, p) => s + p.hpp_estimasi, 0);
@@ -214,8 +209,6 @@ export default function LaporanPOClient({ initialData, overheadRateInfo }: Props
   const handleOpenDetail = async (po: POLaporanItem) => {
     setDetailPO(po);
     setDetailData(null);
-    setHppPerSizeData(null);
-    setActiveDetailTab('ringkasan');
     setDetailOpen(true);
     setDetailLoading(true);
     try {
@@ -229,72 +222,28 @@ export default function LaporanPOClient({ initialData, overheadRateInfo }: Props
     }
   };
 
-  async function handleHppTabClick() {
-    setActiveDetailTab('hpp-size');
-    if (!hppPerSizeData && detailPO) {
-      setIsLoadingHpp(true);
-      try {
-        const data = await getPOHPPPerSizeResult(detailPO.po_id);
-        setHppPerSizeData(data);
-      } catch {
-        toast.error('Gagal memuat HPP per size');
-      } finally {
-        setIsLoadingHpp(false);
-      }
-    }
-  }
-
   // ─── RENDER ────────────────────────────────────────────────────────────
   return (
     <div className="space-y-6">
 
-      {/* Info Bar Overhead + Rekonsiliasi */}
+      {/* Info Bar Overhead */}
       {overheadRateInfo.period ? (
-        <div className="rounded-xl bg-amber-500/10 border border-amber-500/20 overflow-hidden">
-          {/* Baris atas: rate & periode */}
-          <div className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-2 border-b border-amber-500/20">
-            <div>
-              <p className="text-sm font-bold text-amber-400">
-                Overhead Rate: {idrFmt(Math.round(overheadRateInfo.overhead_rate))} / pcs
-              </p>
-              <p className="text-xs text-amber-400/80 mt-1">
-                Periode: {overheadRateInfo.period.label} ({dateFmt(overheadRateInfo.period.tanggal_mulai)} s/d {dateFmt(overheadRateInfo.period.tanggal_akhir)})
-              </p>
-            </div>
-            <div className="text-left md:text-right">
-              <p className="text-xs font-mono text-amber-400/80">
-                Total Shipped: {overheadRateInfo.total_qty_shipped.toLocaleString('id-ID')} pcs
-              </p>
-            </div>
+        <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 flex flex-col md:flex-row md:items-center justify-between gap-2">
+          <div>
+            <p className="text-sm font-bold text-amber-400">
+              Overhead Rate: {idrFmt(overheadRateInfo.overhead_rate)} / pcs
+            </p>
+            <p className="text-xs text-amber-400/80 mt-1">
+              Periode: {overheadRateInfo.period.label} ({dateFmt(overheadRateInfo.period.tanggal_mulai)} s/d {dateFmt(overheadRateInfo.period.tanggal_akhir)})
+            </p>
           </div>
-          {/* Rekonsiliasi overhead */}
-          <div className="px-4 py-3 grid grid-cols-3 gap-4">
-            <div>
-              <p className="text-[10px] uppercase tracking-widest text-amber-400/60 font-bold mb-1">OH Aktual Keluar</p>
-              <p className="text-sm font-bold text-amber-400">{idrFmt(overheadRateInfo.total_overhead)}</p>
-              <p className="text-[10px] text-amber-400/60">dari buku kas</p>
-            </div>
-            <div>
-              <p className="text-[10px] uppercase tracking-widest text-amber-400/60 font-bold mb-1">Total Dialokasikan ke PO</p>
-              <p className="text-sm font-bold text-amber-400">{idrFmt(overheadRateInfo.total_dialokasikan)}</p>
-              <p className="text-[10px] text-amber-400/60">rate x qty shipped</p>
-            </div>
-            <div>
-              <p className="text-[10px] uppercase tracking-widest font-bold mb-1 text-amber-400/60">Selisih</p>
-              {overheadRateInfo.selisih === 0 ? (
-                <p className="text-sm font-bold text-green-400">Rp 0 — Pas</p>
-              ) : overheadRateInfo.selisih > 0 ? (
-                <>
-                  <p className="text-sm font-bold text-green-400">+{idrFmt(overheadRateInfo.selisih)}</p>
-                  <p className="text-[10px] text-green-400/70">over absorbed — rate sedikit tinggi</p>
-                </>
-              ) : (
-                <>
-                  <p className="text-sm font-bold text-red-400">{idrFmt(overheadRateInfo.selisih)}</p>
-                  <p className="text-[10px] text-red-400/70">under absorbed — ada OH belum ter-cover</p>
-                </>
-              )}
-            </div>
+          <div className="text-left md:text-right">
+            <p className="text-xs font-mono text-amber-400/80">
+              Total Overhead: {idrFmt(overheadRateInfo.total_overhead)}
+            </p>
+            <p className="text-xs font-mono text-amber-400/80">
+              Total Shipped: {overheadRateInfo.total_qty_shipped.toLocaleString('id-ID')} pcs
+            </p>
           </div>
         </div>
       ) : (
@@ -514,7 +463,7 @@ export default function LaporanPOClient({ initialData, overheadRateInfo }: Props
 
       {/* ─── MODAL DETAIL ──────────────────────────────────────────────────── */}
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
-        <DialogContent className="bg-[#16181A] border-[#2A2D31] text-[#e8eaed] sm:max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="bg-[#16181A] border-[#2A2D31] text-[#e8eaed] sm:max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <span className="font-mono text-[#e5c17b]">{detailPO?.no_po}</span>
@@ -528,240 +477,122 @@ export default function LaporanPOClient({ initialData, overheadRateInfo }: Props
               <span className="ml-2 text-sm text-[#9aa0a6]">Memuat detail HPP...</span>
             </div>
           ) : detailData ? (
-            <div className="space-y-4 py-2">
+            <div className="space-y-6 py-2">
 
-              {/* ── Tab Bar ── */}
-              <div className="flex border-b border-[#3a3d41] mb-1">
+              {/* Totals Bar */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 {[
-                  { key: 'ringkasan', label: 'Ringkasan' },
-                  { key: 'jurnal',    label: 'Jurnal Aktual' },
-                  { key: 'hpp-size',  label: 'HPP per Size' },
-                ].map(tab => (
-                  <button
-                    key={tab.key}
-                    onClick={() =>
-                      tab.key === 'hpp-size'
-                        ? handleHppTabClick()
-                        : setActiveDetailTab(tab.key as 'ringkasan' | 'jurnal')
-                    }
-                    className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${
-                      activeDetailTab === tab.key
-                        ? 'border-[#e5c17b] text-[#e5c17b]'
-                        : 'border-transparent text-[#9aa0a6] hover:text-[#e8eaed]'
-                    }`}
-                  >
-                    {tab.label}
-                  </button>
+                  { label: 'HPP Estimasi', value: idrFmt(detailData.totals.hpp_estimasi), color: 'text-[#e8eaed]' },
+                  { label: 'Biaya Bahan', value: idrFmt(detailData.totals.biaya_bahan), color: 'text-blue-400' },
+                  { label: 'Biaya Upah', value: idrFmt(detailData.totals.biaya_upah), color: 'text-purple-400' },
+                  { label: 'Alokasi Overhead', value: idrFmt(detailData.totals.alokasi_overhead), color: 'text-amber-400' },
+                  { label: 'HPP Aktual (Direct)', value: idrFmt(detailData.totals.hpp_aktual), color: 'text-[#e8eaed]' },
+                  { label: 'HPP Aktual Final', value: idrFmt(detailData.totals.hpp_aktual_final), color: 'text-[#e5c17b]' },
+                  {
+                    label: 'Gap',
+                    value: (detailData.totals.gap > 0 ? '+' : '') + idrFmt(detailData.totals.gap),
+                    color: detailData.totals.gap > 0 ? 'text-red-400' : detailData.totals.gap < 0 ? 'text-green-400' : 'text-[#9aa0a6]'
+                  },
+                ].map(c => (
+                  <div key={c.label} className="p-3 rounded-lg bg-[#1A1D1F] border border-[#2A2D31]">
+                    <p className="text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold mb-1">{c.label}</p>
+                    <p className={`text-sm font-bold ${c.color}`}>{c.value}</p>
+                  </div>
                 ))}
               </div>
 
-              {/* ── TAB 1: RINGKASAN ── */}
-              {activeDetailTab === 'ringkasan' && (
-                <div className="space-y-4">
-                  {/* Totals cards */}
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    {[
-                      { label: 'HPP Estimasi',       value: idrFmt(detailData.totals.hpp_estimasi),    color: 'text-[#e8eaed]' },
-                      { label: 'Biaya Bahan',         value: idrFmt(detailData.totals.biaya_bahan),     color: 'text-blue-400' },
-                      { label: 'Biaya Upah',           value: idrFmt(detailData.totals.biaya_upah),      color: 'text-purple-400' },
-                      { label: 'Alokasi Overhead',    value: idrFmt(detailData.totals.alokasi_overhead),color: 'text-amber-400' },
-                      { label: 'HPP Aktual (Direct)', value: idrFmt(detailData.totals.hpp_aktual),      color: 'text-[#e8eaed]' },
-                      { label: 'HPP Aktual Final',    value: idrFmt(detailData.totals.hpp_aktual_final),color: 'text-[#e5c17b]' },
-                      {
-                        label: 'Gap',
-                        value: (detailData.totals.gap > 0 ? '+' : '') + idrFmt(detailData.totals.gap),
-                        color: detailData.totals.gap > 0 ? 'text-red-400' : detailData.totals.gap < 0 ? 'text-green-400' : 'text-[#9aa0a6]'
-                      },
-                    ].map(c => (
-                      <div key={c.label} className="p-3 rounded-lg bg-[#1A1D1F] border border-[#2A2D31]">
-                        <p className="text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold mb-1">{c.label}</p>
-                        <p className={`text-sm font-bold ${c.color}`}>{c.value}</p>
-                      </div>
-                    ))}
+              {/* Section 1: Estimasi Breakdown */}
+              {detailData.estimasi_breakdown.length > 0 && (
+                <div>
+                  <h3 className="text-xs font-bold text-[#9aa0a6] uppercase tracking-widest mb-2">
+                    Breakdown Estimasi (BOM)
+                  </h3>
+                  <div className="rounded-lg border border-[#2A2D31] overflow-hidden">
+                    <table className="w-full text-sm">
+                      <thead className="bg-[#1A1C1E]">
+                        <tr>
+                          <th className="text-left p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider">Komponen</th>
+                          <th className="text-left p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider">Kategori</th>
+                          <th className="text-left p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider">Detail</th>
+                          <th className="text-right p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {detailData.estimasi_breakdown.map((row, i) => (
+                          <tr key={i} className="border-t border-[#2A2D31]">
+                            <td className="p-2.5 text-[#e8eaed]">{row.nama_komponen}</td>
+                            <td className="p-2.5 text-[#9aa0a6] text-xs capitalize">{row.kategori}</td>
+                            <td className="p-2.5 text-[#9aa0a6] text-xs whitespace-nowrap">
+                              {row.qty_order} pcs × @{idrFmt(row.harga_per_unit)}
+                            </td>
+                            <td className="p-2.5 text-right text-[#e8eaed]">{idrFmt(row.total)}</td>
+                          </tr>
+                        ))}
+                        <tr className="border-t-2 border-[#2A2D31] bg-[#1A1C1E]">
+                          <td colSpan={3} className="p-2.5 font-bold text-[#9aa0a6] text-xs uppercase">Total Estimasi</td>
+                          <td className="p-2.5 text-right font-bold text-[#e8eaed]">{idrFmt(detailData.totals.hpp_estimasi)}</td>
+                        </tr>
+                      </tbody>
+                    </table>
                   </div>
-
-                  {/* BOM Estimasi Breakdown */}
-                  {detailData.estimasi_breakdown.length > 0 && (
-                    <div>
-                      <h3 className="text-xs font-bold text-[#9aa0a6] uppercase tracking-widest mb-2">Breakdown Estimasi (BOM)</h3>
-                      <div className="rounded-lg border border-[#2A2D31] overflow-hidden">
-                        <table className="w-full text-sm">
-                          <thead className="bg-[#1A1C1E]">
-                            <tr>
-                              <th className="text-left p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider">Komponen</th>
-                              <th className="text-left p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider">Kategori</th>
-                              <th className="text-left p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider">Detail</th>
-                              <th className="text-right p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider">Total</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {detailData.estimasi_breakdown.map((row, i) => (
-                              <tr key={i} className="border-t border-[#2A2D31]">
-                                <td className="p-2.5 text-[#e8eaed]">{row.nama_komponen}</td>
-                                <td className="p-2.5 text-[#9aa0a6] text-xs capitalize">{row.kategori}</td>
-                                <td className="p-2.5 text-[#9aa0a6] text-xs whitespace-nowrap">
-                                  {row.qty_order} pcs × @{idrFmt(row.harga_per_unit)}
-                                </td>
-                                <td className="p-2.5 text-right text-[#e8eaed]">{idrFmt(row.total)}</td>
-                              </tr>
-                            ))}
-                            <tr className="border-t-2 border-[#2A2D31] bg-[#1A1C1E]">
-                              <td colSpan={3} className="p-2.5 font-bold text-[#9aa0a6] text-xs uppercase">Total Estimasi</td>
-                              <td className="p-2.5 text-right font-bold text-[#e8eaed]">{idrFmt(detailData.totals.hpp_estimasi)}</td>
-                            </tr>
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  )}
                 </div>
               )}
 
-              {/* ── TAB 2: JURNAL AKTUAL ── */}
-              {activeDetailTab === 'jurnal' && (
-                <div>
-                  {detailData.aktual_breakdown.length === 0 ? (
-                    <div className="p-8 rounded-lg border border-[#2A2D31] text-center text-[#5f6368] text-sm">
-                      Belum ada biaya tercatat untuk PO ini
-                    </div>
-                  ) : (
-                    <div className="rounded-lg border border-[#2A2D31] overflow-hidden">
-                      <table className="w-full text-sm">
-                        <thead className="bg-[#1A1C1E]">
-                          <tr>
-                            <th className="text-left p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider">Tanggal</th>
-                            <th className="text-left p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider">Keterangan</th>
-                            <th className="text-left p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider">Jenis</th>
-                            <th className="text-right p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider">Nominal (PO ini)</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {detailData.aktual_breakdown.map((row, i) => (
-                            <tr key={i} className="border-t border-[#2A2D31] hover:bg-[#1A1C1E]/50">
-                              <td className="p-2.5 text-[#9aa0a6] whitespace-nowrap text-xs">{dateFmt(row.tanggal)}</td>
-                              <td className="p-2.5 text-[#e8eaed] max-w-[220px]">
-                                <span className="truncate block">{row.keterangan}</span>
-                                {row.nominal_penuh !== row.nominal_po && (
-                                  <span className="text-[10px] text-[#5f6368] block">
-                                    dari {idrFmt(row.nominal_penuh)} ÷ {Math.round(row.nominal_penuh / row.nominal_po)} PO
-                                  </span>
-                                )}
-                              </td>
-                              <td className="p-2.5">
-                                <span className={`text-xs px-2 py-0.5 rounded border ${
-                                  row.jenis === 'overhead'
-                                    ? 'bg-amber-500/15 text-amber-400 border-amber-500/30'
-                                    : 'bg-[#2A2D31] text-[#9aa0a6] border-[#3A3D41]'
-                                }`}>
-                                  {JENIS_LABEL[row.jenis] ?? row.jenis}
+              {/* Section 2: Aktual Breakdown */}
+              <div>
+                <h3 className="text-xs font-bold text-[#9aa0a6] uppercase tracking-widest mb-2">
+                  Jurnal Aktual yang Dibebankan
+                </h3>
+                {detailData.aktual_breakdown.length === 0 ? (
+                  <div className="p-4 rounded-lg border border-[#2A2D31] text-center text-[#5f6368] text-sm">
+                    Belum ada biaya tercatat untuk PO ini
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-[#2A2D31] overflow-hidden">
+                    <table className="w-full text-sm">
+                      <thead className="bg-[#1A1C1E]">
+                        <tr>
+                          <th className="text-left p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider">Tanggal</th>
+                          <th className="text-left p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider">Keterangan</th>
+                          <th className="text-left p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider">Jenis</th>
+                          <th className="text-right p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider">Nominal (PO ini)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {detailData.aktual_breakdown.map((row, i) => (
+                          <tr key={i} className="border-t border-[#2A2D31] hover:bg-[#1A1C1E]/50">
+                            <td className="p-2.5 text-[#9aa0a6] whitespace-nowrap text-xs">{dateFmt(row.tanggal)}</td>
+                            <td className="p-2.5 text-[#e8eaed] max-w-[200px]">
+                              <span className="truncate block">{row.keterangan}</span>
+                              {row.nominal_penuh !== row.nominal_po && (
+                                <span className="text-[10px] text-[#5f6368] block">
+                                  dari {idrFmt(row.nominal_penuh)} ÷ {Math.round(row.nominal_penuh / row.nominal_po)} PO
                                 </span>
-                              </td>
-                              <td className="p-2.5 text-right font-semibold text-[#e8eaed]">
-                                {idrFmt(row.nominal_po)}
-                              </td>
-                            </tr>
-                          ))}
-                          <tr className="border-t-2 border-[#2A2D31] bg-[#1A1C1E]">
-                            <td colSpan={3} className="p-2.5 font-bold text-[#9aa0a6] text-xs uppercase">Total Aktual (incl. Overhead)</td>
-                            <td className="p-2.5 text-right font-bold text-[#e5c17b]">{idrFmt(detailData.totals.hpp_aktual_final)}</td>
+                              )}
+                            </td>
+                            <td className="p-2.5">
+                              <span className={`text-xs px-2 py-0.5 rounded border ${
+                                row.jenis === 'overhead'
+                                  ? 'bg-amber-500/15 text-amber-400 border-amber-500/30'
+                                  : 'bg-[#2A2D31] text-[#9aa0a6] border-[#3A3D41]'
+                              }`}>
+                                {JENIS_LABEL[row.jenis] ?? row.jenis}
+                              </span>
+                            </td>
+                            <td className="p-2.5 text-right font-semibold text-[#e8eaed]">
+                              {idrFmt(row.nominal_po)}
+                            </td>
                           </tr>
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* ── TAB 3: HPP PER SIZE ── */}
-              {activeDetailTab === 'hpp-size' && (
-                <div>
-                  {isLoadingHpp ? (
-                    <div className="flex justify-center py-12">
-                      <span className="text-[#9aa0a6] text-sm">Memuat data HPP...</span>
-                    </div>
-                  ) : hppPerSizeData ? (
-                    <>
-                      {/* Overhead rate info */}
-                      <div className="mb-4 px-3 py-2 rounded-lg bg-[#2A2D31] border border-[#3a3d41] text-xs text-[#9aa0a6]">
-                        Overhead rate aktual: <span className="text-[#e5c17b] font-semibold">
-                          {idrFmt(hppPerSizeData.overhead_rate_per_pcs)}/pcs
-                        </span>
-                      </div>
-
-                      {/* Table */}
-                      <div className="overflow-x-auto rounded-xl border border-[#3a3d41]">
-                        <table className="w-full text-[13px]">
-                          <thead>
-                            <tr className="bg-[#2A2D31]">
-                              <th className="px-4 py-3 text-left text-[11px] font-semibold text-[#9aa0a6] uppercase">Warna</th>
-                              <th className="px-4 py-3 text-center text-[11px] font-semibold text-[#9aa0a6] uppercase">Size</th>
-                              <th className="px-4 py-3 text-right text-[11px] font-semibold text-[#9aa0a6] uppercase">Qty</th>
-                              <th className="px-4 py-3 text-right text-[11px] font-semibold text-[#9aa0a6] uppercase">Biaya Kain</th>
-                              <th className="px-4 py-3 text-right text-[11px] font-semibold text-[#9aa0a6] uppercase">Aksesori</th>
-                              <th className="px-4 py-3 text-right text-[11px] font-semibold text-[#9aa0a6] uppercase">Upah</th>
-                              <th className="px-4 py-3 text-right text-[11px] font-semibold text-[#9aa0a6] uppercase">Overhead</th>
-                              <th className="px-4 py-3 text-right text-[11px] font-semibold text-[#9aa0a6] uppercase">Total HPP</th>
-                              <th className="px-4 py-3 text-right text-[11px] font-semibold text-[#e5c17b] uppercase">HPP/pcs</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-[#3a3d41]">
-                            {hppPerSizeData.rows.map((row, i) => (
-                              <tr key={i} className="hover:bg-[#2A2D31]/50 transition-colors">
-                                <td className="px-4 py-2.5 text-[#e8eaed] font-medium">{row.warna}</td>
-                                <td className="px-4 py-2.5 text-center text-[#e8eaed]">{row.size}</td>
-                                <td className="px-4 py-2.5 text-right text-[#9aa0a6]">{row.qty.toLocaleString('id-ID')}</td>
-                                <td className="px-4 py-2.5 text-right text-[#e8eaed]">{idrFmt(Math.round(row.biaya_kain))}</td>
-                                <td className="px-4 py-2.5 text-right text-[#e8eaed]">{idrFmt(Math.round(row.biaya_aksesori))}</td>
-                                <td className="px-4 py-2.5 text-right text-[#e8eaed]">{idrFmt(Math.round(row.biaya_upah))}</td>
-                                <td className="px-4 py-2.5 text-right text-[#9aa0a6]">{idrFmt(Math.round(row.overhead))}</td>
-                                <td className="px-4 py-2.5 text-right font-semibold text-[#e8eaed]">{idrFmt(Math.round(row.total_hpp))}</td>
-                                <td className="px-4 py-2.5 text-right font-bold text-[#e5c17b]">{idrFmt(Math.round(row.hpp_per_pcs))}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                          {/* Total row */}
-                          <tfoot>
-                            <tr className="bg-[#2A2D31] border-t-2 border-[#3a3d41]">
-                              <td colSpan={2} className="px-4 py-3 text-[12px] font-bold text-[#e8eaed]">TOTAL</td>
-                              <td className="px-4 py-3 text-right text-[12px] font-bold text-[#e8eaed]">
-                                {hppPerSizeData.rows.reduce((s, r) => s + r.qty, 0).toLocaleString('id-ID')}
-                              </td>
-                              <td className="px-4 py-3 text-right text-[12px] font-bold text-[#e8eaed]">
-                                {idrFmt(Math.round(hppPerSizeData.rows.reduce((s, r) => s + r.biaya_kain, 0)))}
-                              </td>
-                              <td className="px-4 py-3 text-right text-[12px] font-bold text-[#e8eaed]">
-                                {idrFmt(Math.round(hppPerSizeData.rows.reduce((s, r) => s + r.biaya_aksesori, 0)))}
-                              </td>
-                              <td className="px-4 py-3 text-right text-[12px] font-bold text-[#e8eaed]">
-                                {idrFmt(Math.round(hppPerSizeData.rows.reduce((s, r) => s + r.biaya_upah, 0)))}
-                              </td>
-                              <td className="px-4 py-3 text-right text-[12px] font-bold text-[#9aa0a6]">
-                                {idrFmt(Math.round(hppPerSizeData.rows.reduce((s, r) => s + r.overhead, 0)))}
-                              </td>
-                              <td className="px-4 py-3 text-right text-[12px] font-bold text-[#e8eaed]">
-                                {idrFmt(Math.round(hppPerSizeData.rows.reduce((s, r) => s + r.total_hpp, 0)))}
-                              </td>
-                              <td className="px-4 py-3 text-right text-[12px] font-bold text-[#e5c17b]">—</td>
-                            </tr>
-                          </tfoot>
-                        </table>
-                      </div>
-
-                      {/* Note jika RPC belum ada */}
-                      {hppPerSizeData.rows.length > 0 && hppPerSizeData.rows.every(r => r.biaya_kain === 0 && r.biaya_aksesori === 0 && r.biaya_upah === 0) && (
-                        <div className="mt-4 p-3 rounded-lg bg-blue-900/20 border border-blue-700/30 text-xs text-blue-300">
-                          ℹ Biaya kain diambil dari <code className="font-mono">pemakaian_bahan</code> (FIFO),
-                          aksesori dari <code className="font-mono">pemakaian_aksesori</code> (harga_referensi),
-                          upah dari <code className="font-mono">gaji_ledger</code>.
-                          Nilai 0 berarti belum ada pemakaian tercatat untuk size tersebut.
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <p className="text-center text-[#9aa0a6] text-sm py-12">Tidak ada data HPP</p>
-                  )}
-                </div>
-              )}
+                        ))}
+                        <tr className="border-t-2 border-[#2A2D31] bg-[#1A1C1E]">
+                          <td colSpan={3} className="p-2.5 font-bold text-[#9aa0a6] text-xs uppercase">Total Aktual (incl. Overhead)</td>
+                          <td className="p-2.5 text-right font-bold text-[#e5c17b]">{idrFmt(detailData.totals.hpp_aktual_final)}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
 
             </div>
           ) : null}
