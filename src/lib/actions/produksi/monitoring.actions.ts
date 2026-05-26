@@ -183,7 +183,9 @@ export async function getPoGrouped(): Promise<PoGrouped> {
 }
 
 /**
- * Mengambil data monitoring per artikel (po_item) untuk seluruh PO aktif.
+ * Mengambil data monitoring per artikel, dikelompokkan berdasarkan
+ * (no_po + model + warna + size) sehingga banyak po_item dengan
+ * kombinasi yang sama tampil sebagai satu baris teragregasi.
  */
 export async function getMonitoringPerArtikel(): Promise<ArtikelRow[]> {
   const profile = await getCurrentUserProfile();
@@ -197,12 +199,13 @@ export async function getMonitoringPerArtikel(): Promise<ArtikelRow[]> {
     .select(`
       id, warna, size, qty_order,
       po:po_id(
+        id,
         no_po,
         status,
         klien:klien_id(nama)
       ),
       produk:produk_id(
-        model:model_id(nama)
+        model:model_id(id, nama)
       ),
       bundle(
         id,
@@ -214,18 +217,55 @@ export async function getMonitoringPerArtikel(): Promise<ArtikelRow[]> {
 
   if (error) throw new Error(`Gagal ambil data monitoring artikel: ${error.message}`);
 
-  // Tapis data yang po-nya aktif
-  const filteredData = (data as any[]).filter(item => item.po !== null && item.po.status === 'aktif');
+  // Tapis hanya PO aktif
+  const filteredData = (data as any[]).filter(
+    item => item.po !== null && item.po.status === 'aktif'
+  );
 
-  const result: ArtikelRow[] = filteredData.map((item) => {
-    const total_bundle = item.bundle?.length ?? 0;
+  // Group by (po_id + model_id + warna + size)
+  const groupMap: Record<string, {
+    id: string;
+    no_po: string;
+    klien_nama: string;
+    model_nama: string;
+    warna: string;
+    size: string;
+    qty_order: number;
+    bundles: any[];
+  }> = {};
+
+  filteredData.forEach((item) => {
+    const po_id    = item.po?.id ?? '';
+    const model_id = item.produk?.model?.id ?? '';
+    const key      = `${po_id}|${model_id}|${item.warna}|${item.size}`;
+
+    if (!groupMap[key]) {
+      groupMap[key] = {
+        id        : key,
+        no_po     : item.po.no_po,
+        klien_nama: item.po.klien?.nama ?? '-',
+        model_nama: item.produk?.model?.nama ?? '-',
+        warna     : item.warna,
+        size      : item.size,
+        qty_order : 0,
+        bundles   : [],
+      };
+    }
+
+    groupMap[key].qty_order += Number(item.qty_order ?? 0);
+    groupMap[key].bundles.push(...(item.bundle ?? []));
+  });
+
+  // Build ArtikelRow dari setiap group
+  const result: ArtikelRow[] = Object.values(groupMap).map((group) => {
+    const total_bundle = group.bundles.length;
     const progress: Record<string, { done: number; total: number; pct: number }> = {};
 
     STAGES.forEach(s => {
       progress[s] = { done: 0, total: total_bundle, pct: 0 };
     });
 
-    item.bundle?.forEach((b: any) => {
+    group.bundles.forEach((b: any) => {
       const logs = b.scan_log || [];
       STAGES.forEach(stage => {
         let isDone: boolean;
@@ -246,17 +286,25 @@ export async function getMonitoringPerArtikel(): Promise<ArtikelRow[]> {
     });
 
     return {
-      id: item.id,
-      no_po: item.po.no_po,
-      klien_nama: item.po.klien?.nama ?? '-',
-      model_nama: item.produk?.model?.nama ?? '-',
-      warna: item.warna,
-      size: item.size,
-      qty_order: item.qty_order,
+      id         : group.id,
+      no_po      : group.no_po,
+      klien_nama : group.klien_nama,
+      model_nama : group.model_nama,
+      warna      : group.warna,
+      size       : group.size,
+      qty_order  : group.qty_order,
       total_bundle,
-      progress
+      progress,
     };
   });
+
+  // Urutkan: no_po asc, model asc, warna asc, size asc
+  result.sort((a, b) =>
+    a.no_po.localeCompare(b.no_po) ||
+    a.model_nama.localeCompare(b.model_nama) ||
+    a.warna.localeCompare(b.warna) ||
+    a.size.localeCompare(b.size)
+  );
 
   return result;
 }
@@ -284,13 +332,13 @@ export async function getMonitoringWarnings(thresholdHours: number): Promise<War
 
   if (error) throw new Error(`Gagal ambil logs for warnings: ${error.message}`);
 
-  const logs = (data as any[]).filter(l => 
-    l.bundle !== null && 
-    l.bundle.po !== null && 
-    l.bundle.po.status !== 'dibatalkan' && 
+  const logs = (data as any[]).filter(l =>
+    l.bundle !== null &&
+    l.bundle.po !== null &&
+    l.bundle.po.status !== 'dibatalkan' &&
     l.bundle.po.status !== 'selesai'
   );
-  
+
   // 2. Identify stuck bundles
   const result: WarningRow[] = [];
   const now = new Date();
