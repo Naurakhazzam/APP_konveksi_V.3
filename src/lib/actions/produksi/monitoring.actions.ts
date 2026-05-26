@@ -109,7 +109,7 @@ export async function getPoGrouped(): Promise<PoGrouped> {
 
   const supabase = await createClient();
 
-  // Fetch PO aktif + bundle + scan_log
+  // Fetch PO aktif + bundle + scan_log + status_tahap
   const { data, error } = await supabase
     .from('po')
     .select(`
@@ -117,6 +117,7 @@ export async function getPoGrouped(): Promise<PoGrouped> {
       klien:klien_id(nama),
       bundle(
         id,
+        status_tahap,
         scan_log(tahap, tipe)
       )
     `)
@@ -132,7 +133,7 @@ export async function getPoGrouped(): Promise<PoGrouped> {
   (data as any[]).forEach((po) => {
     const total_bundle = po.bundle?.length ?? 0;
     const progress: Record<string, { done: number; total: number }> = {};
-    
+
     // Initialize progress for all stages
     STAGES.forEach(s => progress[s] = { done: 0, total: total_bundle });
 
@@ -144,8 +145,15 @@ export async function getPoGrouped(): Promise<PoGrouped> {
       if (logs.length > 0) hasAnyScan = true;
 
       // Check per stage completion for this bundle
+      // Cutting: stored in status_tahap JSONB, not scan_log
       STAGES.forEach(stage => {
-        const isDone = logs.some((l: any) => l.tahap === stage && l.tipe === 'selesai');
+        let isDone: boolean;
+        if (stage === 'cutting') {
+          isDone = b.status_tahap?.cutting?.status === 'selesai';
+          if (isDone) hasAnyScan = true; // cutting selesai = sudah mulai
+        } else {
+          isDone = logs.some((l: any) => l.tahap === stage && l.tipe === 'selesai');
+        }
         if (isDone) progress[stage].done++;
       });
 
@@ -198,6 +206,7 @@ export async function getMonitoringPerArtikel(): Promise<ArtikelRow[]> {
       ),
       bundle(
         id,
+        status_tahap,
         scan_log(tahap, tipe)
       )
     `)
@@ -219,7 +228,12 @@ export async function getMonitoringPerArtikel(): Promise<ArtikelRow[]> {
     item.bundle?.forEach((b: any) => {
       const logs = b.scan_log || [];
       STAGES.forEach(stage => {
-        const isDone = logs.some((l: any) => l.tahap === stage && l.tipe === 'selesai');
+        let isDone: boolean;
+        if (stage === 'cutting') {
+          isDone = b.status_tahap?.cutting?.status === 'selesai';
+        } else {
+          isDone = logs.some((l: any) => l.tahap === stage && l.tipe === 'selesai');
+        }
         if (isDone) progress[stage].done++;
       });
     });
