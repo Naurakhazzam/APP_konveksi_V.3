@@ -70,12 +70,14 @@ function flattenBundle(raw: RawSupabaseBundle): AntrianBundle {
 }
 
 /**
- * Fetch data bundle untuk Antrian Cutting (status null) 
- * dan Proses Cutting (status 'terima')
+ * Fetch data bundle untuk Antrian Cutting (status null),
+ * Proses Cutting (status 'terima'), dan Selesai Cutting (status 'selesai'/'partial').
+ * Bundle selesai/partial diikutkan agar print SPK/Label/Kartu bisa reprint.
  */
 export async function getAntrianData(): Promise<{
   antrian: AntrianBundle[];
   dipotong: AntrianBundle[];
+  selesai: AntrianBundle[];
 }> {
   const supabase = await createClient();
 
@@ -111,7 +113,7 @@ export async function getAntrianData(): Promise<{
     .filter(b => !b.status_tahap || b.status_tahap['cutting'] == null)
     .map(flattenBundle);
 
-  // Filter 2: Sedang Dipotong - status_tahap['cutting']['status'] === 'terima'
+  // Filter 2: Sedang Dipotong - cutting.status === 'terima'
   const dipotong = rawBundles
     .filter(b => {
       const cutting = b.status_tahap?.['cutting'] as Record<string, unknown> | undefined;
@@ -119,5 +121,13 @@ export async function getAntrianData(): Promise<{
     })
     .map(flattenBundle);
 
-  return { antrian, dipotong };
+  // Filter 3: Selesai/Partial — untuk keperluan reprint SPK/Label/Kartu
+  const selesai = rawBundles
+    .filter(b => {
+      const cutting = b.status_tahap?.['cutting'] as Record<string, unknown> | undefined;
+      return cutting?.status === 'selesai' || cutting?.status === 'partial';
+    })
+    .map(flattenBundle);
+
+  return { antrian, dipotong, selesai };
 }

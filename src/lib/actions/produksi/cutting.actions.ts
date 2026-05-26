@@ -157,8 +157,8 @@ export async function getPOCuttingList(): Promise<POCuttingItem[]> {
       allNull     ? 'menunggu' :
       'progress'; // ada yang selesai sebagian → masih progress
 
-    // Lewati PO yang sudah selesai
-    if (status === 'selesai') continue;
+    // PO selesai tetap disertakan untuk keperluan reprint SPK/Label/Kartu
+    // if (status === 'selesai') continue;
 
     const startBundle = bundles.find(b => b.status_tahap?.cutting?.start_time);
     const start_time = startBundle?.status_tahap?.cutting?.start_time ?? null;

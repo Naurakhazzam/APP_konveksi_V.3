@@ -170,8 +170,8 @@ export default function AntrianCuttingClient({ poList }: Props) {
   const handleCetakSPK = async () => {
     setIsLoadingPrint(true);
     try {
-      const { antrian, dipotong } = await getAntrianData();
-      const allBundles = [...antrian, ...dipotong];
+      const { antrian, dipotong, selesai } = await getAntrianData();
+      const allBundles = [...antrian, ...dipotong, ...selesai];
       const filtered = allBundles.filter(b => selectedPoIds.has(b.po_id));
       if (!filtered.length) { toast.error('Tidak ada bundle ditemukan untuk PO terpilih'); return; }
       setSpkBundles(filtered);
@@ -186,8 +186,8 @@ export default function AntrianCuttingClient({ poList }: Props) {
   const handleCetakLabel = async () => {
     setIsLoadingPrint(true);
     try {
-      const { antrian, dipotong } = await getAntrianData();
-      const allBundles = [...antrian, ...dipotong];
+      const { antrian, dipotong, selesai } = await getAntrianData();
+      const allBundles = [...antrian, ...dipotong, ...selesai];
       const filtered = allBundles.filter(b => selectedPoIds.has(b.po_id));
       if (!filtered.length) { toast.error('Tidak ada bundle ditemukan untuk PO terpilih'); return; }
       setSpkBundles(filtered);
@@ -202,8 +202,8 @@ export default function AntrianCuttingClient({ poList }: Props) {
   const handleCetakKartu = async () => {
     setIsLoadingPrint(true);
     try {
-      const { antrian, dipotong } = await getAntrianData();
-      const allBundles = [...antrian, ...dipotong];
+      const { antrian, dipotong, selesai } = await getAntrianData();
+      const allBundles = [...antrian, ...dipotong, ...selesai];
       const filtered = allBundles.filter(b => selectedPoIds.has(b.po_id));
       if (!filtered.length) { toast.error('Tidak ada bundle ditemukan untuk PO terpilih'); return; }
 
@@ -292,7 +292,7 @@ export default function AntrianCuttingClient({ poList }: Props) {
             </button>
           )}
 
-          {!isSelesaiTab && (
+          {!isPendingTab && (
             <>
               <button
                 disabled={!hasSelection || isLoadingPrint}
@@ -336,7 +336,7 @@ export default function AntrianCuttingClient({ poList }: Props) {
         <table className="w-full text-sm border-collapse">
           <thead>
             <tr className="bg-[#16181A] border-b border-[#2A2D31]">
-              {!isSelesaiTab && (
+              {!isPendingTab && (
                 <th className="w-10 px-4 py-3 text-center">
                   <input
                     type="checkbox"
@@ -361,7 +361,7 @@ export default function AntrianCuttingClient({ poList }: Props) {
             {tabData.length === 0 ? (
               <tr>
                 <td
-                  colSpan={isSelesaiTab ? 6 : isProgressTab ? 8 : 7}
+                  colSpan={isProgressTab ? 8 : 7}
                   className="px-4 py-12 text-center text-[#9aa0a6] text-sm bg-[#1A1D1F]"
                 >
                   Tidak ada data di tab ini
@@ -373,12 +373,12 @@ export default function AntrianCuttingClient({ poList }: Props) {
                 return (
                   <React.Fragment key={po.po_id}>
                     <tr
-                      onClick={() => !isSelesaiTab && togglePO(po.po_id)}
+                      onClick={() => !isPendingTab && togglePO(po.po_id)}
                     className={'transition-colors ' +
-                      (!isSelesaiTab ? 'cursor-pointer ' : '') +
+                      (!isPendingTab ? 'cursor-pointer ' : '') +
                       (isSelected ? 'bg-[#e5c17b]/5' : 'bg-[#1A1D1F] hover:bg-[#1E2124]')}
                   >
-                    {!isSelesaiTab && (
+                    {!isPendingTab && (
                       <td className="px-4 py-3 text-center" onClick={e => e.stopPropagation()}>
                         <input
                           type="checkbox"
@@ -417,7 +417,7 @@ export default function AntrianCuttingClient({ poList }: Props) {
                   </tr>
                   {expandedPoId === po.po_id && (
                     <tr key={`${po.po_id}-expanded`}>
-                      <td colSpan={isSelesaiTab ? 6 : isProgressTab ? 8 : 7}
+                      <td colSpan={isProgressTab ? 8 : 7}
                           className="bg-[#16181A] px-4 py-4 border-b border-[#2A2D31]">
 
                         {loadingDetail === po.po_id && (
