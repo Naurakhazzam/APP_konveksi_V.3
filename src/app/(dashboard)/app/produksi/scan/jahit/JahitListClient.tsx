@@ -7,7 +7,8 @@ import { getSelesaiPerTahap, type SelesaiBundleItem } from '@/lib/actions/produk
 import StageStatusBadge from '@/components/produksi/StageStatusBadge';
 import StagePagination from '@/components/produksi/StagePagination';
 import ModalSerahTerimaJahit from './ModalSerahTerimaJahit';
-import { Package, Clock, User, Loader2, Users, Printer, CheckCircle } from 'lucide-react';
+import ModalSplitBundle from './ModalSplitBundle';
+import { Package, Clock, User, Loader2, Users, Printer, CheckCircle, AlertTriangle, Scissors } from 'lucide-react';
 import { toast } from 'sonner';
 import { scanSelesai } from '@/lib/actions/produksi/scan-mutations.actions';
 import { getAksesoriForKartuKerja } from '@/lib/actions/produksi/model-aksesori.actions';
@@ -47,10 +48,17 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
   const [selectedBundleIds, setSelectedBundleIds] = useState<Set<string>>(new Set());
   const [selectedProsesIds, setSelectedProsesIds] = useState<Set<string>>(new Set());
   const [showModalSerahTerima, setShowModalSerahTerima] = useState(false);
+  const [splitBundle, setSplitBundle] = useState<AntrianJahitBundle | null>(null);
 
   const handleSerahTerimaSuccess = () => {
     setShowModalSerahTerima(false);
     setSelectedBundleIds(new Set());
+    router.refresh();
+  };
+
+  const handleSplitSuccess = () => {
+    setSplitBundle(null);
+    setSelectedProsesIds(new Set());
     router.refresh();
   };
 
@@ -82,8 +90,21 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
 
   const handleBatchSelesai = async () => {
     if (selectedProsesIds.size === 0) return;
-    setIsSelesaikanLoading(true);
+
+    // Pre-flight: tolak submit jika ada bundle tanpa karyawan
     const bundlesUntukSelesai = antrianProses.filter(b => selectedProsesIds.has(b.id));
+    const tanpaKaryawan = bundlesUntukSelesai.filter(
+      b => !((b as any).status_tahap?.['jahit'])?.karyawan_id
+    );
+    if (tanpaKaryawan.length > 0) {
+      toast.error(
+        `${tanpaKaryawan.length} bundle belum ada karyawan — tidak bisa diselesaikan:\n` +
+        tanpaKaryawan.map(b => b.barcode).join(', ')
+      );
+      return;
+    }
+
+    setIsSelesaikanLoading(true);
     let berhasil = 0;
     let gagal = 0;
     for (const bundle of bundlesUntukSelesai) {
@@ -125,6 +146,12 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
   };
 
   const totalSelesaiPages = Math.ceil(selesaiTotal / pageSize);
+
+  // Cek apakah ada bundle terpilih yang tidak punya karyawan
+  const selectedHasTanpaKaryawan = [...selectedProsesIds].some(id => {
+    const bundle = antrianProses.find(b => b.id === id);
+    return bundle && !((bundle as any).status_tahap?.['jahit'])?.karyawan_id;
+  });
 
   const toggleSelectAll = () => {
     if (selectedBundleIds.size === antrianBelum.length) {
@@ -201,16 +228,28 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
           </button>
         )}
         {activeTab === 'sedang_proses' && selectedProsesIds.size > 0 && (
-          <button 
-            onClick={handleBatchSelesai}
-            disabled={isSelesaikanLoading}
-            className="flex items-center gap-2 bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded-lg font-bold transition-colors shadow-lg"
-          >
-            {isSelesaikanLoading 
-              ? <><Loader2 className="w-4 h-4 animate-spin" /> Memproses...</>
-              : <><CheckCircle className="w-4 h-4" /> Selesaikan ({selectedProsesIds.size} Bundle)</>
-            }
-          </button>
+          <div className="flex items-center gap-3">
+            {selectedHasTanpaKaryawan && (
+              <span className="flex items-center gap-1.5 text-xs font-semibold text-orange-400">
+                <AlertTriangle className="w-3.5 h-3.5" />
+                Ada bundle tanpa karyawan
+              </span>
+            )}
+            <button
+              onClick={handleBatchSelesai}
+              disabled={isSelesaikanLoading || selectedHasTanpaKaryawan}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold transition-colors shadow-lg ${
+                selectedHasTanpaKaryawan
+                  ? 'bg-[#2A2D31] text-[#9aa0a6] cursor-not-allowed'
+                  : 'bg-green-600 hover:bg-green-500 text-white'
+              }`}
+            >
+              {isSelesaikanLoading
+                ? <><Loader2 className="w-4 h-4 animate-spin" /> Memproses...</>
+                : <><CheckCircle className="w-4 h-4" /> Selesaikan ({selectedProsesIds.size} Bundle)</>
+              }
+            </button>
+          </div>
         )}
       </div>
 
@@ -340,12 +379,13 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
                       <TableHeader>QTY</TableHeader>
                       <TableHeader>Karyawan</TableHeader>
                       <TableHeader>Aksi</TableHeader>
+                      <TableHeader>Split</TableHeader>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#2A2D31]">
                     {antrianProses.length === 0 ? (
                       <tr>
-                        <td colSpan={9} className="px-4 py-12 text-center text-[#9aa0a6]">
+                        <td colSpan={10} className="px-4 py-12 text-center text-[#9aa0a6]">
                           <Package className="w-8 h-8 mx-auto mb-2 opacity-20" />
                           Tidak ada bundle yang sedang diproses
                         </td>
@@ -376,13 +416,33 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
                           <td className="px-4 py-3 font-mono text-[#e8eaed]">
                             {item.qty_per_bundle} <span className="text-[10px] text-[#9aa0a6]">pcs</span>
                           </td>
-                          <td className="px-4 py-3 text-[#e8eaed] text-xs font-medium">
-                            {karyawanList.find(k => k.id === ((item as any).status_tahap?.['jahit'])?.karyawan_id)?.nama ?? '-'}
+                          <td className="px-4 py-3 text-xs font-medium">
+                            {(() => {
+                              const nama = karyawanList.find(
+                                k => k.id === ((item as any).status_tahap?.['jahit'])?.karyawan_id
+                              )?.nama;
+                              return nama
+                                ? <span className="text-[#e8eaed]">{nama}</span>
+                                : (
+                                  <span className="flex items-center gap-1 text-orange-400 font-semibold">
+                                    <AlertTriangle className="w-3 h-3" />
+                                    Belum ditentukan
+                                  </span>
+                                );
+                            })()}
                           </td>
                           <td className="px-4 py-3">
                             <button onClick={() => handlePrintUlang(item)}
                               className="flex items-center gap-1 text-[10px] font-bold text-[#9aa0a6] hover:text-[#e5c17b] border border-[#2A2D31] px-2 py-1 rounded-lg transition-colors">
                               <Printer className="w-3 h-3" /> Print Ulang
+                            </button>
+                          </td>
+                          <td className="px-4 py-3">
+                            <button
+                              onClick={() => setSplitBundle(item)}
+                              className="flex items-center gap-1 text-[10px] font-bold text-[#9aa0a6] hover:text-orange-400 border border-[#2A2D31] hover:border-orange-400/40 px-2 py-1 rounded-lg transition-colors"
+                            >
+                              <Scissors className="w-3 h-3" /> Split
                             </button>
                           </td>
                         </tr>
@@ -455,10 +515,10 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
                 </table>
               </div>
               <div className="p-4 border-t border-[#2A2D31]">
-                  <StagePagination 
-                      page={selesaiPage} 
-                      totalPages={totalSelesaiPages} 
-                      onPageChange={handleSelesaiPageChange} 
+                  <StagePagination
+                      page={selesaiPage}
+                      totalPages={totalSelesaiPages}
+                      onPageChange={handleSelesaiPageChange}
                   />
               </div>
             </div>
@@ -472,6 +532,15 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
           karyawanList={karyawanList}
           onSuccess={handleSerahTerimaSuccess}
           onClose={() => setShowModalSerahTerima(false)}
+        />
+      )}
+
+      {splitBundle && (
+        <ModalSplitBundle
+          bundle={splitBundle}
+          karyawanList={karyawanList}
+          onSuccess={handleSplitSuccess}
+          onClose={() => setSplitBundle(null)}
         />
       )}
 

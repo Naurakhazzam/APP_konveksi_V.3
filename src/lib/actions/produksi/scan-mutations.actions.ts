@@ -164,7 +164,52 @@ export async function scanTerimaGeneric(
   return { scan_log_id: result.scan_log_id };
 }
 
-// 5. scanLanjutTahap — 1 scan auto-tutup tahap sebelumnya + buka tahap baru
+// 5. scanSplitBundle — selesaikan bundle asli + buat bundle anak untuk sisa pcs
+export interface ScanSplitBundleResult {
+  original_scan_log_id: string;
+  new_bundle_id:        string;
+  new_bundle_barcode:   string;
+  new_bundle_qty:       number;
+  scan_log_terima_id:   string;
+  gaji_entry_id:        string | null;
+  upah_nominal:         number;
+}
+
+export async function scanSplitBundle(input: {
+  barcode:            string;
+  tahap:              string;
+  qty_selesai:        number;
+  karyawan_id_asli:   string;
+  karyawan_id_sisa:   string;
+}): Promise<ScanSplitBundleResult> {
+  const user_id  = await resolveUserId();
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.rpc('scan_split_bundle', {
+    p_barcode:            input.barcode,
+    p_tahap:              input.tahap,
+    p_qty_selesai:        input.qty_selesai,
+    p_karyawan_id_asli:   input.karyawan_id_asli,
+    p_karyawan_id_sisa:   input.karyawan_id_sisa,
+    p_user_id:            user_id,
+    p_tenant_id:          TENANT_ID,
+  });
+
+  if (error) throw new Error(error.message);
+
+  const result = data as ScanSplitBundleResult;
+  return {
+    original_scan_log_id: result.original_scan_log_id,
+    new_bundle_id:        result.new_bundle_id,
+    new_bundle_barcode:   result.new_bundle_barcode,
+    new_bundle_qty:       result.new_bundle_qty,
+    scan_log_terima_id:   result.scan_log_terima_id,
+    gaji_entry_id:        result.gaji_entry_id ?? null,
+    upah_nominal:         result.upah_nominal ?? 0,
+  };
+}
+
+// 6. scanLanjutTahap — 1 scan auto-tutup tahap sebelumnya + buka tahap baru
 export interface ScanLanjutTahapResult {
   scan_log_id: string;
   gaji_entry_id: string | null;

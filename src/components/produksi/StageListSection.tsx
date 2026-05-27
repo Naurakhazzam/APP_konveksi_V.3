@@ -633,7 +633,6 @@ export default function StageListSection({
                           <input 
                             type="number"
                             min={0}
-                            max={item.qtyOrder}
                             value={item.qtyAktual}
                             onChange={(e) => handleQtyChange(item.bundleId, parseInt(e.target.value) || 0)}
                             className={`w-16 text-center bg-[#0D0E10] border ${isReject ? 'border-red-500' : 'border-[#2A2D31]'} rounded-lg px-2 py-1 text-sm font-bold text-[#e8eaed] focus:border-[#e5c17b] outline-none transition-colors`}
