@@ -8,9 +8,9 @@ import StageStatusBadge from '@/components/produksi/StageStatusBadge';
 import StagePagination from '@/components/produksi/StagePagination';
 import ModalSerahTerimaJahit from './ModalSerahTerimaJahit';
 import ModalSplitBundle from './ModalSplitBundle';
+import ModalBatchSelesaiJahit from './ModalBatchSelesaiJahit';
 import { Package, Clock, User, Loader2, Users, Printer, CheckCircle, AlertTriangle, Scissors } from 'lucide-react';
 import { toast } from 'sonner';
-import { scanSelesai } from '@/lib/actions/produksi/scan-mutations.actions';
 import { getAksesoriForKartuKerja } from '@/lib/actions/produksi/model-aksesori.actions';
 import PrintKartuKerjaLayout, { type KartuBundle, type AksesoriItem } from '@/app/(dashboard)/app/produksi/antrian-cutting/PrintKartuKerjaLayout';
 
@@ -44,10 +44,10 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
   const [printUlangData, setPrintUlangData] = useState<KartuBundle[] | null>(null);
 
   const [isLoading, setIsLoading] = useState(false);
-  const [isSelesaikanLoading, setIsSelesaikanLoading] = useState(false);
   const [selectedBundleIds, setSelectedBundleIds] = useState<Set<string>>(new Set());
   const [selectedProsesIds, setSelectedProsesIds] = useState<Set<string>>(new Set());
   const [showModalSerahTerima, setShowModalSerahTerima] = useState(false);
+  const [showBatchSelesaiModal, setShowBatchSelesaiModal] = useState(false);
   const [splitBundle, setSplitBundle] = useState<AntrianJahitBundle | null>(null);
 
   const handleSerahTerimaSuccess = () => {
@@ -88,47 +88,10 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
     setTimeout(() => { window.print(); setPrintUlangData(null); }, 500);
   };
 
-  const handleBatchSelesai = async () => {
-    if (selectedProsesIds.size === 0) return;
-
-    // Pre-flight: tolak submit jika ada bundle tanpa karyawan
-    const bundlesUntukSelesai = antrianProses.filter(b => selectedProsesIds.has(b.id));
-    const tanpaKaryawan = bundlesUntukSelesai.filter(
-      b => !((b as any).status_tahap?.['jahit'])?.karyawan_id
-    );
-    if (tanpaKaryawan.length > 0) {
-      toast.error(
-        `${tanpaKaryawan.length} bundle belum ada karyawan — tidak bisa diselesaikan:\n` +
-        tanpaKaryawan.map(b => b.barcode).join(', ')
-      );
-      return;
-    }
-
-    setIsSelesaikanLoading(true);
-    let berhasil = 0;
-    let gagal = 0;
-    for (const bundle of bundlesUntukSelesai) {
-      try {
-        const karyawanId = ((bundle as any).status_tahap?.['jahit'])?.karyawan_id ?? null;
-        await scanSelesai({
-          barcode: bundle.barcode,
-          tahap: 'jahit',
-          karyawan_id: karyawanId,
-          qty: bundle.qty_per_bundle,
-          catatan: undefined,
-          alasan_qty_id: null,
-          tenant_id: 'STX-001',
-        });
-        berhasil++;
-      } catch (err: any) {
-        gagal++;
-        toast.error(`Gagal: ${bundle.barcode} — ${err.message}`);
-      }
-    }
-    setIsSelesaikanLoading(false);
+  const handleBatchSelesaiSuccess = () => {
+    setShowBatchSelesaiModal(false);
     setSelectedProsesIds(new Set());
-    if (berhasil > 0) toast.success(`${berhasil} bundle berhasil diselesaikan`);
-    if (gagal === 0) router.refresh();
+    router.refresh();
   };
 
   const handleSelesaiPageChange = async (newPage: number) => {
@@ -236,18 +199,11 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
               </span>
             )}
             <button
-              onClick={handleBatchSelesai}
-              disabled={isSelesaikanLoading || selectedHasTanpaKaryawan}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold transition-colors shadow-lg ${
-                selectedHasTanpaKaryawan
-                  ? 'bg-[#2A2D31] text-[#9aa0a6] cursor-not-allowed'
-                  : 'bg-green-600 hover:bg-green-500 text-white'
-              }`}
+              onClick={() => setShowBatchSelesaiModal(true)}
+              className="flex items-center gap-2 bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded-lg font-bold transition-colors shadow-lg"
             >
-              {isSelesaikanLoading
-                ? <><Loader2 className="w-4 h-4 animate-spin" /> Memproses...</>
-                : <><CheckCircle className="w-4 h-4" /> Selesaikan ({selectedProsesIds.size} Bundle)</>
-              }
+              <CheckCircle className="w-4 h-4" />
+              Selesaikan ({selectedProsesIds.size} Bundle)
             </button>
           </div>
         )}
@@ -541,6 +497,15 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
           karyawanList={karyawanList}
           onSuccess={handleSplitSuccess}
           onClose={() => setSplitBundle(null)}
+        />
+      )}
+
+      {showBatchSelesaiModal && (
+        <ModalBatchSelesaiJahit
+          bundles={antrianProses.filter(b => selectedProsesIds.has(b.id))}
+          karyawanList={karyawanList}
+          onSuccess={handleBatchSelesaiSuccess}
+          onClose={() => setShowBatchSelesaiModal(false)}
         />
       )}
 
