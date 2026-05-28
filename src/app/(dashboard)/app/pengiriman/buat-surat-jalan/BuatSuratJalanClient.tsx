@@ -73,6 +73,12 @@ export default function BuatSuratJalanClient({ initialBundles }: { initialBundle
 
   const currentKlienId = selectedBundles.length > 0 ? selectedBundles[0].klien_id : null;
 
+  // Select-all: hanya bundle dengan klien yang sama (constraint SJ)
+  const selectAllKlienId = currentKlienId ?? (bundles.length > 0 ? bundles[0].klien_id : null);
+  const eligibleBundles  = selectAllKlienId ? bundles.filter(b => b.klien_id === selectAllKlienId) : bundles;
+  const allEligibleSelected  = eligibleBundles.length > 0 && eligibleBundles.every(b => selectedIds.has(b.id));
+  const someEligibleSelected = !allEligibleSelected && eligibleBundles.some(b => selectedIds.has(b.id));
+
   // ─── Grouping logic ────────────────────────────────────────────────────────
 
   const groups = useMemo((): BundleGroup[] => {
@@ -102,6 +108,17 @@ export default function BuatSuratJalanClient({ initialBundles }: { initialBundle
   }, [bundles]);
 
   // ─── Handlers ─────────────────────────────────────────────────────────────
+
+  const handleSelectAll = () => {
+    if (!selectAllKlienId) return;
+    const next = new Set(selectedIds);
+    if (allEligibleSelected) {
+      eligibleBundles.forEach(b => next.delete(b.id));
+    } else {
+      eligibleBundles.forEach(b => next.add(b.id));
+    }
+    setSelectedIds(next);
+  };
 
   const toggleExpand = (key: string) => {
     setExpandedGroups(prev => {
@@ -194,18 +211,34 @@ export default function BuatSuratJalanClient({ initialBundles }: { initialBundle
                 ({groups.length} grup · {bundles.length} bundle)
               </span>
             </h2>
-            {selectedIds.size > 0 && (
-              <span className="text-xs text-[#e5c17b] font-medium">
-                {selectedIds.size} bundle dipilih
-              </span>
-            )}
+            <div className="flex items-center gap-3">
+              {selectedIds.size > 0 && (
+                <span className="text-xs text-[#e5c17b] font-medium">
+                  {selectedIds.size} bundle dipilih
+                </span>
+              )}
+              <button
+                onClick={handleSelectAll}
+                disabled={bundles.length === 0}
+                className="text-xs font-semibold text-[#9aa0a6] hover:text-[#e5c17b] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {allEligibleSelected ? 'Batal Pilih Semua' : 'Pilih Semua'}
+              </button>
+            </div>
           </div>
 
           <div className="overflow-x-auto max-h-[600px]">
             <table className="w-full text-sm text-left">
               <thead className="text-xs text-[#9aa0a6] uppercase bg-[#0D0E10] sticky top-0 border-b border-[#2A2D31] z-10">
                 <tr>
-                  <th className="px-4 py-3 w-10">Pilih</th>
+                  <th className="px-4 py-3 w-10">
+                    <IndeterminateCheckbox
+                      checked={allEligibleSelected}
+                      indeterminate={someEligibleSelected}
+                      disabled={bundles.length === 0}
+                      onChange={handleSelectAll}
+                    />
+                  </th>
                   <th className="px-4 py-3 w-8"></th>
                   <th className="px-4 py-3">Item Info</th>
                   <th className="px-4 py-3">PO</th>
