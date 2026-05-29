@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
-import { Trash2, ExternalLink, ChevronUp, ChevronDown } from 'lucide-react';
+import { Trash2, ExternalLink, ChevronUp, ChevronDown, Search, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { 
   Table, 
@@ -45,6 +45,7 @@ export default function MonitoringStatusPO({ initialData }: Props) {
   // Sorting State
   const [sortKey, setSortKey] = useState<SortKey>('no_po');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
+  const [search, setSearch] = useState('');
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -76,6 +77,15 @@ export default function MonitoringStatusPO({ initialData }: Props) {
     return list;
   }, [initialData, activeSubTab, sortKey, sortDir]);
 
+  const filteredList = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return sortedList;
+    return sortedList.filter(po =>
+      po.no_po.toLowerCase().includes(q) ||
+      po.klien_nama.toLowerCase().includes(q)
+    );
+  }, [sortedList, search]);
+
   const handleDelete = async (id: string, noPo: string) => {
     if (!window.confirm(`Hapus PO ${noPo}? Aksi ini bersifat permanen.`)) return;
     
@@ -103,12 +113,20 @@ export default function MonitoringStatusPO({ initialData }: Props) {
   };
 
   const renderTable = () => {
-    const list = sortedList;
+    const list = filteredList;
 
     if (list.length === 0) {
       return (
         <div className="py-20 text-center text-[#9aa0a6]">
-          <p>Tidak ada data PO di kategori ini.</p>
+          {search.trim() ? (
+            <>
+              <Search className="w-8 h-8 mx-auto mb-3 opacity-30" />
+              <p className="font-medium text-[#e8eaed]">Tidak ada hasil untuk &quot;{search}&quot;</p>
+              <p className="text-sm mt-1">Coba kata kunci lain atau hapus pencarian</p>
+            </>
+          ) : (
+            <p>Tidak ada data PO di kategori ini.</p>
+          )}
         </div>
       );
     }
@@ -243,12 +261,38 @@ export default function MonitoringStatusPO({ initialData }: Props) {
 
   return (
     <div className="space-y-4">
-      <div className="flex border-b border-[#2A2D31] gap-6 px-2">
-        <TabTrigger id="belum_mulai" label="Belum Mulai" count={initialData.belum_mulai.length} />
-        <TabTrigger id="sedang_diproses" label="Sedang Dikerjakan" count={initialData.sedang_diproses.length} />
-        <TabTrigger id="selesai" label="Selesai" count={initialData.selesai.length} />
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#2A2D31] pb-0">
+        <div className="flex gap-6 px-2">
+          <TabTrigger id="belum_mulai" label="Belum Mulai" count={initialData.belum_mulai.length} />
+          <TabTrigger id="sedang_diproses" label="Sedang Dikerjakan" count={initialData.sedang_diproses.length} />
+          <TabTrigger id="selesai" label="Selesai" count={initialData.selesai.length} />
+        </div>
+        <div className="relative mb-1 sm:mb-0 sm:mr-2">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#9aa0a6] pointer-events-none" />
+          <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Cari No. PO atau Klien..."
+            className="bg-[#16181A] border border-[#2A2D31] rounded-lg pl-8 pr-8 py-1.5 text-xs text-[#e8eaed] placeholder-[#9aa0a6]/50 focus:outline-none focus:border-[#e5c17b] w-56 transition-colors"
+          />
+          {search && (
+            <button
+              onClick={() => setSearch('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-[#9aa0a6] hover:text-[#e8eaed] transition-colors"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
       </div>
-      
+
+      {search.trim() && (
+        <p className="text-xs text-[#9aa0a6] px-1">
+          Menampilkan <span className="text-[#e8eaed] font-medium">{filteredList.length}</span> hasil untuk &quot;<span className="text-[#e5c17b]">{search}</span>&quot;
+        </p>
+      )}
+
       <div className="bg-[#1A1D1F] border border-[#2A2D31] rounded-2xl overflow-hidden shadow-sm">
         {renderTable()}
       </div>
