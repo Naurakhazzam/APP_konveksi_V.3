@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation';
 import { getPoDetail } from '@/lib/actions/produksi/po.actions';
 import { PageWrapper } from '@/components/ui/PageWrapper';
-import { PoDetailActions, PoDetailTable } from './PoDetailClient';
+import { BackButton, PoDetailActions, PoDetailTable } from './PoDetailClient';
 
 function formatDate(dateString: string) {
   if (!dateString) return '—';
@@ -38,7 +38,12 @@ export default async function PoDetailPage({ params }: { params: Promise<{ poNum
     <PageWrapper
       title={`PO ${detail.no_po}`}
       subtitle={`Klien: ${detail.klien?.nama || '-'} · ${formatDate(detail.tanggal_order)}`}
-      actions={<PoDetailActions po={detail} />}
+      actions={
+        <div className="flex items-center gap-3">
+          <BackButton />
+          <PoDetailActions po={detail} />
+        </div>
+      }
     >
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-[#1A1D1F] p-5 rounded-xl border border-[#2A2D31] shadow-sm mb-6">
         <div className="space-y-4">

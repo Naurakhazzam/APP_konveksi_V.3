@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
+import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { 
   Dialog as AlertDialog, 
@@ -18,6 +19,19 @@ import { cancelPo } from '@/lib/actions/produksi/po-mutations.actions';
 import type { getPoDetail } from '@/lib/actions/produksi/po.actions';
 
 type PoDetail = Awaited<ReturnType<typeof getPoDetail>>;
+
+export function BackButton() {
+  const router = useRouter();
+  return (
+    <button
+      onClick={() => router.back()}
+      className="flex items-center gap-1.5 text-sm font-medium text-[#9aa0a6] hover:text-[#e8eaed] transition-colors"
+    >
+      <ArrowLeft className="w-4 h-4" />
+      Kembali
+    </button>
+  );
+}
 
 export function PoDetailActions({ po }: { po: NonNullable<PoDetail> }) {
   const router = useRouter();
@@ -114,20 +128,18 @@ export function PoDetailTable({ items }: { items: NonNullable<PoDetail>['po_item
                     <td className="p-4 text-[#e8eaed]">{totalBundle}</td>
                     <td className="p-4">
                       {item.range ? (
-                        <span className="inline-flex items-center rounded-md px-2 py-1 text-xs font-mono font-medium ring-1 ring-inset bg-[#e5c17b]/10 text-[#e5c17b] ring-[#e5c17b]/20">
-                          {item.range}
-                        </span>
+                        <span className="inline-flex items-center rounded-md px-2 py-1 text-xs font-mono font-medium ring-1 ring-inset bg-[#e5c17b]/10 text-[#e5c17b] ring-[#e5c17b]/20">{item.range}</span>
                       ) : (
-                        <span className="text-[#5f6368]">—</span>
+                        <span className="text-[#9aa0a6]">—</span>
                       )}
                     </td>
                   </tr>
                 );
               })
             )}
-          </tbody>
-        </table>
+            </tbody>
+          </table>
+        </div>
       </div>
-    </div>
-  );
+    );
 }
