@@ -1,5 +1,7 @@
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import { getPoDetail } from '@/lib/actions/produksi/po.actions';
+import { getCurrentUserProfile } from '@/lib/auth/permissions';
+import { getAllowedPathsForRole } from '@/lib/actions/master/permission.actions';
 import { PageWrapper } from '@/components/ui/PageWrapper';
 import { BackButton, PoDetailActions, PoDetailTable } from './PoDetailClient';
 
@@ -12,19 +14,34 @@ function formatDate(dateString: string) {
 
 function getStatusBadge(status: string) {
   switch (status) {
-    case 'draft': 
+    case 'draft':
       return <span className="inline-flex rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset bg-[#9aa0a6]/10 text-[#9aa0a6] ring-[#9aa0a6]/20">Draft</span>;
-    case 'selesai': 
+    case 'selesai':
       return <span className="inline-flex rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset bg-[color:var(--status-green)]/10 text-[color:var(--status-green)] ring-[color:var(--status-green)]/20">Selesai</span>;
-    case 'dibatalkan': 
+    case 'dibatalkan':
       return <span className="inline-flex rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset bg-[color:var(--status-red)]/10 text-[color:var(--status-red)] ring-[color:var(--status-red)]/20">Dibatalkan</span>;
-    default: 
+    default:
       return <span className="inline-flex rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset bg-[color:var(--status-yellow)]/10 text-[color:var(--status-yellow)] ring-[color:var(--status-yellow)]/20">Aktif</span>;
   }
 }
 
 export default async function PoDetailPage({ params }: { params: Promise<{ poNumber: string }> }) {
   const { poNumber } = await params;
+
+  // Role-based access guard
+  const profile = await getCurrentUserProfile();
+  if (!profile) redirect('/login');
+
+  if (profile.role !== 'owner') {
+    const allowedPaths = await getAllowedPathsForRole(profile.role);
+    const canAccess = allowedPaths.some(p =>
+      p === '/app/produksi/po' ||
+      p.startsWith('/app/produksi/monitoring') ||
+      p.startsWith('/app/produksi')
+    );
+    if (!canAccess) redirect('/app/dashboard');
+  }
+
   let detail;
   try {
     detail = await getPoDetail(poNumber);
@@ -34,6 +51,8 @@ export default async function PoDetailPage({ params }: { params: Promise<{ poNum
 
   if (!detail) notFound();
 
+  const canBatalkan = profile.role === 'owner' || profile.role === 'admin_produksi';
+
   return (
     <PageWrapper
       title={`PO ${detail.no_po}`}
@@ -41,7 +60,7 @@ export default async function PoDetailPage({ params }: { params: Promise<{ poNum
       actions={
         <div className="flex items-center gap-3">
           <BackButton />
-          <PoDetailActions po={detail} />
+          {canBatalkan && <PoDetailActions po={detail} />}
         </div>
       }
     >

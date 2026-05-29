@@ -21,6 +21,7 @@ const ALL_MENUS = [
   { group: 'Produksi',      path: '/app/produksi/scan/steam',          label: '└ Scan Steam' },
   { group: 'Produksi',      path: '/app/produksi/scan/packing',        label: '└ Scan Packing' },
   { group: 'Produksi',      path: '/app/produksi/monitoring',          label: '└ Monitoring' },
+  { group: 'Produksi',      path: '/app/produksi/po',                  label: '└ Detail PO' },
   { group: 'Produksi',      path: '/app/produksi/approval-qty',        label: '└ Approval QTY' },
   { group: 'Pengiriman',    path: '/app/pengiriman/buat-surat-jalan',  label: '└ Buat Surat Jalan' },
   { group: 'Pengiriman',    path: '/app/pengiriman/riwayat',           label: '└ Riwayat Kirim' },

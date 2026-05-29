@@ -19,6 +19,7 @@ import Link from 'next/link';
 
 interface Props {
   initialData: PoGrouped;
+  role: string;
 }
 
 type SubTab = 'belum_mulai' | 'sedang_diproses' | 'selesai';
@@ -37,7 +38,7 @@ const STAGE_LABELS: Record<string, string> = {
 
 const STAGE_ORDER = ['cutting', 'jahit', 'buang_benang', 'lubang_kancing', 'qc', 'steam', 'packing'];
 
-export default function MonitoringStatusPO({ initialData }: Props) {
+export default function MonitoringStatusPO({ initialData, role }: Props) {
   const router = useRouter();
   const [activeSubTab, setActiveSubTab] = useState<SubTab>('sedang_diproses');
   const [isDeleting, setIsDeleting] = useState(false);
@@ -218,15 +219,17 @@ export default function MonitoringStatusPO({ initialData }: Props) {
                     {activeSubTab === 'belum_mulai' ? (
                       <>
                         <span className="text-[10px] font-bold text-[#9aa0a6] bg-[#2A2D31] px-2 py-0.5 rounded uppercase">Antri</span>
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
-                          className="h-8 w-8 text-[#9aa0a6] hover:text-[#ef4444] hover:bg-[#ef4444]/10"
-                          onClick={() => handleDelete(po.id, po.no_po)}
-                          disabled={isDeleting}
-                        >
-                          <Trash2 size={14} />
-                        </Button>
+                        {role === 'owner' && (
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="h-8 w-8 text-[#9aa0a6] hover:text-[#ef4444] hover:bg-[#ef4444]/10"
+                            onClick={() => handleDelete(po.id, po.no_po)}
+                            disabled={isDeleting}
+                          >
+                            <Trash2 size={14} />
+                          </Button>
+                        )}
                       </>
                     ) : (
                       <Link href={`/app/produksi/po/${po.no_po}`}>

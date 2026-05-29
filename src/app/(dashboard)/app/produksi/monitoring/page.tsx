@@ -2,9 +2,11 @@ import { PageWrapper } from '@/components/ui/PageWrapper';
 import { getKlienList } from '@/lib/actions/produksi/po.actions';
 import { getMonitoringStats, getPoGrouped, getMonitoringPerArtikel } from '@/lib/actions/produksi/monitoring.actions';
 import MonitoringClient from './MonitoringClient';
+import { getCurrentUserProfile } from '@/lib/auth/permissions';
 
 export default async function MonitoringPage() {
-  const [stats, klienList, poGrouped, artikelData] = await Promise.all([
+  const [profile, stats, klienList, poGrouped, artikelData] = await Promise.all([
+    getCurrentUserProfile(),
     getMonitoringStats(),
     getKlienList(),
     getPoGrouped(),
@@ -25,6 +27,7 @@ export default async function MonitoringPage() {
         poGrouped={poGrouped}
         artikelData={artikelData}
         poList={poListSimplified}
+        role={profile?.role ?? 'mandor'}
       />
     </PageWrapper>
   );

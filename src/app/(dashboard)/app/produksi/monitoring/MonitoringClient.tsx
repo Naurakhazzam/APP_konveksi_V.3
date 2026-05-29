@@ -22,6 +22,7 @@ interface Props {
   poGrouped: PoGrouped;
   artikelData: ArtikelRow[];
   poList: { id: string; no_po: string }[];
+  role: string;
 }
 
 type TabType = 'status' | 'artikel' | 'warning';
@@ -33,7 +34,7 @@ const KPI_CONFIG = [
   { label: 'BERMASALAH', key: 'bermasalah', color: '#ef4444', icon: AlertTriangle },
 ];
 
-export default function MonitoringClient({ stats, klienList, poGrouped, artikelData, poList }: Props) {
+export default function MonitoringClient({ stats, klienList, poGrouped, artikelData, poList, role }: Props) {
   const [activeTab, setActiveTab] = useState<TabType>('status');
   const [stuckThresholdHours, setStuckThresholdHours] = useState(24);
   const [dynamicWarningCount, setDynamicWarningCount] = useState(stats.bermasalah);
@@ -114,7 +115,7 @@ export default function MonitoringClient({ stats, klienList, poGrouped, artikelD
       {/* 4. Tab Content */}
       <div className="bg-[#1A1D1F] border border-[#2A2D31] rounded-2xl min-h-[400px] p-6 shadow-sm">
         {activeTab === 'status' ? (
-          <MonitoringStatusPO initialData={poGrouped} />
+          <MonitoringStatusPO initialData={poGrouped} role={role} />
         ) : activeTab === 'artikel' ? (
           <MonitoringPerArtikel data={artikelData} poList={poList} />
         ) : (
