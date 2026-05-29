@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { 
   Dialog as AlertDialog, 
@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/dialog';
 import { cancelPo } from '@/lib/actions/produksi/po-mutations.actions'; 
 import type { getPoDetail } from '@/lib/actions/produksi/po.actions';
+import PoItemDetailModal from './PoItemDetailModal';
 
 type PoDetail = Awaited<ReturnType<typeof getPoDetail>>;
 
@@ -94,52 +95,91 @@ export function PoDetailActions({ po }: { po: NonNullable<PoDetail> }) {
   );
 }
 
+interface SelectedItem {
+  id: string;
+  model_nama: string;
+  warna: string;
+  size: string;
+  total_bundle: number;
+  qty_order: number;
+}
+
 export function PoDetailTable({ items }: { items: NonNullable<PoDetail>['po_item'] }) {
+  const [selected, setSelected] = useState<SelectedItem | null>(null);
+
   return (
-    <div className="rounded-xl border border-[#2A2D31] bg-[#1A1D1F] overflow-hidden shadow-lg">
-      <div className="overflow-x-auto">
-        <table className="w-full text-left text-sm text-[#9aa0a6]">
-          <thead className="bg-[#2A2D31]/30 border-b border-[#2A2D31]">
-            <tr className="hover:bg-transparent">
-              <th className="p-4 font-medium text-[#9aa0a6]">MODEL</th>
-              <th className="p-4 font-medium text-[#9aa0a6]">WARNA</th>
-              <th className="p-4 font-medium text-[#9aa0a6]">SIZE</th>
-              <th className="p-4 font-medium text-[#9aa0a6]">QTY ORDER</th>
-              <th className="p-4 font-medium text-[#9aa0a6]">ISI/BUNDLE</th>
-              <th className="p-4 font-medium text-[#9aa0a6]">TOTAL BUNDLE</th>
-              <th className="p-4 font-medium text-[#9aa0a6]">RANGE URUTAN</th>
-            </tr>
-          </thead>
-          <tbody>
-            {!items || items.length === 0 ? (
-              <tr>
-                <td colSpan={7} className="p-8 text-center text-[#9aa0a6]">Belum ada data artikel.</td>
+    <>
+      <div className="rounded-xl border border-[#2A2D31] bg-[#1A1D1F] overflow-hidden shadow-lg">
+        <div className="px-4 py-3 border-b border-[#2A2D31] bg-[#16181A]">
+          <p className="text-xs text-[#9aa0a6]">Klik baris artikel untuk melihat detail bundle, progress produksi, dan status pengiriman.</p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm text-[#9aa0a6]">
+            <thead className="bg-[#2A2D31]/30 border-b border-[#2A2D31]">
+              <tr className="hover:bg-transparent">
+                <th className="p-4 font-medium text-[#9aa0a6]">MODEL</th>
+                <th className="p-4 font-medium text-[#9aa0a6]">WARNA</th>
+                <th className="p-4 font-medium text-[#9aa0a6]">SIZE</th>
+                <th className="p-4 font-medium text-[#9aa0a6]">QTY ORDER</th>
+                <th className="p-4 font-medium text-[#9aa0a6]">ISI/BUNDLE</th>
+                <th className="p-4 font-medium text-[#9aa0a6]">TOTAL BUNDLE</th>
+                <th className="p-4 font-medium text-[#9aa0a6]">RANGE URUTAN</th>
+                <th className="p-4 w-10"></th>
               </tr>
-            ) : (
-              items.map((item, idx) => {
-                const totalBundle = Math.ceil((item.qty_order || 0) / (item.qty_per_bundle || 12));
-                return (
-                  <tr key={item.id || idx} className="border-b border-[#2A2D31] hover:bg-[#2A2D31]/20 transition-colors last:border-0">
-                    <td className="p-4 font-medium text-[#e8eaed]">{item.model_nama}</td>
-                    <td className="p-4 text-[#e8eaed]">{item.warna}</td>
-                    <td className="p-4 text-[#e8eaed]">{item.size}</td>
-                    <td className="p-4 text-[#e8eaed]">{item.qty_order}</td>
-                    <td className="p-4 text-[#e8eaed]">{item.qty_per_bundle}</td>
-                    <td className="p-4 text-[#e8eaed]">{totalBundle}</td>
-                    <td className="p-4">
-                      {item.range ? (
-                        <span className="inline-flex items-center rounded-md px-2 py-1 text-xs font-mono font-medium ring-1 ring-inset bg-[#e5c17b]/10 text-[#e5c17b] ring-[#e5c17b]/20">{item.range}</span>
-                      ) : (
-                        <span className="text-[#9aa0a6]">—</span>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })
-            )}
+            </thead>
+            <tbody>
+              {!items || items.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="p-8 text-center text-[#9aa0a6]">Belum ada data artikel.</td>
+                </tr>
+              ) : (
+                items.map((item, idx) => {
+                  const totalBundle = Math.ceil((item.qty_order || 0) / (item.qty_per_bundle || 12));
+                  return (
+                    <tr
+                      key={item.id || idx}
+                      onClick={() => setSelected({
+                        id: item.id,
+                        model_nama: item.model_nama,
+                        warna: item.warna,
+                        size: item.size,
+                        total_bundle: totalBundle,
+                        qty_order: item.qty_order,
+                      })}
+                      className="border-b border-[#2A2D31] hover:bg-[#2A2D31]/40 transition-colors cursor-pointer last:border-0 group"
+                    >
+                      <td className="p-4 font-medium text-[#e8eaed]">{item.model_nama}</td>
+                      <td className="p-4 text-[#e8eaed]">{item.warna}</td>
+                      <td className="p-4 text-[#e8eaed]">{item.size}</td>
+                      <td className="p-4 text-[#e8eaed]">{item.qty_order}</td>
+                      <td className="p-4 text-[#e8eaed]">{item.qty_per_bundle}</td>
+                      <td className="p-4 text-[#e8eaed]">{totalBundle}</td>
+                      <td className="p-4">
+                        {item.range ? (
+                          <span className="inline-flex items-center rounded-md px-2 py-1 text-xs font-mono font-medium ring-1 ring-inset bg-[#e5c17b]/10 text-[#e5c17b] ring-[#e5c17b]/20">{item.range}</span>
+                        ) : (
+                          <span className="text-[#9aa0a6]">—</span>
+                        )}
+                      </td>
+                      <td className="p-4">
+                        <ChevronRight className="w-4 h-4 text-[#9aa0a6] group-hover:text-[#e5c17b] transition-colors" />
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>
       </div>
-    );
+
+      {selected && (
+        <PoItemDetailModal
+          poItemId={selected.id}
+          artikelInfo={selected}
+          onClose={() => setSelected(null)}
+        />
+      )}
+    </>
+  );
 }
