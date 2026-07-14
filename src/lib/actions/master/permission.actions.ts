@@ -91,6 +91,6 @@ export async function saveRolePermissions(
   if (error) throw new Error(error.message);
 
   // Invalidate cache permission agar navigasi berikutnya pakai data terbaru
-  revalidateTag('role-permissions');
+  revalidateTag('role-permissions', { expire: 0 });
   revalidatePath('/app/master/users');
 }
