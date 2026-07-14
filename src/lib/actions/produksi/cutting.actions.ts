@@ -417,7 +417,54 @@ export async function getBundlesForPO(po_id: string): Promise<BundleDetailItem[]
   return result;
 }
 
-// ─── FUNGSI 8: getBundlesByIds ────────────────────────────────────────────────
+// ─── FUNGSI 8: deleteBundleMenunggu ──────────────────────────────────────────
+// Hapus bundle yang masih berstatus menunggu (belum ada aktivitas cutting).
+// Hanya owner yang boleh menjalankan ini (dijaga RLS + validasi di sini).
+
+export async function deleteBundleMenunggu(
+  bundle_ids: string[]
+): Promise<{ success: boolean; deleted: number; error?: string }> {
+  if (!bundle_ids.length) return { success: false, deleted: 0, error: 'Tidak ada bundle dipilih' };
+
+  try {
+    const supabase = await createClient();
+
+    // Validasi: pastikan semua bundle benar-benar masih status menunggu
+    const { data: bundles, error: fetchErr } = await supabase
+      .from('bundle')
+      .select('id, status_tahap')
+      .in('id', bundle_ids)
+      .eq('tenant_id', TENANT_ID);
+
+    if (fetchErr) return { success: false, deleted: 0, error: fetchErr.message };
+
+    const safeToDelete = (bundles ?? []).filter((b: any) => {
+      const cutting = b.status_tahap?.cutting;
+      return !cutting; // hanya yang belum punya data cutting sama sekali
+    });
+
+    if (safeToDelete.length === 0) {
+      return { success: false, deleted: 0, error: 'Tidak ada bundle yang bisa dihapus. Pastikan status masih Menunggu.' };
+    }
+
+    const safeIds = safeToDelete.map((b: any) => b.id);
+
+    const { error: delErr } = await supabase
+      .from('bundle')
+      .delete()
+      .in('id', safeIds)
+      .eq('tenant_id', TENANT_ID);
+
+    if (delErr) return { success: false, deleted: 0, error: delErr.message };
+
+    revalidatePath('/app/produksi/antrian-cutting');
+    return { success: true, deleted: safeIds.length };
+  } catch (e: any) {
+    return { success: false, deleted: 0, error: e.message ?? 'Terjadi kesalahan' };
+  }
+}
+
+// ─── FUNGSI 9: getBundlesByIds ────────────────────────────────────────────────
 
 export interface BundleForModal {
   id: string;

@@ -12,10 +12,12 @@ import {
   Clock,
   ChevronDown,
   ChevronRight,
+  Trash2,
+  AlertTriangle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { POCuttingItem, BundleDetailItem } from '@/lib/actions/produksi/cutting.actions';
-import { mulaiCuttingBatch, getBundlesForPO } from '@/lib/actions/produksi/cutting.actions';
+import { mulaiCuttingBatch, getBundlesForPO, deleteBundleMenunggu } from '@/lib/actions/produksi/cutting.actions';
 import { getAntrianData } from '@/lib/actions/produksi/antrian.actions';
 import type { AntrianBundle } from '@/lib/actions/produksi/antrian.actions';
 import { getAksesoriForKartuKerja } from '@/lib/actions/produksi/model-aksesori.actions';
@@ -28,6 +30,7 @@ import PendingCuttingTab from './PendingCuttingTab';
 
 interface Props {
   poList: POCuttingItem[];
+  role: string;
 }
 
 type TabKey = 'menunggu' | 'progress' | 'pending' | 'selesai';
@@ -61,13 +64,16 @@ const StatusBadge = ({ status }: { status: POCuttingItem['status'] }) => {
   );
 };
 
-export default function AntrianCuttingClient({ poList }: Props) {
+export default function AntrianCuttingClient({ poList, role }: Props) {
   const router = useRouter();
+  const isOwner = role === 'owner';
 
   const [activeTab, setActiveTab]           = useState<TabKey>('menunggu');
   const [selectedPoIds, setSelectedPoIds]   = useState<Set<string>>(new Set());
   const [isLoadingMulai, setIsLoadingMulai] = useState(false);
   const [isLoadingPrint, setIsLoadingPrint] = useState(false);
+  const [isLoadingHapus, setIsLoadingHapus] = useState(false);
+  const [showConfirmHapus, setShowConfirmHapus] = useState(false);
   const [showModalSelesai, setShowModalSelesai] = useState(false);
   const [printMode, setPrintMode]           = useState<'spk' | 'label' | 'kartu' | null>(null);
   const [spkBundles, setSpkBundles]         = useState<AntrianBundle[]>([]);
@@ -163,6 +169,23 @@ export default function AntrianCuttingClient({ poList }: Props) {
       toast.success(`${result.jumlah_bundle} bundle mulai dipotong`);
       setSelectedPoIds(new Set());
       setSelectedBundleIds({});
+      router.refresh();
+    }
+  };
+
+  const handleHapusBundle = async () => {
+    if (!allSelectedBundleIds.length) return;
+    setIsLoadingHapus(true);
+    setShowConfirmHapus(false);
+    const result = await deleteBundleMenunggu(allSelectedBundleIds);
+    setIsLoadingHapus(false);
+    if (result.error) {
+      toast.error(result.error);
+    } else {
+      toast.success(`${result.deleted} bundle berhasil dihapus`);
+      setSelectedPoIds(new Set());
+      setSelectedBundleIds({});
+      setBundleCache({});
       router.refresh();
     }
   };
@@ -271,14 +294,27 @@ export default function AntrianCuttingClient({ poList }: Props) {
         {/* Action Buttons */}
         <div className="flex items-center gap-2 flex-wrap">
           {isMenungguTab && (
-            <button
-              disabled={!hasBundleSel || isLoadingMulai}
-              onClick={handleMulaiCutting}
-              className="flex items-center gap-2 px-4 h-10 rounded-md bg-[#e5c17b] text-[#0D0E10] text-sm font-semibold hover:bg-[#d4b06a] disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-            >
-              {isLoadingMulai ? <Loader2 className="w-4 h-4 animate-spin" /> : <Scissors className="w-4 h-4" />}
-              {isLoadingMulai ? 'Memproses...' : `Mulai Cutting${hasBundleSel ? ` (${allSelectedBundleIds.length})` : ''}`}
-            </button>
+            <>
+              <button
+                disabled={!hasBundleSel || isLoadingMulai}
+                onClick={handleMulaiCutting}
+                className="flex items-center gap-2 px-4 h-10 rounded-md bg-[#e5c17b] text-[#0D0E10] text-sm font-semibold hover:bg-[#d4b06a] disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+              >
+                {isLoadingMulai ? <Loader2 className="w-4 h-4 animate-spin" /> : <Scissors className="w-4 h-4" />}
+                {isLoadingMulai ? 'Memproses...' : `Mulai Cutting${hasBundleSel ? ` (${allSelectedBundleIds.length})` : ''}`}
+              </button>
+
+              {isOwner && (
+                <button
+                  disabled={!hasBundleSel || isLoadingHapus}
+                  onClick={() => setShowConfirmHapus(true)}
+                  className="flex items-center gap-2 px-4 h-10 rounded-md border border-red-500/40 text-red-400 text-sm font-semibold hover:bg-red-500/10 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                >
+                  {isLoadingHapus ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                  {isLoadingHapus ? 'Menghapus...' : `Hapus${hasBundleSel ? ` (${allSelectedBundleIds.length})` : ''}`}
+                </button>
+              )}
+            </>
           )}
 
           {isProgressTab && (
@@ -501,6 +537,40 @@ export default function AntrianCuttingClient({ poList }: Props) {
           </tbody>
         </table>
       </div>
+      )}
+
+      {/* Dialog Konfirmasi Hapus */}
+      {showConfirmHapus && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-[#1A1D1F] border border-red-500/30 rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5 text-red-400" />
+              </div>
+              <div>
+                <h3 className="font-bold text-[#e8eaed]">Hapus Bundle?</h3>
+                <p className="text-xs text-[#9aa0a6] mt-0.5">Tindakan ini tidak bisa dibatalkan</p>
+              </div>
+            </div>
+            <p className="text-sm text-[#9aa0a6] mb-6">
+              Anda akan menghapus <span className="text-red-400 font-bold">{allSelectedBundleIds.length} bundle</span> yang masih berstatus menunggu. Bundle yang sudah mulai proses cutting tidak akan terhapus.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowConfirmHapus(false)}
+                className="flex-1 h-10 rounded-xl border border-[#2A2D31] text-[#9aa0a6] text-sm font-medium hover:bg-[#2A2D31] transition-colors"
+              >
+                Batal
+              </button>
+              <button
+                onClick={handleHapusBundle}
+                className="flex-1 h-10 rounded-xl bg-red-500/20 border border-red-500/40 text-red-400 text-sm font-bold hover:bg-red-500/30 transition-colors"
+              >
+                Ya, Hapus
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Modal Selesai Cutting */}
