@@ -1,3 +1,4 @@
+import { cache } from 'react';
 import { createClient } from '@/lib/supabase/server';
 
 // ---------------------------------------------------------------------------
@@ -26,7 +27,9 @@ export interface UserProfile {
 // Return null jika tidak ada session atau profile tidak ditemukan.
 // ---------------------------------------------------------------------------
 
-export async function getCurrentUserProfile(): Promise<UserProfile | null> {
+// Dibungkus cache() agar dalam satu request hanya query ke DB + Auth sekali,
+// meskipun dipanggil dari DashboardLayout, layout.tsx, page.tsx, dan server actions sekaligus.
+export const getCurrentUserProfile = cache(async (): Promise<UserProfile | null> => {
   const supabase = await createClient();
 
   const {
@@ -45,7 +48,7 @@ export async function getCurrentUserProfile(): Promise<UserProfile | null> {
   if (profileError || !profile) return null;
 
   return profile as UserProfile;
-}
+});
 
 // ---------------------------------------------------------------------------
 // canAccessPage
