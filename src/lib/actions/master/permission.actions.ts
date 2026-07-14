@@ -1,10 +1,11 @@
 'use server';
 
 import { cache } from 'react';
+import { unstable_cache } from 'next/cache';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
 import { getCurrentUserProfile } from '@/lib/auth/permissions';
-import { revalidatePath } from 'next/cache';
+import { revalidatePath, revalidateTag } from 'next/cache';
 
 const TENANT_ID = 'STX-001';
 
@@ -38,20 +39,27 @@ export async function getAllRolePermissions(): Promise<RolePermissionMap> {
 }
 
 /** Ambil path yang boleh dilihat untuk 1 role — dipakai di DashboardLayout */
-// Dibungkus cache() agar dalam satu request hanya query ke DB sekali,
-// meskipun dipanggil dari beberapa tempat (DashboardLayout, middleware, dll.)
-export const getAllowedPathsForRole = cache(async (role: string): Promise<string[]> => {
-  const admin = createAdminClient();
-  const { data, error } = await admin
-    .from('role_permissions')
-    .select('path')
-    .eq('role', role)
-    .eq('can_view', true)
-    .eq('tenant_id', TENANT_ID);
+// unstable_cache: cache hasil di server antar navigasi (bukan hanya per-request).
+// revalidate 300 detik (5 menit) — cukup untuk permission yang jarang berubah.
+// cache() di luar untuk deduplikasi dalam satu request yang sama.
+const _getAllowedPathsForRole = unstable_cache(
+  async (role: string): Promise<string[]> => {
+    const admin = createAdminClient();
+    const { data, error } = await admin
+      .from('role_permissions')
+      .select('path')
+      .eq('role', role)
+      .eq('can_view', true)
+      .eq('tenant_id', TENANT_ID);
 
-  if (error) return [];
-  return (data ?? []).map((r: any) => r.path);
-});
+    if (error) return [];
+    return (data ?? []).map((r: any) => r.path);
+  },
+  ['role-permissions'],
+  { revalidate: 300, tags: ['role-permissions'] }
+);
+
+export const getAllowedPathsForRole = cache(_getAllowedPathsForRole);
 
 /** Simpan perubahan permission (bulk upsert) */
 export async function saveRolePermissions(
@@ -82,5 +90,7 @@ export async function saveRolePermissions(
 
   if (error) throw new Error(error.message);
 
+  // Invalidate cache permission agar navigasi berikutnya pakai data terbaru
+  revalidateTag('role-permissions');
   revalidatePath('/app/master/users');
 }
