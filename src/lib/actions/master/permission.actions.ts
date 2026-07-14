@@ -1,5 +1,6 @@
 'use server';
 
+import { cache } from 'react';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
 import { getCurrentUserProfile } from '@/lib/auth/permissions';
@@ -37,7 +38,9 @@ export async function getAllRolePermissions(): Promise<RolePermissionMap> {
 }
 
 /** Ambil path yang boleh dilihat untuk 1 role — dipakai di DashboardLayout */
-export async function getAllowedPathsForRole(role: string): Promise<string[]> {
+// Dibungkus cache() agar dalam satu request hanya query ke DB sekali,
+// meskipun dipanggil dari beberapa tempat (DashboardLayout, middleware, dll.)
+export const getAllowedPathsForRole = cache(async (role: string): Promise<string[]> => {
   const admin = createAdminClient();
   const { data, error } = await admin
     .from('role_permissions')
@@ -48,7 +51,7 @@ export async function getAllowedPathsForRole(role: string): Promise<string[]> {
 
   if (error) return [];
   return (data ?? []).map((r: any) => r.path);
-}
+});
 
 /** Simpan perubahan permission (bulk upsert) */
 export async function saveRolePermissions(

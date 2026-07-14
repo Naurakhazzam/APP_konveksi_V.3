@@ -164,23 +164,33 @@ export async function getInventoryBatches(item_id: string): Promise<InventoryBat
 export async function getTransaksiKeluar(page: number, pageSize: number, item_id?: string): Promise<{ data: TransaksiKeluar[], total: number }> {
   const supabase = await createClient();
 
+  const start = (page - 1) * pageSize;
+  // Fetch hanya data yang dibutuhkan halaman ini dari setiap tabel.
+  // Karena dua tabel digabung, kita ambil lebih banyak per tabel
+  // agar hasil merge cukup untuk mengisi satu halaman.
+  const fetchLimit = start + pageSize;
+
   // BAGIAN A - pemakaian_bahan
   let queryBahan = supabase
     .from('pemakaian_bahan')
     .select('id, qty_pakai, created_at, inventory_item:inventory_item_id(nama, satuan), bundle:bundle_id(barcode, po:po_id(no_po))', { count: 'exact' })
-    .eq('tenant_id', TENANT_ID);
-  
+    .eq('tenant_id', TENANT_ID)
+    .order('created_at', { ascending: false })
+    .limit(fetchLimit);
+
   if (item_id) queryBahan = queryBahan.eq('inventory_item_id', item_id);
-  const { data: dataBahan, count: countBahan } = await queryBahan.order('created_at', { ascending: false });
+  const { data: dataBahan, count: countBahan } = await queryBahan;
 
   // BAGIAN B - pemakaian_aksesori
   let queryAksesori = supabase
     .from('pemakaian_aksesori')
     .select('id, qty_pakai, tahap, created_at, inventory_item:inventory_item_id(nama, satuan), bundle:bundle_id(barcode, po:po_id(no_po))', { count: 'exact' })
-    .eq('tenant_id', TENANT_ID);
+    .eq('tenant_id', TENANT_ID)
+    .order('created_at', { ascending: false })
+    .limit(fetchLimit);
 
   if (item_id) queryAksesori = queryAksesori.eq('inventory_item_id', item_id);
-  const { data: dataAksesori, count: countAksesori } = await queryAksesori.order('created_at', { ascending: false });
+  const { data: dataAksesori, count: countAksesori } = await queryAksesori;
 
   // Merge dan Transform
   const resultBahan: TransaksiKeluar[] = (dataBahan || []).map((b: any) => ({
@@ -209,11 +219,10 @@ export async function getTransaksiKeluar(page: number, pageSize: number, item_id
     created_at: a.created_at
   }));
 
-  const allData = [...resultBahan, ...resultAksesori].sort((a, b) => 
+  const allData = [...resultBahan, ...resultAksesori].sort((a, b) =>
     new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
   );
 
-  const start = (page - 1) * pageSize;
   const slicedData = allData.slice(start, start + pageSize);
 
   return {

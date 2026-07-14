@@ -1,10 +1,11 @@
 'use client';
 
 import React, { useState } from 'react';
-import { 
-  BarChart3, 
-  Package, 
-  CheckCircle2, 
+import dynamic from 'next/dynamic';
+import {
+  BarChart3,
+  Package,
+  CheckCircle2,
   AlertTriangle,
   History,
   AlertCircle
@@ -12,9 +13,16 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import type { MonitoringStats, PoGrouped, ArtikelRow } from '@/lib/actions/produksi/monitoring.actions';
-import MonitoringStatusPO from './MonitoringStatusPO';
-import MonitoringPerArtikel from './MonitoringPerArtikel';
-import MonitoringWarnings from './MonitoringWarnings';
+
+const MonitoringStatusPO = dynamic(() => import('./MonitoringStatusPO'), {
+  loading: () => <div className="animate-pulse bg-[#0D0E10] rounded-xl h-64 w-full" />,
+});
+const MonitoringPerArtikel = dynamic(() => import('./MonitoringPerArtikel'), {
+  loading: () => <div className="animate-pulse bg-[#0D0E10] rounded-xl h-64 w-full" />,
+});
+const MonitoringWarnings = dynamic(() => import('./MonitoringWarnings'), {
+  loading: () => <div className="animate-pulse bg-[#0D0E10] rounded-xl h-64 w-full" />,
+});
 
 interface Props {
   stats: MonitoringStats;

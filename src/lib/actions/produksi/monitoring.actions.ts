@@ -122,7 +122,9 @@ export async function getPoGrouped(): Promise<PoGrouped> {
       )
     `)
     .eq('status', 'aktif')
-    .eq('tenant_id', TENANT_ID);
+    .eq('tenant_id', TENANT_ID)
+    .limit(100)
+    .order('created_at', { ascending: false });
 
   if (error) throw new Error(`Gagal ambil data PO grouped: ${error.message}`);
 
@@ -193,12 +195,12 @@ export async function getMonitoringPerArtikel(): Promise<ArtikelRow[]> {
 
   const supabase = await createClient();
 
-  // Fetch po_item + po + produk + model + bundle + scan_log
+  // Fetch po_item + po (hanya aktif) + produk + model + bundle + scan_log
   const { data, error } = await supabase
     .from('po_item')
     .select(`
       id, warna, size, qty_order,
-      po:po_id(
+      po:po_id!inner(
         id,
         no_po,
         status,
@@ -213,14 +215,14 @@ export async function getMonitoringPerArtikel(): Promise<ArtikelRow[]> {
         scan_log(tahap, tipe)
       )
     `)
-    .eq('tenant_id', TENANT_ID);
+    .eq('tenant_id', TENANT_ID)
+    .eq('po.status', 'aktif')
+    .limit(500);
 
   if (error) throw new Error(`Gagal ambil data monitoring artikel: ${error.message}`);
 
-  // Tapis hanya PO aktif
-  const filteredData = (data as any[]).filter(
-    item => item.po !== null && item.po.status === 'aktif'
-  );
+  // Sudah difilter di DB — ambil semua hasil
+  const filteredData = (data as any[]).filter(item => item.po !== null);
 
   // Group by (po_id + model_id + warna + size)
   const groupMap: Record<string, {
@@ -318,7 +320,10 @@ export async function getMonitoringWarnings(thresholdHours: number): Promise<War
 
   const supabase = await createClient();
 
-  // 1. Fetch all scan_log within active POs
+  // 1. Fetch scan_log dalam 60 hari terakhir untuk deteksi bundle mandek
+  const since = new Date();
+  since.setDate(since.getDate() - 60);
+
   const { data, error } = await supabase
     .from('scan_log')
     .select(`
@@ -328,7 +333,9 @@ export async function getMonitoringWarnings(thresholdHours: number): Promise<War
         po:po_id(no_po, status)
       )
     `)
-    .eq('tenant_id', TENANT_ID);
+    .eq('tenant_id', TENANT_ID)
+    .gte('created_at', since.toISOString())
+    .limit(5000);
 
   if (error) throw new Error(`Gagal ambil logs for warnings: ${error.message}`);
 

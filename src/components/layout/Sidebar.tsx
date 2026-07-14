@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -146,15 +146,17 @@ export function Sidebar({ profile, allowedNavIds, allowedPaths }: SidebarProps) 
   const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
 
-  const navItems = NAV_MENU
-    .filter((item) => allowedNavIds.includes(item.id))
-    .map((item) => {
-      if (!item.children) return item;
-      const allowedChildren = item.children.filter(child =>
-        allowedPaths.some(p => p === child.path || child.path.startsWith(p))
-      );
-      return { ...item, children: allowedChildren.length > 0 ? allowedChildren : item.children };
-    });
+  const navItems = useMemo(() =>
+    NAV_MENU
+      .filter((item) => allowedNavIds.includes(item.id))
+      .map((item) => {
+        if (!item.children) return item;
+        const allowedChildren = item.children.filter(child =>
+          allowedPaths.some(p => p === child.path || child.path.startsWith(p))
+        );
+        return { ...item, children: allowedChildren.length > 0 ? allowedChildren : item.children };
+      }),
+  [allowedNavIds, allowedPaths]);
 
   const SidebarContent = () => (
     <div className="flex h-full flex-col bg-[#0D0E10] text-[#e8eaed]">
