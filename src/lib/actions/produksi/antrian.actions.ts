@@ -113,11 +113,12 @@ export async function getAntrianData(): Promise<{
     .filter(b => !b.status_tahap || b.status_tahap['cutting'] == null)
     .map(flattenBundle);
 
-  // Filter 2: Sedang Dipotong - cutting.status === 'terima'
+  // Filter 2: Sedang Dipotong - cutting.status === 'terima' (konvensi lama)
+  // atau 'progress' (dipakai mulai_cutting_batch versi terbaru)
   const dipotong = rawBundles
     .filter(b => {
       const cutting = b.status_tahap?.['cutting'] as Record<string, unknown> | undefined;
-      return cutting?.status === 'terima';
+      return cutting?.status === 'terima' || cutting?.status === 'progress';
     })
     .map(flattenBundle);
 
