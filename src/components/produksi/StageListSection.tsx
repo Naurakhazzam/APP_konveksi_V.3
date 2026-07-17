@@ -299,6 +299,17 @@ export default function StageListSection({
     });
   };
 
+  // Format: "Jumat, 17-07-26" — nama hari (Indonesia) + tanggal DD-MM-YY
+  const formatTanggalSelesaiJahit = (dateStr: string | null) => {
+    if (!dateStr) return '-';
+    const d = new Date(dateStr);
+    const hari = d.toLocaleDateString('id-ID', { weekday: 'long' });
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const yy = String(d.getFullYear()).slice(-2);
+    return `${hari}, ${dd}-${mm}-${yy}`;
+  };
+
   const TableHeader = ({ children }: { children: React.ReactNode }) => (
     <th className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-[#9aa0a6] bg-[#16181A] border-b border-[#2A2D31]">
       {children}
@@ -400,12 +411,14 @@ export default function StageListSection({
                     <TableHeader>Barcode</TableHeader>
                     <TableHeader>QTY</TableHeader>
                     <TableHeader>Status</TableHeader>
+                    <TableHeader>Nama Penjahit</TableHeader>
+                    <TableHeader>Tgl Selesai Jahit</TableHeader>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#2A2D31]">
                   {waitingData.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="px-4 py-12 text-center text-[#9aa0a6]">
+                      <td colSpan={10} className="px-4 py-12 text-center text-[#9aa0a6]">
                         <Package className="w-8 h-8 mx-auto mb-2 opacity-20" />
                         Tidak ada antrian di tahap {tahap}
                       </td>
@@ -439,6 +452,8 @@ export default function StageListSection({
                         <td className="px-4 py-3">
                           <StageStatusBadge status={item.status} />
                         </td>
+                        <td className="px-4 py-3 text-[#9aa0a6]">{item.jahit_karyawan_nama}</td>
+                        <td className="px-4 py-3 text-xs text-[#9aa0a6]">{formatTanggalSelesaiJahit(item.jahit_waktu_selesai)}</td>
                       </tr>
                     ))
                   )}
@@ -473,12 +488,14 @@ export default function StageListSection({
                     <TableHeader>Warna / Size</TableHeader>
                     <TableHeader>Barcode</TableHeader>
                     <TableHeader>QTY</TableHeader>
+                    <TableHeader>Nama Penjahit</TableHeader>
+                    <TableHeader>Tgl Selesai Jahit</TableHeader>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#2A2D31]">
                   {sedangProsesData.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="px-4 py-12 text-center text-[#9aa0a6]">
+                      <td colSpan={9} className="px-4 py-12 text-center text-[#9aa0a6]">
                         <Package className="w-8 h-8 mx-auto mb-2 opacity-20" />
                         Tidak ada bundle yang sedang diproses di tahap {tahap}
                       </td>
@@ -487,8 +504,8 @@ export default function StageListSection({
                     sedangProsesData.map((item, idx) => (
                       <tr key={item.id} className="hover:bg-[#2A2D31]/40 transition-colors">
                         <td className="px-4 py-3">
-                          <input 
-                            type="checkbox" 
+                          <input
+                            type="checkbox"
                             checked={selectedProsesIds.has(item.id)}
                             onChange={() => toggleSelect(item.id)}
                             className="accent-[#e5c17b] w-4 h-4 rounded cursor-pointer"
@@ -505,6 +522,8 @@ export default function StageListSection({
                         <td className="px-4 py-3 font-mono text-[#e8eaed]">
                           {item.qty_per_bundle} <span className="text-[10px] text-[#9aa0a6]">pcs</span>
                         </td>
+                        <td className="px-4 py-3 text-[#9aa0a6]">{item.jahit_karyawan_nama}</td>
+                        <td className="px-4 py-3 text-xs text-[#9aa0a6]">{formatTanggalSelesaiJahit(item.jahit_waktu_selesai)}</td>
                       </tr>
                     ))
                   )}
@@ -512,10 +531,10 @@ export default function StageListSection({
               </table>
             </div>
             <div className="p-4 border-t border-[#2A2D31]">
-                <StagePagination 
-                    page={antrianPage} 
-                    totalPages={totalAntrianPages} 
-                    onPageChange={handleAntrianPageChange} 
+                <StagePagination
+                    page={antrianPage}
+                    totalPages={totalAntrianPages}
+                    onPageChange={handleAntrianPageChange}
                 />
             </div>
           </div>
@@ -532,12 +551,14 @@ export default function StageListSection({
                     <TableHeader>Barcode</TableHeader>
                     <TableHeader>QTY</TableHeader>
                     <TableHeader>Waktu Selesai</TableHeader>
+                    <TableHeader>Nama Penjahit</TableHeader>
+                    <TableHeader>Tgl Selesai Jahit</TableHeader>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#2A2D31]">
                   {selesaiData.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="px-4 py-12 text-center text-[#9aa0a6]">
+                      <td colSpan={9} className="px-4 py-12 text-center text-[#9aa0a6]">
                         <Package className="w-8 h-8 mx-auto mb-2 opacity-20" />
                         Belum ada bundle yang selesai di tahap {tahap}
                       </td>
@@ -566,6 +587,8 @@ export default function StageListSection({
                                 <span className="text-xs">{formatDateTime(item.waktu_selesai)}</span>
                             </div>
                         </td>
+                        <td className="px-4 py-3 text-[#9aa0a6]">{item.jahit_karyawan_nama}</td>
+                        <td className="px-4 py-3 text-xs text-[#9aa0a6]">{formatTanggalSelesaiJahit(item.jahit_waktu_selesai)}</td>
                       </tr>
                     ))
                   )}

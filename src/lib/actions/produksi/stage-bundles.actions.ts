@@ -17,6 +17,8 @@ export interface AntrianBundleItem {
   qty_per_bundle: number;
   model_nama: string;
   status: 'menunggu' | 'sedang_proses';
+  jahit_karyawan_nama: string;
+  jahit_waktu_selesai: string | null;
 }
 
 export interface SelesaiBundleItem extends Omit<AntrianBundleItem, 'status'> {
@@ -71,9 +73,22 @@ export async function getAntrianPerTahap(tahap: TahapKey, page: number, pageSize
 
   if (error) throw new Error(`Gagal ambil antrian ${tahap}: ${error.message}`);
 
+  // Ambil nama penjahit (tahap jahit selalu sudah selesai untuk bundle yang
+  // muncul di sini, karena tahap ini bukan 'jahit' sendiri — lihat guard di atas)
+  const jahitKaryawanIds = Array.from(
+    new Set((data as any[]).map(item => item.status_tahap?.jahit?.karyawan_id).filter(Boolean))
+  );
+
+  const jahitKaryawanMap: Record<string, string> = {};
+  if (jahitKaryawanIds.length > 0) {
+    const { data: kData } = await supabase.from('karyawan').select('id, nama').in('id', jahitKaryawanIds);
+    kData?.forEach(k => jahitKaryawanMap[k.id] = k.nama);
+  }
+
   const mappedData: AntrianBundleItem[] = (data as any[]).map(item => {
     const stageInfo = item.status_tahap?.[tahap];
     const status: 'menunggu' | 'sedang_proses' = (stageInfo?.status === 'terima') ? 'sedang_proses' : 'menunggu';
+    const jahitInfo = item.status_tahap?.jahit;
 
     return {
       id: item.id,
@@ -85,7 +100,9 @@ export async function getAntrianPerTahap(tahap: TahapKey, page: number, pageSize
       size: item.po_item?.size ?? '-',
       qty_per_bundle: item.po_item?.qty_per_bundle ?? 0,
       model_nama: item.po_item?.produk?.model?.nama ?? '-',
-      status
+      status,
+      jahit_karyawan_nama: jahitKaryawanMap[jahitInfo?.karyawan_id] ?? '-',
+      jahit_waktu_selesai: jahitInfo?.waktu_selesai ?? null,
     };
   });
 
@@ -136,8 +153,12 @@ export async function getSelesaiPerTahap(tahap: TahapKey, page: number, pageSize
   if (error) throw new Error(`Gagal ambil data selesai ${tahap}: ${error.message}`);
 
   // Ambil list karyawan_id untuk join manual (Supabase tidak support join via JSONB field secara langsung)
-  const karyawanIds = Array.from(new Set((data as any[]).map(item => item.status_tahap?.[tahap]?.karyawan_id).filter(Boolean)));
-  
+  // — gabungkan karyawan tahap ini dengan karyawan (penjahit) dari tahap jahit dalam 1 query.
+  const karyawanIds = Array.from(new Set([
+    ...(data as any[]).map(item => item.status_tahap?.[tahap]?.karyawan_id),
+    ...(data as any[]).map(item => item.status_tahap?.jahit?.karyawan_id),
+  ].filter(Boolean)));
+
   let karyawanMap: Record<string, string> = {};
   if (karyawanIds.length > 0) {
     const { data: kData } = await supabase.from('karyawan').select('id, nama').in('id', karyawanIds);
@@ -146,7 +167,8 @@ export async function getSelesaiPerTahap(tahap: TahapKey, page: number, pageSize
 
   const mappedData: SelesaiBundleItem[] = (data as any[]).map(item => {
     const stageInfo = item.status_tahap?.[tahap];
-    
+    const jahitInfo = item.status_tahap?.jahit;
+
     return {
       id: item.id,
       barcode: item.barcode,
@@ -159,7 +181,9 @@ export async function getSelesaiPerTahap(tahap: TahapKey, page: number, pageSize
       model_nama: item.po_item?.produk?.model?.nama ?? '-',
       karyawan_id: stageInfo?.karyawan_id ?? '-',
       karyawan_nama: karyawanMap[stageInfo?.karyawan_id] ?? '-',
-      waktu_selesai: stageInfo?.waktu_selesai ?? '-'
+      waktu_selesai: stageInfo?.waktu_selesai ?? '-',
+      jahit_karyawan_nama: karyawanMap[jahitInfo?.karyawan_id] ?? '-',
+      jahit_waktu_selesai: jahitInfo?.waktu_selesai ?? null,
     };
   });
 
