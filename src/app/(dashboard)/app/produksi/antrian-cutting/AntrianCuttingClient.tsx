@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   FileText,
@@ -87,6 +87,21 @@ export default function AntrianCuttingClient({ poList, role }: Props) {
   const [expandedPoId, setExpandedPoId] = useState<string | null>(null);
   const [bundleCache, setBundleCache] = useState<Record<string, BundleDetailItem[]>>({});
   const [loadingDetail, setLoadingDetail] = useState<string | null>(null);
+
+  // Tinggi bar toolbar (tab + tombol aksi) diukur otomatis, dipakai sebagai
+  // offset "top" agar header tabel freeze tepat di bawahnya (tanpa celah/tumpang tindih).
+  const stickyHeaderRef = useRef<HTMLDivElement>(null);
+  const [stickyHeaderHeight, setStickyHeaderHeight] = useState(0);
+
+  useEffect(() => {
+    const el = stickyHeaderRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(entries => {
+      setStickyHeaderHeight(entries[0].contentRect.height);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   // Bundle-level selection: map po_id → Set<bundle_id>
   const [selectedBundleIds, setSelectedBundleIds] = useState<Record<string, Set<string>>>({});
@@ -281,8 +296,11 @@ export default function AntrianCuttingClient({ poList, role }: Props) {
   return (
     <div className="space-y-6">
 
+      {/* Toolbar + info seleksi — freeze di atas saat scroll */}
+      <div ref={stickyHeaderRef} className="print:hidden sticky top-0 z-20 bg-[#16181A] space-y-3 pb-3">
+
       {/* Toolbar */}
-      <div className="print:hidden flex flex-col md:flex-row md:items-end justify-between gap-4 bg-[#1A1D1F] p-4 rounded-xl border border-[#2A2D31]">
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 bg-[#1A1D1F] p-4 rounded-xl border border-[#2A2D31]">
 
         {/* Tabs */}
         <div className="flex p-1 bg-[#16181A] rounded-lg w-fit border border-[#2A2D31]">
@@ -376,22 +394,26 @@ export default function AntrianCuttingClient({ poList, role }: Props) {
 
       {/* Selection info */}
       {hasBundleSel && !isSelesaiTab && !isPendingTab && (
-        <p className="print:hidden text-xs text-[#9aa0a6]">
+        <p className="text-xs text-[#9aa0a6]">
           Bundle terpilih: <span className="text-[#e5c17b] font-bold">{allSelectedBundleIds.length}</span>
         </p>
       )}
+      </div>
 
       {/* Pending Tab */}
       {isPendingTab && <PendingCuttingTab />}
 
       {/* Tabel PO (semua tab kecuali pending) */}
       {!isPendingTab && (
-      <div className="print:hidden rounded-xl border border-[#2A2D31] bg-[#1A1D1F] overflow-hidden">
+      <div className="print:hidden rounded-xl border border-[#2A2D31] bg-[#1A1D1F]">
         <table className="w-full text-sm border-collapse">
           <thead>
-            <tr className="bg-[#16181A] border-b border-[#2A2D31]">
+            <tr className="bg-[#16181A]">
               {!isPendingTab && (
-                <th className="w-10 px-4 py-3 text-center">
+                <th
+                  className="sticky z-10 w-10 px-4 py-3 text-center bg-[#16181A] border-b border-[#2A2D31] first:rounded-tl-xl last:rounded-tr-xl"
+                  style={{ top: stickyHeaderHeight }}
+                >
                   <input
                     type="checkbox"
                     checked={allSelected}
@@ -400,14 +422,14 @@ export default function AntrianCuttingClient({ poList, role }: Props) {
                   />
                 </th>
               )}
-              <th className="px-4 py-3 text-left text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold">No PO</th>
-              <th className="px-4 py-3 text-left text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold">Klien</th>
-              <th className="px-4 py-3 text-left text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold">Model</th>
-              <th className="px-4 py-3 text-center text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold">Bundle</th>
-              <th className="px-4 py-3 text-center text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold">Total QTY</th>
-              <th className="px-4 py-3 text-left text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold">Status</th>
+              <th className="sticky z-10 px-4 py-3 text-left text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold bg-[#16181A] border-b border-[#2A2D31] first:rounded-tl-xl last:rounded-tr-xl" style={{ top: stickyHeaderHeight }}>No PO</th>
+              <th className="sticky z-10 px-4 py-3 text-left text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold bg-[#16181A] border-b border-[#2A2D31] first:rounded-tl-xl last:rounded-tr-xl" style={{ top: stickyHeaderHeight }}>Klien</th>
+              <th className="sticky z-10 px-4 py-3 text-left text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold bg-[#16181A] border-b border-[#2A2D31] first:rounded-tl-xl last:rounded-tr-xl" style={{ top: stickyHeaderHeight }}>Model</th>
+              <th className="sticky z-10 px-4 py-3 text-center text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold bg-[#16181A] border-b border-[#2A2D31] first:rounded-tl-xl last:rounded-tr-xl" style={{ top: stickyHeaderHeight }}>Bundle</th>
+              <th className="sticky z-10 px-4 py-3 text-center text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold bg-[#16181A] border-b border-[#2A2D31] first:rounded-tl-xl last:rounded-tr-xl" style={{ top: stickyHeaderHeight }}>Total QTY</th>
+              <th className="sticky z-10 px-4 py-3 text-left text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold bg-[#16181A] border-b border-[#2A2D31] first:rounded-tl-xl last:rounded-tr-xl" style={{ top: stickyHeaderHeight }}>Status</th>
               {isProgressTab && (
-                <th className="px-4 py-3 text-left text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold">Mulai</th>
+                <th className="sticky z-10 px-4 py-3 text-left text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold bg-[#16181A] border-b border-[#2A2D31] first:rounded-tl-xl last:rounded-tr-xl" style={{ top: stickyHeaderHeight }}>Mulai</th>
               )}
             </tr>
           </thead>
