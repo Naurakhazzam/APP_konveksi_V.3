@@ -347,14 +347,45 @@ export async function deletePoById(id: string): Promise<{ success: boolean; mess
 
   // 2. Lakukan Deletions (Cascading manual untuk bundle jika perlu)
   // Step: Hapus bundle dulu karena tidak ada ON DELETE CASCADE di skema migrasi 002
+  //
+  // PENTING: RLS di tabel po/po_item/bundle membatasi DELETE hanya untuk role
+  // 'owner' (lihat migrasi 002, kebijakan *_delete_owner). Kalau user yang
+  // login bukan owner, Supabase TIDAK mengembalikan error — baris yang tidak
+  // sesuai kebijakan RLS cuma "tidak ikut terhapus" (0 baris), sehingga tanpa
+  // verifikasi count ini fungsi bisa salah melaporkan sukses padahal PO masih
+  // utuh di database. Makanya tiap delete di bawah diverifikasi lewat
+  // .select('id') dan jumlah barisnya dicocokkan dengan yang diharapkan.
   const bundleIds = (po.bundle || []).map((b: any) => b.id);
   if (bundleIds.length > 0) {
-    await supabase.from('bundle').delete().in('id', bundleIds);
+    const { data: deletedBundles, error: bundleDelErr } = await supabase
+      .from('bundle')
+      .delete()
+      .in('id', bundleIds)
+      .select('id');
+
+    if (bundleDelErr) throw new Error(`Gagal menghapus bundle: ${bundleDelErr.message}`);
+    if ((deletedBundles?.length ?? 0) !== bundleIds.length) {
+      return {
+        success: false,
+        message: 'Gagal menghapus PO — Anda mungkin tidak memiliki izin untuk aksi ini (hanya owner). Hubungi owner.',
+      };
+    }
   }
 
   // po_item akan terhapus otomatis via CASCADE dari po
-  const { error: delErr } = await supabase.from('po').delete().eq('id', id);
+  const { data: deletedPo, error: delErr } = await supabase
+    .from('po')
+    .delete()
+    .eq('id', id)
+    .select('id');
+
   if (delErr) throw new Error(`Gagal menghapus PO: ${delErr.message}`);
+  if (!deletedPo || deletedPo.length === 0) {
+    return {
+      success: false,
+      message: 'Gagal menghapus PO — Anda mungkin tidak memiliki izin untuk aksi ini (hanya owner). Hubungi owner.',
+    };
+  }
 
   return { success: true, message: 'PO berhasil dihapus' };
 }
