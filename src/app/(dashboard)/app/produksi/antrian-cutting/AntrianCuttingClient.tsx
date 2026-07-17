@@ -201,7 +201,13 @@ export default function AntrianCuttingClient({ poList, role }: Props) {
     try {
       const { antrian, dipotong, selesai } = await getAntrianData();
       const allBundles = [...antrian, ...dipotong, ...selesai];
-      const filtered = allBundles.filter(b => selectedPoIds.has(makeRowId(b.po_id, b.model_nama)));
+      // Gabungkan bundle dari checkbox baris utama (selectedPoIds) DAN checkbox
+      // per-bundle di panel detail (allSelectedBundleIds) — sebelumnya cetak
+      // hanya baca selectedPoIds, jadi bundle yang dicentang di detail terlewat.
+      const selectedBundleIdSet = new Set(allSelectedBundleIds);
+      const filtered = allBundles.filter(b =>
+        selectedPoIds.has(makeRowId(b.po_id, b.model_nama)) || selectedBundleIdSet.has(b.id)
+      );
       if (!filtered.length) { toast.error('Tidak ada bundle ditemukan untuk PO terpilih'); return; }
       setSpkBundles(filtered);
       setPrintMode('spk');
@@ -217,7 +223,10 @@ export default function AntrianCuttingClient({ poList, role }: Props) {
     try {
       const { antrian, dipotong, selesai } = await getAntrianData();
       const allBundles = [...antrian, ...dipotong, ...selesai];
-      const filtered = allBundles.filter(b => selectedPoIds.has(makeRowId(b.po_id, b.model_nama)));
+      const selectedBundleIdSet = new Set(allSelectedBundleIds);
+      const filtered = allBundles.filter(b =>
+        selectedPoIds.has(makeRowId(b.po_id, b.model_nama)) || selectedBundleIdSet.has(b.id)
+      );
       if (!filtered.length) { toast.error('Tidak ada bundle ditemukan untuk PO terpilih'); return; }
       setSpkBundles(filtered);
       setPrintMode('label');
@@ -233,7 +242,10 @@ export default function AntrianCuttingClient({ poList, role }: Props) {
     try {
       const { antrian, dipotong, selesai } = await getAntrianData();
       const allBundles = [...antrian, ...dipotong, ...selesai];
-      const filtered = allBundles.filter(b => selectedPoIds.has(makeRowId(b.po_id, b.model_nama)));
+      const selectedBundleIdSet = new Set(allSelectedBundleIds);
+      const filtered = allBundles.filter(b =>
+        selectedPoIds.has(makeRowId(b.po_id, b.model_nama)) || selectedBundleIdSet.has(b.id)
+      );
       if (!filtered.length) { toast.error('Tidak ada bundle ditemukan untuk PO terpilih'); return; }
 
       // 1 call saja untuk semua po_item_id — drastis lebih cepat
