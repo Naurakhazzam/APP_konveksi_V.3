@@ -48,15 +48,20 @@ interface ProdukValidationRow {
  * Digunakan saat preview sebelum import.
  */
 export async function validateImportSkus(skuList: string[]): Promise<SkuValidationResult[]> {
+  if (skuList.length === 0) return [];
+
   const supabase = await createClient();
 
-  // Normalisasi ke uppercase agar case-insensitive (DB menyimpan uppercase)
-  const normalizedSkuList = skuList.map(s => s.toUpperCase());
+  // .in() itu case-sensitive di Postgres, jadi tidak cukup normalisasi di JS saja.
+  // Pakai ilike per SKU (escape % dan _ karena keduanya wildcard di LIKE/ILIKE)
+  // agar pencarian benar-benar case-insensitive di level query.
+  const escapeIlike = (s: string) => s.trim().replace(/[%_\\]/g, ch => `\\${ch}`);
+  const orFilter = skuList.map(sku => `sku_klien.ilike.${escapeIlike(sku)}`).join(',');
 
   const { data, error } = await supabase
     .from('produk')
     .select('id, sku_klien, warna:warna_id(nama), size:size_id(nama)')
-    .in('sku_klien', normalizedSkuList)
+    .or(orFilter)
     .eq('tenant_id', TENANT_ID)
     .eq('aktif', true);
 
