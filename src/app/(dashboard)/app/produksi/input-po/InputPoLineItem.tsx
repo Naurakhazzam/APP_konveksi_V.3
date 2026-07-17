@@ -129,7 +129,8 @@ export function InputPoLineItem({ index, item, modelList, onChange, onRemove, ca
           className="bg-[#1E2124] border-[#2A2D31] text-[#e8eaed] h-10 w-20"
           value={item.qty_per_bundle || ''} 
           disabled={disabled}
-          onChange={e => onChange(index, { qty_per_bundle: parseInt(e.target.value) || 12 })}
+          onChange={e => onChange(index, { qty_per_bundle: parseInt(e.target.value) || 0 })}
+          onBlur={e => { if (!item.qty_per_bundle) onChange(index, { qty_per_bundle: 12 }); }}
         />
       </td>
       <td className="p-2 text-center text-[#e8eaed] font-medium align-middle">

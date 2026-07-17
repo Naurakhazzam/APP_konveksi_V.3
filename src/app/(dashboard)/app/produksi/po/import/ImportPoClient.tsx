@@ -61,9 +61,9 @@ export default function ImportPoClient({ klienList }: Props) {
     const XLSX = await import('xlsx');
     const ws = XLSX.utils.aoa_to_sheet([
       ['Nomor_PO', 'SKU_Klien', 'Nama_Produk', 'Total_QTY', 'QTY_Per_Bundle', 'Catatan_PO'],
-      ['PO-0020', 'ely289', 'Contoh Produk - S', 12, 6, ''],
-      ['PO-0020', 'ely290', 'Contoh Produk - M', 12, 6, ''],
-      ['PO-0021', 'ely340', 'Contoh Produk Lain', 20, 10, 'Rush order'],
+      ['PO-0020', 'ELY289', 'Contoh Produk - S', 20, 10, ''],
+      ['PO-0020', 'ELY290', 'Contoh Produk - M', 30, 10, ''],
+      ['PO-0021', 'ELY340', 'Contoh Produk Lain', 40, 10, 'Rush order'],
     ]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Data PO');
@@ -119,7 +119,8 @@ export default function ImportPoClient({ klienList }: Props) {
           const sku     = String(findCol(row, 'SKU_Klien', 'sku_klien', 'SKU')      ?? '').trim();
           const nama    = String(findCol(row, 'Nama_Produk', 'nama_produk', 'Nama') ?? '').trim();
           const catatan = String(findCol(row, 'Catatan_PO', 'catatan_po', 'Catatan') ?? '').trim();
-          const qpb     = Number(findCol(row, 'QTY_Per_Bundle', 'qty_per_bundle', 'Per_Bundle') ?? 0);
+          const totalQty = Number(findCol(row, 'Total_QTY', 'total_qty', 'Total_Qty', 'QTY') ?? 0);
+          const qpb      = Number(findCol(row, 'QTY_Per_Bundle', 'qty_per_bundle', 'Per_Bundle') ?? 0);
 
           // Fill-down: pakai nilai dari baris sebelumnya jika kosong
           if (nomor)   lastPO    = nomor;
@@ -131,14 +132,13 @@ export default function ImportPoClient({ klienList }: Props) {
             Nomor_PO:       lastPO,
             SKU_Klien:      lastSKU,
             Nama_Produk:    lastNama,
-            // Setiap baris = 1 bundle → Total_QTY = QTY_Per_Bundle
-            Total_QTY:      qpb,
+            Total_QTY:      totalQty,
             QTY_Per_Bundle: qpb,
             Catatan_PO:     lastCatat,
           };
         })
         // Buang baris yang tidak punya QTY (baris kosong/header sisa)
-        .filter(row => row.QTY_Per_Bundle > 0);
+        .filter(row => row.Total_QTY > 0 && row.QTY_Per_Bundle > 0);
 
       // Basic client-side validation
       const errors: string[] = [];

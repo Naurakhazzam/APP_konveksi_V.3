@@ -50,10 +50,13 @@ interface ProdukValidationRow {
 export async function validateImportSkus(skuList: string[]): Promise<SkuValidationResult[]> {
   const supabase = await createClient();
 
+  // Normalisasi ke uppercase agar case-insensitive (DB menyimpan uppercase)
+  const normalizedSkuList = skuList.map(s => s.toUpperCase());
+
   const { data, error } = await supabase
     .from('produk')
     .select('id, sku_klien, warna:warna_id(nama), size:size_id(nama)')
-    .in('sku_klien', skuList)
+    .in('sku_klien', normalizedSkuList)
     .eq('tenant_id', TENANT_ID)
     .eq('aktif', true);
 
@@ -63,10 +66,11 @@ export async function validateImportSkus(skuList: string[]): Promise<SkuValidati
   }
 
   const rows = (data ?? []) as unknown as ProdukValidationRow[];
-  const foundMap = new Map(rows.map(p => [p.sku_klien, p]));
+  // Key map pakai uppercase agar lookup selalu cocok
+  const foundMap = new Map(rows.map(p => [p.sku_klien.toUpperCase(), p]));
 
   return skuList.map(sku => {
-    const match = foundMap.get(sku);
+    const match = foundMap.get(sku.toUpperCase());
     return {
       sku_klien: sku,
       produk_id: match?.id ?? null,
