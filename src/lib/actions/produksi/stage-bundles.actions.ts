@@ -55,8 +55,13 @@ export async function getAntrianPerTahap(tahap: TahapKey, page: number, pageSize
   if (tahap === 'cutting') {
     query = query.not('status_tahap', 'cs', JSON.stringify({ cutting: { status: 'selesai' } }));
   } else {
+    // Tahap sebelumnya (dinamis sesuai STAGE_ORDER) harus benar-benar 'selesai' —
+    // bukan 'terima' (masih dikerjakan) — sebelum bundle boleh masuk antrian tahap ini.
+    // Dicek di query (bukan filter JS setelah .range()) supaya total & isi per
+    // halaman selalu konsisten.
+    const prevStage = STAGE_ORDER[stageIndex - 1];
     query = query
-      .contains('status_tahap', { cutting: { status: 'selesai' } })
+      .contains('status_tahap', { [prevStage]: { status: 'selesai' } })
       .not('status_tahap', 'cs', JSON.stringify({ [tahap]: { status: 'selesai' } }));
   }
 
@@ -66,7 +71,7 @@ export async function getAntrianPerTahap(tahap: TahapKey, page: number, pageSize
 
   if (error) throw new Error(`Gagal ambil antrian ${tahap}: ${error.message}`);
 
-  let mappedData: AntrianBundleItem[] = (data as any[]).map(item => {
+  const mappedData: AntrianBundleItem[] = (data as any[]).map(item => {
     const stageInfo = item.status_tahap?.[tahap];
     const status: 'menunggu' | 'sedang_proses' = (stageInfo?.status === 'terima') ? 'sedang_proses' : 'menunggu';
 
@@ -83,14 +88,6 @@ export async function getAntrianPerTahap(tahap: TahapKey, page: number, pageSize
       status
     };
   });
-
-  if (tahap !== 'cutting') {
-    const prevStage = STAGE_ORDER[stageIndex - 1];
-    mappedData = mappedData.filter(item => {
-      const prevStatus = item.status_tahap?.[prevStage]?.status;
-      return prevStatus === 'terima' || prevStatus === 'selesai';
-    });
-  }
 
   return { data: mappedData, total: count || 0 };
 }
