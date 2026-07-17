@@ -8,6 +8,9 @@ const TENANT_ID = 'STX-001';
 // ─── TYPES ───────────────────────────────────────────────────────────────────
 
 export interface POCuttingItem {
+  // Kunci unik baris = po_id + model (1 PO bisa punya banyak model/artikel,
+  // masing-masing tampil sebagai baris terpisah)
+  row_id: string;
   po_id: string;
   no_po: string;
   klien_nama: string;
@@ -16,6 +19,13 @@ export interface POCuttingItem {
   total_qty: number;
   status: 'menunggu' | 'progress' | 'selesai';
   start_time: string | null;
+}
+
+// Kunci gabungan po_id + model. File 'use server' hanya boleh mengekspor
+// async function, jadi helper ini tidak diekspor — sisi client punya salinan
+// identik (lihat makeRowId di AntrianCuttingClient.tsx) agar formatnya sama.
+function makeRowId(po_id: string, model_nama: string | null): string {
+  return `${po_id}::${model_nama ?? ''}`;
 }
 
 export interface StokWarning {
@@ -99,8 +109,10 @@ export async function getPOCuttingList(): Promise<POCuttingItem[]> {
 
   if (error) throw new Error(`Gagal fetch bundle: ${error.message}`);
 
-  // Group by po_id
+  // Group by po_id + model — satu PO dengan banyak model/artikel akan
+  // menghasilkan satu baris per model, bukan digabung jadi satu nama saja.
   const poMap = new Map<string, {
+    row_id: string;
     po_id: string;
     no_po: string;
     klien_nama: string;
@@ -118,17 +130,21 @@ export async function getPOCuttingList(): Promise<POCuttingItem[]> {
     const po_id: string = po?.id ?? '';
     if (!po_id) continue;
 
-    if (!poMap.has(po_id)) {
-      poMap.set(po_id, {
+    const model_nama: string | null = model_produk?.nama ?? null;
+    const row_id = makeRowId(po_id, model_nama);
+
+    if (!poMap.has(row_id)) {
+      poMap.set(row_id, {
+        row_id,
         po_id,
         no_po: po?.no_po ?? '-',
         klien_nama: klien?.nama ?? '-',
-        model_nama: model_produk?.nama ?? null,
+        model_nama,
         bundles: [],
       });
     }
 
-    poMap.get(po_id)!.bundles.push({
+    poMap.get(row_id)!.bundles.push({
       status_tahap: raw.status_tahap,
       qty_per_bundle: po_item?.qty_per_bundle ?? 0,
     });
@@ -167,6 +183,7 @@ export async function getPOCuttingList(): Promise<POCuttingItem[]> {
     const total_qty = bundles.reduce((s, b) => s + (b.qty_per_bundle ?? 0), 0);
 
     result.push({
+      row_id:     group.row_id,
       po_id:      group.po_id,
       no_po:      group.no_po,
       klien_nama: group.klien_nama,
@@ -178,12 +195,15 @@ export async function getPOCuttingList(): Promise<POCuttingItem[]> {
     });
   }
 
-  // Urutkan: menunggu → progress → by no_po
+  // Urutkan: menunggu → progress → by no_po → by model (biar model-model
+  // dari PO yang sama tampil berurutan/berdekatan)
   result.sort((a, b) => {
     const order = { menunggu: 0, progress: 1, selesai: 2 };
     const diff = order[a.status] - order[b.status];
     if (diff !== 0) return diff;
-    return a.no_po.localeCompare(b.no_po);
+    const poDiff = a.no_po.localeCompare(b.no_po);
+    if (poDiff !== 0) return poDiff;
+    return (a.model_nama ?? '').localeCompare(b.model_nama ?? '');
   });
 
   return result;
@@ -372,7 +392,10 @@ export interface BundleDetailItem {
   qty_aktual: number | null;
 }
 
-export async function getBundlesForPO(po_id: string): Promise<BundleDetailItem[]> {
+export async function getBundlesForPO(
+  po_id: string,
+  model_nama?: string | null,
+): Promise<BundleDetailItem[]> {
   const supabase = await createClient();
 
   const { data, error } = await supabase
@@ -384,7 +407,10 @@ export async function getBundlesForPO(po_id: string): Promise<BundleDetailItem[]
       po_item:po_item_id (
         warna,
         size,
-        qty_per_bundle
+        qty_per_bundle,
+        produk:produk_id (
+          model_produk:model_id ( nama )
+        )
       )
     `)
     .eq('po_id', po_id)
@@ -392,21 +418,29 @@ export async function getBundlesForPO(po_id: string): Promise<BundleDetailItem[]
 
   if (error) throw new Error(`Gagal fetch bundle detail: ${error.message}`);
 
-  const result: BundleDetailItem[] = (data ?? []).map((b: any) => {
-    const poItem = Array.isArray(b.po_item) ? b.po_item[0] : b.po_item;
-    const cuttingStatus = b.status_tahap?.cutting?.status ?? null;
-    const qtyAktual = b.status_tahap?.cutting?.qty_aktual ?? null;
+  const result: BundleDetailItem[] = ((data ?? []) as any[])
+    .filter(b => {
+      if (model_nama === undefined) return true; // tidak difilter per model
+      const poItem = Array.isArray(b.po_item) ? b.po_item[0] : b.po_item;
+      const produk = Array.isArray(poItem?.produk) ? poItem.produk[0] : poItem?.produk;
+      const modelProduk = Array.isArray(produk?.model_produk) ? produk.model_produk[0] : produk?.model_produk;
+      return (modelProduk?.nama ?? null) === model_nama;
+    })
+    .map(b => {
+      const poItem = Array.isArray(b.po_item) ? b.po_item[0] : b.po_item;
+      const cuttingStatus = b.status_tahap?.cutting?.status ?? null;
+      const qtyAktual = b.status_tahap?.cutting?.qty_aktual ?? null;
 
-    return {
-      id:             b.id,
-      barcode:        b.barcode,
-      warna:          poItem?.warna ?? '-',
-      size:           poItem?.size ?? '-',
-      qty_per_bundle: poItem?.qty_per_bundle ?? 0,
-      cutting_status: cuttingStatus,
-      qty_aktual:     qtyAktual !== null ? Number(qtyAktual) : null,
-    };
-  });
+      return {
+        id:             b.id,
+        barcode:        b.barcode,
+        warna:          poItem?.warna ?? '-',
+        size:           poItem?.size ?? '-',
+        qty_per_bundle: poItem?.qty_per_bundle ?? 0,
+        cutting_status: cuttingStatus,
+        qty_aktual:     qtyAktual !== null ? Number(qtyAktual) : null,
+      };
+    });
 
   // Urutkan: warna ASC, size ASC
   result.sort((a, b) => {

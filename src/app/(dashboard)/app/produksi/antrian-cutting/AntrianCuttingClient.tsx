@@ -42,6 +42,11 @@ const TAB_LABELS: Record<TabKey, string> = {
   selesai:  'Selesai',
 };
 
+// Kunci gabungan po_id + model — harus identik dengan makeRowId di cutting.actions.ts
+function makeRowId(po_id: string, model_nama: string | null): string {
+  return `${po_id}::${model_nama ?? ''}`;
+}
+
 function formatTime(iso: string | null): string {
   if (!iso) return '-';
   return new Date(iso).toLocaleString('id-ID', {
@@ -106,34 +111,35 @@ export default function AntrianCuttingClient({ poList, role }: Props) {
     return () => window.removeEventListener('afterprint', fn);
   }, []);
 
-  const handleExpandPO = async (po_id: string) => {
-    if (expandedPoId === po_id) { setExpandedPoId(null); return; }
-    setExpandedPoId(po_id);
-    if (bundleCache[po_id]) return;
-    setLoadingDetail(po_id);
+  const handleExpandPO = async (po: POCuttingItem) => {
+    const { row_id, po_id, model_nama } = po;
+    if (expandedPoId === row_id) { setExpandedPoId(null); return; }
+    setExpandedPoId(row_id);
+    if (bundleCache[row_id]) return;
+    setLoadingDetail(row_id);
     try {
-      const bundles = await getBundlesForPO(po_id);
-      setBundleCache(prev => ({ ...prev, [po_id]: bundles }));
+      const bundles = await getBundlesForPO(po_id, model_nama);
+      setBundleCache(prev => ({ ...prev, [row_id]: bundles }));
     } finally {
       setLoadingDetail(null);
     }
   };
 
-  // Bundle-level checkbox helpers
-  const toggleBundle = (po_id: string, bundle_id: string) => {
+  // Bundle-level checkbox helpers (dikunci per row_id: po_id + model)
+  const toggleBundle = (row_id: string, bundle_id: string) => {
     setSelectedBundleIds(prev => {
-      const set = new Set(prev[po_id] ?? []);
+      const set = new Set(prev[row_id] ?? []);
       set.has(bundle_id) ? set.delete(bundle_id) : set.add(bundle_id);
-      return { ...prev, [po_id]: set };
+      return { ...prev, [row_id]: set };
     });
   };
 
-  const toggleAllBundlesForPO = (po_id: string) => {
-    const all = bundleCache[po_id] ?? [];
+  const toggleAllBundlesForPO = (row_id: string) => {
+    const all = bundleCache[row_id] ?? [];
     setSelectedBundleIds(prev => {
-      const set = prev[po_id] ?? new Set();
+      const set = prev[row_id] ?? new Set();
       const next = set.size === all.length ? new Set<string>() : new Set(all.map(b => b.id));
-      return { ...prev, [po_id]: next };
+      return { ...prev, [row_id]: next };
     });
   };
 
@@ -152,7 +158,7 @@ export default function AntrianCuttingClient({ poList, role }: Props) {
     if (selectedPoIds.size === tabData.length && tabData.length > 0) {
       setSelectedPoIds(new Set());
     } else {
-      setSelectedPoIds(new Set(tabData.map(p => p.po_id)));
+      setSelectedPoIds(new Set(tabData.map(p => p.row_id)));
     }
   };
 
@@ -195,7 +201,7 @@ export default function AntrianCuttingClient({ poList, role }: Props) {
     try {
       const { antrian, dipotong, selesai } = await getAntrianData();
       const allBundles = [...antrian, ...dipotong, ...selesai];
-      const filtered = allBundles.filter(b => selectedPoIds.has(b.po_id));
+      const filtered = allBundles.filter(b => selectedPoIds.has(makeRowId(b.po_id, b.model_nama)));
       if (!filtered.length) { toast.error('Tidak ada bundle ditemukan untuk PO terpilih'); return; }
       setSpkBundles(filtered);
       setPrintMode('spk');
@@ -211,7 +217,7 @@ export default function AntrianCuttingClient({ poList, role }: Props) {
     try {
       const { antrian, dipotong, selesai } = await getAntrianData();
       const allBundles = [...antrian, ...dipotong, ...selesai];
-      const filtered = allBundles.filter(b => selectedPoIds.has(b.po_id));
+      const filtered = allBundles.filter(b => selectedPoIds.has(makeRowId(b.po_id, b.model_nama)));
       if (!filtered.length) { toast.error('Tidak ada bundle ditemukan untuk PO terpilih'); return; }
       setSpkBundles(filtered);
       setPrintMode('label');
@@ -227,7 +233,7 @@ export default function AntrianCuttingClient({ poList, role }: Props) {
     try {
       const { antrian, dipotong, selesai } = await getAntrianData();
       const allBundles = [...antrian, ...dipotong, ...selesai];
-      const filtered = allBundles.filter(b => selectedPoIds.has(b.po_id));
+      const filtered = allBundles.filter(b => selectedPoIds.has(makeRowId(b.po_id, b.model_nama)));
       if (!filtered.length) { toast.error('Tidak ada bundle ditemukan untuk PO terpilih'); return; }
 
       // 1 call saja untuk semua po_item_id — drastis lebih cepat
@@ -405,11 +411,11 @@ export default function AntrianCuttingClient({ poList, role }: Props) {
               </tr>
             ) : (
               tabData.map(po => {
-                const isSelected = selectedPoIds.has(po.po_id);
+                const isSelected = selectedPoIds.has(po.row_id);
                 return (
-                  <React.Fragment key={po.po_id}>
+                  <React.Fragment key={po.row_id}>
                     <tr
-                      onClick={() => !isPendingTab && togglePO(po.po_id)}
+                      onClick={() => !isPendingTab && togglePO(po.row_id)}
                     className={'transition-colors ' +
                       (!isPendingTab ? 'cursor-pointer ' : '') +
                       (isSelected ? 'bg-[#e5c17b]/5' : 'bg-[#1A1D1F] hover:bg-[#1E2124]')}
@@ -419,7 +425,7 @@ export default function AntrianCuttingClient({ poList, role }: Props) {
                         <input
                           type="checkbox"
                           checked={isSelected}
-                          onChange={() => togglePO(po.po_id)}
+                          onChange={() => togglePO(po.row_id)}
                           className="accent-[#e5c17b] w-4 h-4 cursor-pointer"
                         />
                       </td>
@@ -434,9 +440,9 @@ export default function AntrianCuttingClient({ poList, role }: Props) {
                     <td className="px-4 py-3">
                       <div className="flex items-center">
                         <StatusBadge status={po.status} />
-                        <button onClick={e => { e.stopPropagation(); handleExpandPO(po.po_id); }}
+                        <button onClick={e => { e.stopPropagation(); handleExpandPO(po); }}
                           className="ml-2 text-[#9aa0a6] hover:text-[#e5c17b] transition-colors">
-                          {expandedPoId === po.po_id
+                          {expandedPoId === po.row_id
                             ? <ChevronDown className="w-4 h-4" />
                             : <ChevronRight className="w-4 h-4" />}
                         </button>
@@ -451,33 +457,33 @@ export default function AntrianCuttingClient({ poList, role }: Props) {
                       </td>
                     )}
                   </tr>
-                  {expandedPoId === po.po_id && (
-                    <tr key={`${po.po_id}-expanded`}>
+                  {expandedPoId === po.row_id && (
+                    <tr key={`${po.row_id}-expanded`}>
                       <td colSpan={isProgressTab ? 8 : 7}
                           className="bg-[#16181A] px-4 py-4 border-b border-[#2A2D31]">
 
-                        {loadingDetail === po.po_id && (
+                        {loadingDetail === po.row_id && (
                           <div className="flex items-center gap-2 text-[#9aa0a6] text-sm py-2">
                             <Loader2 className="w-4 h-4 animate-spin" /> Memuat detail...
                           </div>
                         )}
 
-                        {bundleCache[po.po_id] && (
+                        {bundleCache[po.row_id] && (
                           <div>
                             {/* Header ringkasan + select all */}
                             <div className="flex items-center justify-between mb-3">
                               <p className="text-[10px] text-[#9aa0a6] uppercase font-bold tracking-widest">
-                                {bundleCache[po.po_id].length} Bundle
-                                · {[...new Set(bundleCache[po.po_id].map(b => b.warna))].length} Warna
-                                · {[...new Set(bundleCache[po.po_id].map(b => b.size))].length} Size
+                                {bundleCache[po.row_id].length} Bundle
+                                · {[...new Set(bundleCache[po.row_id].map(b => b.warna))].length} Warna
+                                · {[...new Set(bundleCache[po.row_id].map(b => b.size))].length} Size
                               </p>
                               {!isSelesaiTab && (
                                 <label className="flex items-center gap-1.5 text-[10px] text-[#9aa0a6] cursor-pointer hover:text-[#e5c17b]">
                                   <input
                                     type="checkbox"
                                     className="accent-[#e5c17b] w-3.5 h-3.5"
-                                    checked={(selectedBundleIds[po.po_id]?.size ?? 0) === bundleCache[po.po_id].length}
-                                    onChange={() => toggleAllBundlesForPO(po.po_id)}
+                                    checked={(selectedBundleIds[po.row_id]?.size ?? 0) === bundleCache[po.row_id].length}
+                                    onChange={() => toggleAllBundlesForPO(po.row_id)}
                                   />
                                   Pilih Semua
                                 </label>
@@ -496,15 +502,15 @@ export default function AntrianCuttingClient({ poList, role }: Props) {
                                 </tr>
                               </thead>
                               <tbody>
-                                {bundleCache[po.po_id].map(bundle => (
+                                {bundleCache[po.row_id].map(bundle => (
                                   <tr key={bundle.id} className="border-b border-[#2A2D31]/50 hover:bg-[#1A1D1F]">
                                     {!isSelesaiTab && (
                                       <td className="py-1.5 px-2">
                                         <input
                                           type="checkbox"
                                           className="accent-[#e5c17b] w-3.5 h-3.5 cursor-pointer"
-                                          checked={selectedBundleIds[po.po_id]?.has(bundle.id) ?? false}
-                                          onChange={() => toggleBundle(po.po_id, bundle.id)}
+                                          checked={selectedBundleIds[po.row_id]?.has(bundle.id) ?? false}
+                                          onChange={() => toggleBundle(po.row_id, bundle.id)}
                                         />
                                       </td>
                                     )}
