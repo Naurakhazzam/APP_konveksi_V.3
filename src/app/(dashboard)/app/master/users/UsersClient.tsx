@@ -26,8 +26,8 @@ import {
   DropdownMenuItem, 
   DropdownMenuTrigger 
 } from '@/components/ui/dropdown-menu';
-import { Shield, UserX, UserCheck, ChevronDown, Loader2, UserPlus } from 'lucide-react';
-import { updateUserRole, toggleUserAktif, createUser } from '@/lib/actions/master/user.actions';
+import { Shield, UserX, UserCheck, ChevronDown, Loader2, UserPlus, KeyRound } from 'lucide-react';
+import { updateUserRole, toggleUserAktif, createUser, resetUserPassword } from '@/lib/actions/master/user.actions';
 import type { UserRole } from '@/lib/auth/permissions';
 import { toast } from 'sonner';
 import PermissionMatrix from './PermissionMatrix';
@@ -70,6 +70,10 @@ export function UsersClient({ initialUsers, currentUserId, initialPermissions }:
     nama: '',
     role: 'mandor' as UserRole,
   });
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetLoading, setResetLoading] = useState(false);
+  const [userToReset, setUserToReset] = useState<UserData | null>(null);
+  const [resetPassword, setResetPassword] = useState('');
 
   const handleRoleChange = async (userId: string, newRole: UserRole) => {
     if (userId === currentUserId) return;
@@ -100,6 +104,25 @@ export function UsersClient({ initialUsers, currentUserId, initialPermissions }:
     } finally {
       setLoadingId(null);
       setUserToToggle(null);
+    }
+  };
+
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!userToReset) return;
+
+    setResetLoading(true);
+    try {
+      const result = await resetUserPassword(userToReset.id, resetPassword);
+      if (!result.success) throw new Error(result.error);
+      toast.success(`Password ${userToReset.nama} berhasil diperbarui`);
+      setResetOpen(false);
+      setUserToReset(null);
+      setResetPassword('');
+    } catch (err: any) {
+      toast.error(err.message || 'Gagal reset password');
+    } finally {
+      setResetLoading(false);
     }
   };
 
@@ -234,6 +257,21 @@ export function UsersClient({ initialUsers, currentUserId, initialPermissions }:
                         <Button
                           variant="ghost"
                           size="sm"
+                          className="h-8 border border-[#2A2D31] text-[#9aa0a6] hover:text-[#e8eaed]"
+                          disabled={loadingId === user.id}
+                          onClick={() => {
+                            setUserToReset(user);
+                            setResetPassword('');
+                            setResetOpen(true);
+                          }}
+                        >
+                          <KeyRound className="h-3 w-3 mr-2" />
+                          Reset Password
+                        </Button>
+
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           className={`h-8 border ${user.aktif ? 'text-red-400 border-red-500/20 hover:bg-red-500/10' : 'text-green-400 border-green-500/20 hover:bg-green-500/10'}`}
                           disabled={loadingId === user.id}
                           onClick={() => {
@@ -334,6 +372,51 @@ export function UsersClient({ initialUsers, currentUserId, initialPermissions }:
               >
                 {createLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
                 {createLoading ? 'Membuat...' : 'Buat User'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={resetOpen} onOpenChange={setResetOpen}>
+        <DialogContent className="bg-[#16181A] border-[#2A2D31] text-[#e8eaed]">
+          <DialogHeader>
+            <DialogTitle>Reset Password — {userToReset?.nama}</DialogTitle>
+            <DialogDescription className="text-[#9aa0a6]">
+              Password lama tidak bisa dilihat/dipulihkan. Masukkan password baru untuk akun ini,
+              lalu sampaikan langsung kepada yang bersangkutan.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleResetPassword} className="space-y-4 mt-2">
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold text-[#9aa0a6] uppercase tracking-widest">Password Baru</label>
+              <input
+                type="text"
+                required
+                minLength={6}
+                value={resetPassword}
+                onChange={(e) => setResetPassword(e.target.value)}
+                className="w-full h-10 px-3 rounded-lg bg-[#16181A] border border-[#2A2D31] text-sm text-[#e8eaed] focus:ring-1 focus:ring-[#e5c17b] outline-none font-mono"
+                placeholder="min. 6 karakter"
+              />
+            </div>
+            <DialogFooter className="gap-2 sm:gap-0 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setResetOpen(false)}
+                className="border-[#2A2D31] bg-transparent text-[#e8eaed]"
+                disabled={resetLoading}
+              >
+                Batal
+              </Button>
+              <Button
+                type="submit"
+                disabled={resetLoading}
+                className="bg-[#e5c17b] text-[#0D0E10] hover:bg-[#d4b06a] font-bold"
+              >
+                {resetLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                {resetLoading ? 'Menyimpan...' : 'Simpan Password Baru'}
               </Button>
             </DialogFooter>
           </form>

@@ -173,6 +173,43 @@ export async function createUser(input: {
   return { success: true };
 }
 
+export async function resetUserPassword(userId: string, newPassword: string): Promise<{ success: boolean; error?: string }> {
+  let currentUser;
+  try {
+    currentUser = await requireOwner();
+  } catch {
+    return { success: false, error: 'Unauthorized: Hanya owner yang dapat mengelola user.' };
+  }
+
+  if (newPassword.length < 6) {
+    return { success: false, error: 'Password minimal 6 karakter.' };
+  }
+
+  const admin = createAdminClient();
+
+  const { data: profile } = await admin
+    .from('user_profile')
+    .select('nama')
+    .eq('id', userId)
+    .single();
+
+  const { error } = await admin.auth.admin.updateUserById(userId, { password: newPassword });
+  if (error) return { success: false, error: error.message };
+
+  // Catat Audit Log — tidak menyimpan password baru itu sendiri
+  await admin.from('audit_log').insert({
+    user_id: currentUser.id,
+    modul: 'user-management',
+    aksi: 'Reset Password',
+    target: userId,
+    metadata: { user_target: profile?.nama || userId },
+    tenant_id: TENANT_ID,
+  });
+
+  revalidatePath('/app/master/users');
+  return { success: true };
+}
+
 export async function deleteUser(userId: string) {
   await requireOwner();
 
