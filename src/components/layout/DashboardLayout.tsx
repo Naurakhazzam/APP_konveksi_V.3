@@ -19,7 +19,6 @@ const ALL_APP_PATHS = [
   '/app/produksi/scan/qc',
   '/app/produksi/scan/steam',
   '/app/produksi/scan/packing',
-  '/app/produksi/lacak-barcode',
   '/app/produksi/monitoring',
   '/app/produksi/po',
   '/app/produksi/approval-qty',
@@ -59,6 +58,7 @@ const ALL_APP_PATHS = [
   '/app/keuangan/laporan-gaji',
   '/app/keuangan/laporan-reject',
   '/app/settings',
+  '/app/lacak-barcode',
 ];
 
 export async function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -83,6 +83,7 @@ export async function DashboardLayout({ children }: { children: React.ReactNode 
     inventory:     '/app/inventory',
     keuangan:      '/app/keuangan',
     settings:      '/app/settings',
+    'lacak-barcode': '/app/lacak-barcode',
   };
 
   const allowedNavIds = Object.entries(NAV_PATH_MAP)

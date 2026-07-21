@@ -15,6 +15,7 @@ import {
   LogOut,
   Menu,
   AlertTriangle,
+  ScanBarcode,
 } from 'lucide-react';
 import { type UserProfile } from '@/lib/auth/permissions';
 import { signOutAction } from '@/lib/auth/actions';
@@ -43,14 +44,20 @@ const NAV_MENU = [
       { label: 'QC',              path: '/app/produksi/scan/qc' },
       { label: 'Steam',           path: '/app/produksi/scan/steam' },
       { label: 'Packing',         path: '/app/produksi/scan/packing' },
-      { label: 'Lacak Barcode',   path: '/app/produksi/lacak-barcode' },
       { label: 'Monitoring',      path: '/app/produksi/monitoring' },
       { label: 'Approval QTY',    path: '/app/produksi/approval-qty' },
       { label: 'Reject',          path: '/app/produksi/reject',        icon: AlertTriangle },
     ]
   },
-  { 
-    label: 'Pengiriman', 
+  {
+    label: 'Lacak Barcode',
+    path: '/app/lacak-barcode',
+    matchPath: '/app/lacak-barcode',
+    id: 'lacak-barcode',
+    icon: ScanBarcode,
+  },
+  {
+    label: 'Pengiriman',
     path: '/app/pengiriman/buat-surat-jalan',
     matchPath: '/app/pengiriman',
     id: 'pengiriman', 

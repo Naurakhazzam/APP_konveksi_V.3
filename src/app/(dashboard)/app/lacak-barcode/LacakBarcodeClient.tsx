@@ -2,13 +2,19 @@
 
 import React, { useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { Search, Loader2, Hash, PackageCheck, Truck, Scissors, Barcode as BarcodeIcon } from 'lucide-react';
-import { lacakBarcode, type LacakBarcodeResult } from '@/lib/actions/produksi/lacak-barcode.actions';
+import { Search, Loader2, Hash, PackageCheck, Truck, Scissors, ChevronRight, Barcode as BarcodeIcon } from 'lucide-react';
+import {
+  lacakBarcode,
+  lacakBarcodeExact,
+  type LacakBarcodeResult,
+  type LacakBarcodeCandidate,
+} from '@/lib/actions/produksi/lacak-barcode.actions';
 
 type ViewState =
   | { phase: 'idle' }
   | { phase: 'loading' }
   | { phase: 'not_found' }
+  | { phase: 'multiple'; candidates: LacakBarcodeCandidate[] }
   | { phase: 'found'; data: LacakBarcodeResult };
 
 function formatTanggal(iso: string | null): string {
@@ -34,13 +40,30 @@ export default function LacakBarcodeClient() {
     setState({ phase: 'loading' });
     try {
       const result = await lacakBarcode(barcode.trim());
-      if (!result) {
+      if (result.type === 'not_found') {
+        setState({ phase: 'not_found' });
+      } else if (result.type === 'multiple') {
+        setState({ phase: 'multiple', candidates: result.candidates });
+      } else {
+        setState({ phase: 'found', data: result.data });
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Gagal mencari barcode');
+      setState({ phase: 'idle' });
+    }
+  };
+
+  const handlePickCandidate = async (candidateBarcode: string) => {
+    setState({ phase: 'loading' });
+    try {
+      const detail = await lacakBarcodeExact(candidateBarcode);
+      if (!detail) {
         setState({ phase: 'not_found' });
         return;
       }
-      setState({ phase: 'found', data: result });
+      setState({ phase: 'found', data: detail });
     } catch (err: any) {
-      toast.error(err.message || 'Gagal mencari barcode');
+      toast.error(err.message || 'Gagal memuat detail bundle');
       setState({ phase: 'idle' });
     }
   };
@@ -99,6 +122,45 @@ export default function LacakBarcodeClient() {
           <p className="text-[#9aa0a6] text-sm mb-4">Pastikan barcode yang di-scan sudah benar.</p>
           <button onClick={resetSearch} className="text-[#e5c17b] text-sm font-bold hover:underline">
             Cari Ulang
+          </button>
+        </div>
+      )}
+
+      {state.phase === 'multiple' && (
+        <div className="bg-[#1A1D1F] border border-[#2A2D31] rounded-3xl p-8 shadow-xl">
+          <div className="flex items-center gap-4 mb-6">
+            <div className="w-12 h-12 rounded-2xl bg-[#e5c17b]/10 flex items-center justify-center">
+              <Search className="text-[#e5c17b] w-6 h-6" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-[#e8eaed]">Ditemukan {state.candidates.length} Bundle</h2>
+              <p className="text-[#9aa0a6] text-sm">Ada beberapa barcode yang cocok, pilih salah satu:</p>
+            </div>
+          </div>
+
+          <div className="grid gap-3">
+            {state.candidates.map((c) => (
+              <button
+                key={c.barcode}
+                onClick={() => handlePickCandidate(c.barcode)}
+                className="flex items-center justify-between p-4 bg-[#0D0E10] border border-[#2A2D31] hover:border-[#e5c17b]/30 rounded-2xl transition-all group hover:bg-[#e5c17b]/5"
+              >
+                <div className="text-left">
+                  <div className="text-xs font-mono font-bold text-[#e5c17b]">{c.barcode}</div>
+                  <div className="text-xs text-[#9aa0a6] mt-0.5">
+                    {c.no_po} · {c.model_nama ?? '-'} / {c.warna} / {c.size}
+                  </div>
+                </div>
+                <ChevronRight className="w-5 h-5 text-[#2A2D31] group-hover:text-[#e5c17b]" />
+              </button>
+            ))}
+          </div>
+
+          <button
+            onClick={resetSearch}
+            className="w-full mt-6 py-3 rounded-2xl border-2 border-[#2A2D31] text-sm font-bold text-[#9aa0a6] hover:bg-[#2A2D31]/30 transition-all"
+          >
+            BATAL & CARI ULANG
           </button>
         </div>
       )}
