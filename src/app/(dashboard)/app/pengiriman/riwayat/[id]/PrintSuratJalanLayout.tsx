@@ -25,7 +25,7 @@ export default function PrintSuratJalanLayout({ detail }: { detail: SuratJalanDe
     <div className="sj-print-root hidden print:block font-sans text-black bg-white">
       <style>{`
         @media print {
-          @page { margin: 1.5cm; size: A4 portrait; }
+          @page { margin: 1cm; size: A4 portrait; }
           * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
           html, body { height: auto !important; overflow: visible !important; background: white !important; }
           body * { visibility: hidden; }
@@ -36,88 +36,88 @@ export default function PrintSuratJalanLayout({ detail }: { detail: SuratJalanDe
       `}</style>
 
       {/* Kop Surat Header (Opsional, disesuaikan) */}
-      <div className="text-center border-b-2 border-black pb-4 mb-6">
-        <h1 className="text-2xl font-bold tracking-wider uppercase">Surat Jalan</h1>
-        <p className="text-sm">Stitchlyx Syncore</p>
+      <div className="text-center border-b-2 border-black pb-2 mb-3">
+        <h1 className="text-lg font-bold tracking-wide uppercase">Surat Jalan</h1>
+        <p className="text-xs">Stitchlyx Syncore</p>
       </div>
 
       {/* Info SJ */}
-      <div className="flex justify-between mb-8 text-sm">
+      <div className="flex justify-between mb-4 text-xs">
         <div>
           <table className="text-left">
             <tbody>
-              <tr><td className="py-1 pr-4 font-semibold">Kepada</td><td className="py-1">: {detail.klien_nama}</td></tr>
-              <tr><td className="py-1 pr-4 font-semibold">Alamat</td><td className="py-1 max-w-[300px] align-top">: {detail.klien_alamat || '-'}</td></tr>
+              <tr><td className="py-0.5 pr-3 font-semibold">Kepada</td><td className="py-0.5">: {detail.klien_nama}</td></tr>
+              <tr><td className="py-0.5 pr-3 font-semibold align-top">Alamat</td><td className="py-0.5 max-w-[280px] align-top">: {detail.klien_alamat || '-'}</td></tr>
             </tbody>
           </table>
         </div>
         <div>
           <table className="text-left">
             <tbody>
-              <tr><td className="py-1 pr-4 font-semibold">No. Surat Jalan</td><td className="py-1">: {detail.nomor_sj}</td></tr>
-              <tr><td className="py-1 pr-4 font-semibold">Tanggal</td><td className="py-1">: {new Date(detail.tanggal).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' })}</td></tr>
+              <tr><td className="py-0.5 pr-3 font-semibold">No. Surat Jalan</td><td className="py-0.5">: {detail.nomor_sj}</td></tr>
+              <tr><td className="py-0.5 pr-3 font-semibold">Tanggal</td><td className="py-0.5">: {new Date(detail.tanggal).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' })}</td></tr>
             </tbody>
           </table>
         </div>
       </div>
 
-      <div className="mb-6">
-        <p className="text-sm mb-2">Harap diterima dengan baik barang-barang berikut ini:</p>
-        <table className="w-full text-sm border-2 border-black">
+      <div className="mb-3">
+        <p className="text-xs mb-1">Harap diterima dengan baik barang-barang berikut ini:</p>
+        <table className="w-full text-xs border border-black">
           <thead>
-            <tr className="border-b-2 border-black">
-              <th className="border-r border-black py-2 px-3 w-10 text-center">No</th>
-              <th className="border-r border-black py-2 px-3">No PO</th>
-              <th className="border-r border-black py-2 px-3">Deskripsi (Model)</th>
-              <th className="border-r border-black py-2 px-3">Warna / Size</th>
-              <th className="py-2 px-3 text-right w-24">QTY (Pcs)</th>
+            <tr className="border-b border-black">
+              <th className="border-r border-black py-1 px-2 w-8 text-center">No</th>
+              <th className="border-r border-black py-1 px-2">No PO</th>
+              <th className="border-r border-black py-1 px-2">Deskripsi (Model)</th>
+              <th className="border-r border-black py-1 px-2">Warna / Size</th>
+              <th className="py-1 px-2 text-right w-20">QTY (Pcs)</th>
             </tr>
           </thead>
           <tbody>
             {groupedArray.map((item, idx) => (
               <tr key={idx} className="border-b border-black">
-                <td className="border-r border-black py-2 px-3 text-center">{idx + 1}</td>
-                <td className="border-r border-black py-2 px-3">{item.no_po}</td>
-                <td className="border-r border-black py-2 px-3">{item.model_nama || '-'}</td>
-                <td className="border-r border-black py-2 px-3">{item.warna} / {item.size}</td>
-                <td className="py-2 px-3 text-right font-medium">{item.qty_kirim}</td>
+                <td className="border-r border-black py-1 px-2 text-center">{idx + 1}</td>
+                <td className="border-r border-black py-1 px-2">{item.no_po}</td>
+                <td className="border-r border-black py-1 px-2">{item.model_nama || '-'}</td>
+                <td className="border-r border-black py-1 px-2">{item.warna} / {item.size}</td>
+                <td className="py-1 px-2 text-right font-medium">{item.qty_kirim}</td>
               </tr>
             ))}
           </tbody>
           <tfoot>
-            <tr className="border-t-2 border-black font-bold">
-              <td colSpan={4} className="border-r border-black py-2 px-3 text-right">TOTAL</td>
-              <td className="py-2 px-3 text-right">{totalQty}</td>
+            <tr className="border-t border-black font-bold">
+              <td colSpan={4} className="border-r border-black py-1 px-2 text-right">TOTAL</td>
+              <td className="py-1 px-2 text-right">{totalQty}</td>
             </tr>
           </tfoot>
         </table>
       </div>
 
       {detail.catatan && (
-        <div className="mb-8 text-sm border border-black p-3 min-h-[60px]">
+        <div className="mb-3 text-xs border border-black p-2 min-h-[28px]">
           <strong>Catatan:</strong><br/>
           {detail.catatan}
         </div>
       )}
 
       {/* Tanda Tangan */}
-      <div className="grid grid-cols-3 gap-8 text-center text-sm mt-12">
+      <div className="grid grid-cols-3 gap-4 text-center text-xs mt-5">
         <div>
-          <p className="mb-20">Penerima,</p>
-          <p className="font-semibold border-b border-black inline-block min-w-[150px]">( ................................ )</p>
+          <p className="mb-8">Penerima,</p>
+          <p className="font-semibold border-b border-black inline-block min-w-[110px]">( ................................ )</p>
         </div>
         <div>
-          <p className="mb-20">Pengirim (Driver),</p>
-          <p className="font-semibold border-b border-black inline-block min-w-[150px]">( <span id="sj-driver-name">................................</span> )</p>
+          <p className="mb-8">Pengirim (Driver),</p>
+          <p className="font-semibold border-b border-black inline-block min-w-[110px]">( <span id="sj-driver-name">................................</span> )</p>
         </div>
         <div>
-          <p className="mb-14">Hormat Kami,</p>
-          <p className="font-bold text-sm mb-1">FAUZAN</p>
-          <p className="font-semibold border-b border-black inline-block min-w-[150px]">( ................................ )</p>
+          <p className="mb-6">Hormat Kami,</p>
+          <p className="font-bold text-xs mb-1">FAUZAN</p>
+          <p className="font-semibold border-b border-black inline-block min-w-[110px]">( ................................ )</p>
         </div>
       </div>
 
-      <div className="fixed bottom-0 right-0 p-4 text-[10px] text-gray-500 w-full text-right">
+      <div className="mt-4 text-[9px] text-gray-500 text-right">
         Dicetak otomatis oleh Stitchlyx Syncore pada {new Date().toLocaleString('id-ID')}
       </div>
     </div>
