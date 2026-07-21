@@ -73,6 +73,11 @@ export default function ScanSimpleClient({ tahap, tahapLabel, mode = 'lanjut', k
   const [selectedAlasanId, setSelectedAlasanId] = useState('');
   const [qtyReject, setQtyReject] = useState(0);
   // ───────────────────────────────────────────────────────────────────────
+  // ── Cetak ulang hang tag (packing) — antisipasi misklik/kelewatan print ─
+  const [showReprintPanel, setShowReprintPanel] = useState(false);
+  const [reprintBarcode, setReprintBarcode] = useState('');
+  const [reprintLoading, setReprintLoading] = useState(false);
+  // ───────────────────────────────────────────────────────────────────────
   const [printData, setPrintData] = useState<{
     noUrut: string;
     model_nama: string | null;
@@ -369,6 +374,38 @@ export default function ScanSimpleClient({ tahap, tahapLabel, mode = 'lanjut', k
     }
   }
 
+  // Cari bundle yang sudah packing untuk cetak ulang hang tag — read-only,
+  // tidak memanggil mutasi apapun (tidak mengubah status_tahap).
+  const handleCariReprint = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!reprintBarcode.trim()) return;
+    setReprintLoading(true);
+    try {
+      const bundle = await getBundleForScan(reprintBarcode.trim());
+      if (!bundle) {
+        toast.error('Barcode tidak ditemukan');
+        return;
+      }
+      const packingInfo = bundle.status_tahap?.packing;
+      if (!packingInfo || (packingInfo.status !== 'terima' && packingInfo.status !== 'selesai')) {
+        toast.error('Bundle ini belum packing, tidak bisa dicetak ulang');
+        return;
+      }
+      setPrintData({
+        noUrut: bundle.barcode.split('-')[2] ?? String(bundle.no_urut).padStart(5, '0'),
+        model_nama: bundle.model_nama ?? null,
+        warna: bundle.warna,
+        size: bundle.size,
+        qty: packingInfo.qty_selesai ?? packingInfo.qty_terima ?? bundle.qty_per_bundle,
+      });
+      toast.success('Bundle ditemukan — klik "Cetak Ulang" di bawah');
+    } catch (err: any) {
+      toast.error(err.message || 'Gagal mencari barcode');
+    } finally {
+      setReprintLoading(false);
+    }
+  };
+
   // ── RejectPromptCard (inline) ────────────────────────────────────────────
   const RejectPromptCard = () => {
     const [submitting, setSubmitting] = useState(false);
@@ -551,6 +588,58 @@ export default function ScanSimpleClient({ tahap, tahapLabel, mode = 'lanjut', k
               </button>
             )}
           </form>
+        </div>
+      )}
+
+      {/* Cetak Ulang Hang Tag — hanya di tahap packing, saat idle */}
+      {tahap === 'packing' && (state.phase === 'IDLE' || state.phase === 'LOADING') && (
+        <div className="mb-8">
+          <button
+            type="button"
+            onClick={() => setShowReprintPanel(v => !v)}
+            className="text-xs text-[#9aa0a6] hover:text-[#e5c17b] underline underline-offset-2 transition-colors"
+          >
+            {showReprintPanel ? 'Tutup Cetak Ulang' : 'Cetak Ulang Hang Tag'}
+          </button>
+
+          {showReprintPanel && (
+            <div className="mt-3 bg-[#1A1D1F] border border-[#2A2D31] rounded-2xl p-5">
+              <p className="text-xs text-[#9aa0a6] mb-3">
+                Cari bundle yang sudah selesai packing untuk cetak ulang hang tag-nya. Tidak mengubah status apapun — aman dipakai kalau salah klik atau kelewatan print sebelumnya.
+              </p>
+              <form onSubmit={handleCariReprint} className="flex gap-2">
+                <input
+                  value={reprintBarcode}
+                  onChange={(e) => setReprintBarcode(e.target.value)}
+                  placeholder="Scan atau ketik barcode..."
+                  disabled={reprintLoading}
+                  className="flex-1 bg-[#0D0E10] border border-[#2A2D31] rounded-xl px-4 py-2 text-sm text-[#e8eaed] outline-none focus:border-[#e5c17b]"
+                />
+                <button
+                  type="submit"
+                  disabled={reprintLoading}
+                  className="px-4 py-2 rounded-xl bg-[#e5c17b] hover:bg-[#d4b16a] text-[#0D0E10] text-xs font-bold disabled:opacity-40 transition-all flex items-center gap-2"
+                >
+                  {reprintLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Cari'}
+                </button>
+              </form>
+
+              {printData && (
+                <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#0D0E10] border border-[#2A2D31] rounded-xl p-4">
+                  <div className="text-xs text-[#e8eaed]">
+                    <span className="font-mono font-bold text-[#e5c17b]">{printData.noUrut}</span>
+                    {' — '}{printData.model_nama ?? '-'} / {printData.warna} / {printData.size} / {printData.qty} pcs
+                  </div>
+                  <button
+                    onClick={() => window.print()}
+                    className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 shrink-0"
+                  >
+                    🖨️ Cetak Ulang
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

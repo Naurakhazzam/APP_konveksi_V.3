@@ -43,6 +43,7 @@ const NAV_MENU = [
       { label: 'QC',              path: '/app/produksi/scan/qc' },
       { label: 'Steam',           path: '/app/produksi/scan/steam' },
       { label: 'Packing',         path: '/app/produksi/scan/packing' },
+      { label: 'Lacak Barcode',   path: '/app/produksi/lacak-barcode' },
       { label: 'Monitoring',      path: '/app/produksi/monitoring' },
       { label: 'Approval QTY',    path: '/app/produksi/approval-qty' },
       { label: 'Reject',          path: '/app/produksi/reject',        icon: AlertTriangle },
