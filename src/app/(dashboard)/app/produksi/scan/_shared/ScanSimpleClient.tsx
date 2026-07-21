@@ -3,9 +3,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { 
-    getBundleForScan, 
+import {
+    getBundleForScan,
     searchBundlesByBarcode,
+    searchPackedBundlesByBarcode,
     type BundleForScan,
     type BundleSearchResult
 } from '@/lib/actions/produksi/scan.actions';
@@ -77,6 +78,7 @@ export default function ScanSimpleClient({ tahap, tahapLabel, mode = 'lanjut', k
   const [showReprintPanel, setShowReprintPanel] = useState(false);
   const [reprintBarcode, setReprintBarcode] = useState('');
   const [reprintLoading, setReprintLoading] = useState(false);
+  const [reprintCandidates, setReprintCandidates] = useState<BundleSearchResult[]>([]);
   // ───────────────────────────────────────────────────────────────────────
   const [printData, setPrintData] = useState<{
     noUrut: string;
@@ -374,33 +376,71 @@ export default function ScanSimpleClient({ tahap, tahapLabel, mode = 'lanjut', k
     }
   }
 
+  // Terapkan data bundle yang sudah ketemu ke printData (dipakai baik dari
+  // exact match maupun setelah user memilih dari daftar kandidat).
+  const applyReprintBundle = (bundle: BundleForScan): boolean => {
+    const packingInfo = bundle.status_tahap?.packing;
+    if (!packingInfo || (packingInfo.status !== 'terima' && packingInfo.status !== 'selesai')) {
+      toast.error('Bundle ini belum packing, tidak bisa dicetak ulang');
+      return false;
+    }
+    setPrintData({
+      noUrut: bundle.barcode.split('-')[2] ?? String(bundle.no_urut).padStart(5, '0'),
+      model_nama: bundle.model_nama ?? null,
+      warna: bundle.warna,
+      size: bundle.size,
+      qty: packingInfo.qty_selesai ?? packingInfo.qty_terima ?? bundle.qty_per_bundle,
+    });
+    setReprintCandidates([]);
+    toast.success('Bundle ditemukan — klik "Cetak Ulang" di bawah');
+    return true;
+  };
+
   // Cari bundle yang sudah packing untuk cetak ulang hang tag — read-only,
-  // tidak memanggil mutasi apapun (tidak mengubah status_tahap).
+  // tidak memanggil mutasi apapun (tidak mengubah status_tahap). Coba exact
+  // match dulu (scan barcode penuh), lalu fallback ke partial match — orang
+  // sering cuma ingat/ketik sebagian barcode (mis. nomor urut tengahnya saja,
+  // "00311", padahal barcode aslinya "PO-XXXX-00311-bdl001").
   const handleCariReprint = async (e?: React.FormEvent) => {
     e?.preventDefault();
-    if (!reprintBarcode.trim()) return;
+    const query = reprintBarcode.trim();
+    if (!query) return;
     setReprintLoading(true);
+    setReprintCandidates([]);
     try {
-      const bundle = await getBundleForScan(reprintBarcode.trim());
-      if (!bundle) {
-        toast.error('Barcode tidak ditemukan');
+      const exact = await getBundleForScan(query);
+      if (exact) {
+        applyReprintBundle(exact);
         return;
       }
-      const packingInfo = bundle.status_tahap?.packing;
-      if (!packingInfo || (packingInfo.status !== 'terima' && packingInfo.status !== 'selesai')) {
-        toast.error('Bundle ini belum packing, tidak bisa dicetak ulang');
+
+      const matches = await searchPackedBundlesByBarcode(query);
+      if (matches.length === 0) {
+        toast.error('Barcode tidak ditemukan, atau bundle ini belum packing');
         return;
       }
-      setPrintData({
-        noUrut: bundle.barcode.split('-')[2] ?? String(bundle.no_urut).padStart(5, '0'),
-        model_nama: bundle.model_nama ?? null,
-        warna: bundle.warna,
-        size: bundle.size,
-        qty: packingInfo.qty_selesai ?? packingInfo.qty_terima ?? bundle.qty_per_bundle,
-      });
-      toast.success('Bundle ditemukan — klik "Cetak Ulang" di bawah');
+      if (matches.length === 1) {
+        const bundle = await getBundleForScan(matches[0].barcode);
+        if (bundle) applyReprintBundle(bundle);
+        else toast.error('Gagal memuat data bundle');
+        return;
+      }
+      setReprintCandidates(matches);
     } catch (err: any) {
       toast.error(err.message || 'Gagal mencari barcode');
+    } finally {
+      setReprintLoading(false);
+    }
+  };
+
+  const handlePickReprintCandidate = async (candidateBarcode: string) => {
+    setReprintLoading(true);
+    try {
+      const bundle = await getBundleForScan(candidateBarcode);
+      if (bundle) applyReprintBundle(bundle);
+      else toast.error('Gagal memuat data bundle');
+    } catch (err: any) {
+      toast.error(err.message || 'Gagal memuat data bundle');
     } finally {
       setReprintLoading(false);
     }
@@ -623,6 +663,29 @@ export default function ScanSimpleClient({ tahap, tahapLabel, mode = 'lanjut', k
                   {reprintLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Cari'}
                 </button>
               </form>
+
+              {reprintCandidates.length > 0 && (
+                <div className="mt-4 grid gap-2">
+                  <p className="text-[10px] text-[#9aa0a6] uppercase font-bold tracking-widest">
+                    Ditemukan {reprintCandidates.length} bundle, pilih salah satu:
+                  </p>
+                  {reprintCandidates.map((c) => (
+                    <button
+                      key={c.barcode}
+                      onClick={() => handlePickReprintCandidate(c.barcode)}
+                      className="flex items-center justify-between p-3 bg-[#0D0E10] border border-[#2A2D31] hover:border-[#e5c17b]/30 rounded-xl transition-all text-left"
+                    >
+                      <div>
+                        <div className="text-xs font-mono font-bold text-[#e5c17b]">{c.barcode}</div>
+                        <div className="text-[10px] text-[#9aa0a6] mt-0.5">
+                          {c.no_po} · {c.model_nama ?? '-'} / {c.warna} / {c.size}
+                        </div>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-[#2A2D31]" />
+                    </button>
+                  ))}
+                </div>
+              )}
 
               {printData && (
                 <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#0D0E10] border border-[#2A2D31] rounded-xl p-4">

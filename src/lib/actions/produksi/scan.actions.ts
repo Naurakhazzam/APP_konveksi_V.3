@@ -98,6 +98,54 @@ export async function searchBundlesByBarcode(query: string, tahap: TahapKey): Pr
     });
 }
 
+// 1c. searchPackedBundlesByBarcode — partial match, khusus bundle yang sudah
+// packing (dipakai untuk fitur cetak ulang hang tag, kebalikan filter dari
+// searchBundlesByBarcode yang menyembunyikan bundle yang sudah 'selesai').
+export async function searchPackedBundlesByBarcode(query: string): Promise<BundleSearchResult[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from('bundle')
+    .select(`
+      id,
+      barcode,
+      status_tahap,
+      po:po_id(no_po, klien:klien_id(nama)),
+      po_item:po_item_id(warna, size, produk:produk_id(model_produk:model_id(nama)))
+    `)
+    .eq('tenant_id', TENANT_ID)
+    .ilike('barcode', `%${query}%`)
+    .limit(15);
+
+  if (error) throw new Error(error.message);
+
+  return (data ?? [])
+    .filter((b: unknown) => {
+      const row = b as { status_tahap?: Record<string, { status: string } | undefined> };
+      const status = row.status_tahap?.packing?.status;
+      return status === 'terima' || status === 'selesai';
+    })
+    .slice(0, 10)
+    .map((b: unknown) => {
+      const row = b as {
+        id: string;
+        barcode: string;
+        status_tahap?: Record<string, { status: string } | undefined>;
+        po: { no_po: string; klien: { nama: string } | null } | null;
+        po_item: { warna: string; size: string; produk: { model_produk: { nama: string } | null } | null } | null;
+      };
+      return {
+        id: row.id,
+        barcode: row.barcode,
+        no_po: row.po?.no_po ?? '',
+        klien_nama: row.po?.klien?.nama ?? '',
+        model_nama: row.po_item?.produk?.model_produk?.nama ?? null,
+        warna: row.po_item?.warna ?? '',
+        size: row.po_item?.size ?? '',
+      };
+    });
+}
+
 // 2. getKaryawanForTahap
 export async function getKaryawanForTahap(
   tahap: TahapKey
