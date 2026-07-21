@@ -79,6 +79,7 @@ export default function ScanSimpleClient({ tahap, tahapLabel, mode = 'lanjut', k
   const [reprintBarcode, setReprintBarcode] = useState('');
   const [reprintLoading, setReprintLoading] = useState(false);
   const [reprintCandidates, setReprintCandidates] = useState<BundleSearchResult[]>([]);
+  const [reprintMaxQty, setReprintMaxQty] = useState(0);
   // ───────────────────────────────────────────────────────────────────────
   const [printData, setPrintData] = useState<{
     noUrut: string;
@@ -384,12 +385,14 @@ export default function ScanSimpleClient({ tahap, tahapLabel, mode = 'lanjut', k
       toast.error('Bundle ini belum packing, tidak bisa dicetak ulang');
       return false;
     }
+    const qtySelesai = packingInfo.qty_selesai ?? packingInfo.qty_terima ?? bundle.qty_per_bundle;
+    setReprintMaxQty(qtySelesai);
     setPrintData({
       noUrut: bundle.barcode.split('-')[2] ?? String(bundle.no_urut).padStart(5, '0'),
       model_nama: bundle.model_nama ?? null,
       warna: bundle.warna,
       size: bundle.size,
-      qty: packingInfo.qty_selesai ?? packingInfo.qty_terima ?? bundle.qty_per_bundle,
+      qty: qtySelesai,
     });
     setReprintCandidates([]);
     toast.success('Bundle ditemukan — klik "Cetak Ulang" di bawah');
@@ -691,7 +694,23 @@ export default function ScanSimpleClient({ tahap, tahapLabel, mode = 'lanjut', k
                 <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#0D0E10] border border-[#2A2D31] rounded-xl p-4">
                   <div className="text-xs text-[#e8eaed]">
                     <span className="font-mono font-bold text-[#e5c17b]">{printData.noUrut}</span>
-                    {' — '}{printData.model_nama ?? '-'} / {printData.warna} / {printData.size} / {printData.qty} pcs
+                    {' — '}{printData.model_nama ?? '-'} / {printData.warna} / {printData.size}
+                    <div className="mt-2 flex items-center gap-2">
+                      <label className="text-[10px] text-[#9aa0a6] uppercase font-bold tracking-widest">Qty Dicetak</label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={reprintMaxQty}
+                        value={printData.qty}
+                        onChange={(e) => {
+                          const raw = Number(e.target.value) || 1;
+                          const clamped = Math.min(Math.max(raw, 1), reprintMaxQty);
+                          setPrintData(prev => prev ? { ...prev, qty: clamped } : prev);
+                        }}
+                        className="w-16 bg-[#1A1D1F] border border-[#2A2D31] rounded-lg px-2 py-1 text-xs text-[#e8eaed] text-center font-bold outline-none focus:border-[#e5c17b]"
+                      />
+                      <span className="text-[10px] text-[#9aa0a6]">/ maks {reprintMaxQty} pcs</span>
+                    </div>
                   </div>
                   <button
                     onClick={() => window.print()}
