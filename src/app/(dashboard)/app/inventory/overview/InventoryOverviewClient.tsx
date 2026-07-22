@@ -485,49 +485,19 @@ export default function InventoryOverviewClient({ items, kategoriTrxList, warnaL
             </DialogDescription>
           </DialogHeader>
           
+          {/* Stok saat ini + nomor LOT yang akan otomatis dipakai untuk stok masuk ini */}
           {selectedItem && (
             <div className="bg-[#2A2D31]/30 rounded-xl p-4 flex justify-between items-center border border-[#2A2D31]">
-              <div className="text-sm text-[#9aa0a6]">Stok Saat Ini</div>
-              <div className="font-bold text-[#e8eaed]">{selectedItem.stok_aktual.toLocaleString('id-ID')} {selectedItem.satuan}</div>
-            </div>
-          )}
-
-          {/* Riwayat LOT — LOT-1 = paling lama masuk, mengikuti urutan FIFO */}
-          {selectedItem && (
-            <div className="bg-[#16181A] border border-[#2A2D31] rounded-xl p-3 max-h-48 overflow-y-auto">
-              <p className="text-[10px] text-[#9aa0a6] uppercase font-bold tracking-widest mb-2">
-                Riwayat LOT{lotHistory.length > 0 ? ` (${lotHistory.length})` : ''}
-              </p>
-              {lotLoading ? (
-                <p className="text-xs text-[#9aa0a6]">Memuat riwayat LOT...</p>
-              ) : lotHistory.length === 0 ? (
-                <p className="text-xs text-[#9aa0a6]">Belum ada LOT sebelumnya — ini akan jadi LOT pertama.</p>
-              ) : (
-                <div className="space-y-1.5">
-                  {lotHistory.map((lot, idx) => (
-                    <div
-                      key={lot.id}
-                      className="flex items-center justify-between text-xs bg-[#1A1D1F] border border-[#2A2D31] rounded-lg px-3 py-2"
-                    >
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="font-mono font-bold text-[#e5c17b] shrink-0">LOT-{idx + 1}</span>
-                        <span className="text-[#9aa0a6] shrink-0">
-                          {new Date(lot.tanggal_masuk).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}
-                        </span>
-                        {lot.no_faktur && (
-                          <span className="text-[#5f6368] truncate">· {lot.no_faktur}</span>
-                        )}
-                      </div>
-                      <div className="text-right shrink-0 pl-2">
-                        <span className={lot.qty_sisa <= 0 ? 'text-[#5f6368] line-through' : 'text-[#e8eaed] font-semibold'}>
-                          {lot.qty_sisa.toLocaleString('id-ID')}/{lot.qty_awal.toLocaleString('id-ID')} {selectedItem.satuan}
-                        </span>
-                        <span className="text-[#9aa0a6] ml-1">@Rp{lot.harga_satuan.toLocaleString('id-ID')}</span>
-                      </div>
-                    </div>
-                  ))}
+              <div>
+                <div className="text-sm text-[#9aa0a6]">Stok Saat Ini</div>
+                <div className="font-bold text-[#e8eaed]">{selectedItem.stok_aktual.toLocaleString('id-ID')} {selectedItem.satuan}</div>
+              </div>
+              <div className="text-right">
+                <div className="text-sm text-[#9aa0a6]">LOT Ke-</div>
+                <div className="font-bold text-[#e5c17b] text-xl">
+                  {lotLoading ? '...' : lotHistory.length + 1}
                 </div>
-              )}
+              </div>
             </div>
           )}
 
