@@ -113,6 +113,7 @@ const NAV_MENU = [
       { label: 'Transaksi Keluar', path: '/app/inventory/transaksi-keluar' },
       { label: 'Alert Order',      path: '/app/inventory/alert-order' },
       { label: 'Pemakaian Bahan',  path: '/app/inventory/pemakaian-bahan' },
+      { label: 'Detail LOT',       path: '/app/inventory/detail-lot' },
       { label: 'Ambil Benang',     path: '/app/inventory/ambil-benang' },
       { label: 'Harga Referensi',  path: '/app/inventory/harga-referensi' },
     ]
