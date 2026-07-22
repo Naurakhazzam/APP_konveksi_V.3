@@ -16,14 +16,16 @@ import {
   PlusCircle
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { 
-  InventoryOverviewItem, 
-  StokMasukInput, 
+import {
+  InventoryOverviewItem,
+  StokMasukInput,
   TambahItemInput,
   UpdateItemInput,
+  InventoryBatch,
   tambahInventoryItem,
   addStokMasuk,
-  updateInventoryItem
+  updateInventoryItem,
+  getInventoryBatches
 } from '@/lib/actions/inventory/inventory.actions';
 import { 
   Dialog, 
@@ -72,6 +74,10 @@ export default function InventoryOverviewClient({ items, kategoriTrxList, warnaL
   // Konversi state untuk stok masuk
   const [qtyBeli,      setQtyBeli]      = useState('');
   const [hargaBeli,    setHargaBeli]    = useState('');
+
+  // Riwayat LOT (batch) untuk item yang sedang dibuka di modal Stok Masuk
+  const [lotHistory, setLotHistory] = useState<InventoryBatch[]>([]);
+  const [lotLoading, setLotLoading] = useState(false);
 
   const konversiAktif = !!(selectedItem?.satuan_beli && selectedItem?.faktor_konversi);
   const qtyPakai  = konversiAktif && qtyBeli
@@ -215,6 +221,21 @@ export default function InventoryOverviewClient({ items, kategoriTrxList, warnaL
     }
   };
 
+  const openStokMasukModal = async (item: InventoryOverviewItem) => {
+    setSelectedItem(item);
+    setShowStokMasuk(true);
+    setLotLoading(true);
+    setLotHistory([]);
+    try {
+      const lots = await getInventoryBatches(item.id);
+      setLotHistory(lots);
+    } catch (err: any) {
+      toast.error(err.message || 'Gagal memuat riwayat LOT');
+    } finally {
+      setLotLoading(false);
+    }
+  };
+
   const openEditModal = (item: InventoryOverviewItem) => {
     setEditingItem(item);
     setEditWarnaId(item.warna_id ?? '');
@@ -299,7 +320,7 @@ export default function InventoryOverviewClient({ items, kategoriTrxList, warnaL
               <TableHead className="text-[#9aa0a6] font-semibold text-center">Stok Aktual</TableHead>
               <TableHead className="text-[#9aa0a6] font-semibold text-center">Min. Stok</TableHead>
               <TableHead className="text-[#9aa0a6] font-semibold">Status</TableHead>
-              <TableHead className="text-[#9aa0a6] font-semibold text-center">Batch Aktif</TableHead>
+              <TableHead className="text-[#9aa0a6] font-semibold text-center">LOT Aktif</TableHead>
               <TableHead className="text-[#9aa0a6] font-semibold text-right">Aksi</TableHead>
             </TableRow>
           </TableHeader>
@@ -360,7 +381,7 @@ export default function InventoryOverviewClient({ items, kategoriTrxList, warnaL
                     <Button 
                       variant="ghost" 
                       size="sm"
-                      onClick={() => { setSelectedItem(item); setShowStokMasuk(true); }}
+                      onClick={() => openStokMasukModal(item)}
                       className="text-[#9aa0a6] hover:text-[#e5c17b] hover:bg-[#e5c17b]/10 h-8 w-8 p-0 rounded-lg"
                     >
                       <PlusCircle size={14} />
@@ -455,7 +476,7 @@ export default function InventoryOverviewClient({ items, kategoriTrxList, warnaL
       </Dialog>
 
       {/* Modal Stok Masuk */}
-      <Dialog open={showStokMasuk} onOpenChange={(o) => { setShowStokMasuk(o); if (!o) setSelectedItem(null); }}>
+      <Dialog open={showStokMasuk} onOpenChange={(o) => { setShowStokMasuk(o); if (!o) { setSelectedItem(null); setLotHistory([]); } }}>
         <DialogContent className="bg-[#1A1D1F] border-[#2A2D31] text-[#e8eaed] sm:max-w-[480px]">
           <DialogHeader>
             <DialogTitle>Stok Masuk — {selectedItem?.nama}</DialogTitle>
@@ -468,6 +489,45 @@ export default function InventoryOverviewClient({ items, kategoriTrxList, warnaL
             <div className="bg-[#2A2D31]/30 rounded-xl p-4 flex justify-between items-center border border-[#2A2D31]">
               <div className="text-sm text-[#9aa0a6]">Stok Saat Ini</div>
               <div className="font-bold text-[#e8eaed]">{selectedItem.stok_aktual.toLocaleString('id-ID')} {selectedItem.satuan}</div>
+            </div>
+          )}
+
+          {/* Riwayat LOT — LOT-1 = paling lama masuk, mengikuti urutan FIFO */}
+          {selectedItem && (
+            <div className="bg-[#16181A] border border-[#2A2D31] rounded-xl p-3 max-h-48 overflow-y-auto">
+              <p className="text-[10px] text-[#9aa0a6] uppercase font-bold tracking-widest mb-2">
+                Riwayat LOT{lotHistory.length > 0 ? ` (${lotHistory.length})` : ''}
+              </p>
+              {lotLoading ? (
+                <p className="text-xs text-[#9aa0a6]">Memuat riwayat LOT...</p>
+              ) : lotHistory.length === 0 ? (
+                <p className="text-xs text-[#9aa0a6]">Belum ada LOT sebelumnya — ini akan jadi LOT pertama.</p>
+              ) : (
+                <div className="space-y-1.5">
+                  {lotHistory.map((lot, idx) => (
+                    <div
+                      key={lot.id}
+                      className="flex items-center justify-between text-xs bg-[#1A1D1F] border border-[#2A2D31] rounded-lg px-3 py-2"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="font-mono font-bold text-[#e5c17b] shrink-0">LOT-{idx + 1}</span>
+                        <span className="text-[#9aa0a6] shrink-0">
+                          {new Date(lot.tanggal_masuk).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}
+                        </span>
+                        {lot.no_faktur && (
+                          <span className="text-[#5f6368] truncate">· {lot.no_faktur}</span>
+                        )}
+                      </div>
+                      <div className="text-right shrink-0 pl-2">
+                        <span className={lot.qty_sisa <= 0 ? 'text-[#5f6368] line-through' : 'text-[#e8eaed] font-semibold'}>
+                          {lot.qty_sisa.toLocaleString('id-ID')}/{lot.qty_awal.toLocaleString('id-ID')} {selectedItem.satuan}
+                        </span>
+                        <span className="text-[#9aa0a6] ml-1">@Rp{lot.harga_satuan.toLocaleString('id-ID')}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

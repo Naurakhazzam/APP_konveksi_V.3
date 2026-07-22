@@ -134,7 +134,9 @@ export async function getInventoryOverview(): Promise<InventoryOverviewItem[]> {
 }
 
 /**
- * 2. Mendapatkan daftar batch untuk satu item spesifik
+ * 2. Mendapatkan daftar batch (LOT) untuk satu item spesifik.
+ * Diurutkan ascending (LOT-1 = paling lama masuk) — sesuai urutan FIFO
+ * yang dipakai sistem saat memotong stok di cutting.
  */
 export async function getInventoryBatches(item_id: string): Promise<InventoryBatch[]> {
   const supabase = await createClient();
@@ -144,7 +146,7 @@ export async function getInventoryBatches(item_id: string): Promise<InventoryBat
     .select('id, qty_awal, qty_sisa, harga_satuan, tanggal_masuk, jurnal_entry:jurnal_entry_id(no_faktur)')
     .eq('inventory_item_id', item_id)
     .eq('tenant_id', TENANT_ID)
-    .order('tanggal_masuk', { ascending: false });
+    .order('tanggal_masuk', { ascending: true });
 
   if (error) throw new Error(error.message);
 
