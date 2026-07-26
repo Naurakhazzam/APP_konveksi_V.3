@@ -22,7 +22,7 @@ interface Props {
   role: string;
 }
 
-type SubTab = 'belum_mulai' | 'sedang_diproses' | 'selesai';
+type SubTab = 'belum_mulai' | 'sedang_diproses' | 'selesai_produksi' | 'selesai_dikirim';
 type SortKey = 'no_po' | 'klien' | 'total_bundle';
 type SortDir = 'asc' | 'desc';
 
@@ -33,10 +33,12 @@ const STAGE_LABELS: Record<string, string> = {
   lubang_kancing: 'Lubang Kancing',
   qc: 'QC',
   steam: 'Steam',
-  packing: 'Packing'
+  packing: 'Packing',
+  pengiriman: 'Pengiriman'
 };
 
 const STAGE_ORDER = ['cutting', 'jahit', 'buang_benang', 'lubang_kancing', 'qc', 'steam', 'packing'];
+const STAGE_ORDER_WITH_SHIP = [...STAGE_ORDER, 'pengiriman'];
 
 export default function MonitoringStatusPO({ initialData, role }: Props) {
   const router = useRouter();
@@ -113,6 +115,8 @@ export default function MonitoringStatusPO({ initialData, role }: Props) {
     return 'bg-[#2A2D31]'; // Muted
   };
 
+  const showStageColumns = activeSubTab === 'sedang_diproses' || activeSubTab === 'selesai_produksi';
+
   const renderTable = () => {
     const list = filteredList;
 
@@ -159,8 +163,8 @@ export default function MonitoringStatusPO({ initialData, role }: Props) {
                 </button>
               </TableHead>
               
-              {activeSubTab === 'sedang_diproses' ? (
-                STAGE_ORDER.map(s => (
+              {showStageColumns ? (
+                STAGE_ORDER_WITH_SHIP.map(s => (
                   <TableHead key={s} className="text-[#9aa0a6] font-semibold text-center text-[10px] uppercase tracking-wider">
                     {STAGE_LABELS[s]}
                   </TableHead>
@@ -189,8 +193,8 @@ export default function MonitoringStatusPO({ initialData, role }: Props) {
                 </TableCell>
                 <TableCell className="text-[#e8eaed] text-sm">{po.klien_nama}</TableCell>
                 
-                {activeSubTab === 'sedang_diproses' ? (
-                  STAGE_ORDER.map(s => {
+                {showStageColumns ? (
+                  STAGE_ORDER_WITH_SHIP.map(s => {
                     const prog = po.progress[s] || { done: 0, total: 0 };
                     const percent = prog.total > 0 ? (prog.done / prog.total) * 100 : 0;
                     return (
@@ -201,8 +205,8 @@ export default function MonitoringStatusPO({ initialData, role }: Props) {
                             <span>{prog.total}</span>
                           </div>
                           <div className="h-1.5 w-full bg-[#0D0E10] rounded-full overflow-hidden">
-                            <div 
-                              className={`h-full transition-all duration-500 ${getProgressColor(prog.done, prog.total)}`}
+                            <div
+                              className={`h-full transition-all duration-500 ${s === 'pengiriman' ? 'bg-[#a855f7]' : getProgressColor(prog.done, prog.total)}`}
                               style={{ width: `${percent}%` }}
                             />
                           </div>
@@ -220,9 +224,9 @@ export default function MonitoringStatusPO({ initialData, role }: Props) {
                       <>
                         <span className="text-[10px] font-bold text-[#9aa0a6] bg-[#2A2D31] px-2 py-0.5 rounded uppercase">Antri</span>
                         {role === 'owner' && (
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
+                          <Button
+                            variant="ghost"
+                            size="icon"
                             className="h-8 w-8 text-[#9aa0a6] hover:text-[#ef4444] hover:bg-[#ef4444]/10"
                             onClick={() => handleDelete(po.id, po.no_po)}
                             disabled={isDeleting}
@@ -232,11 +236,21 @@ export default function MonitoringStatusPO({ initialData, role }: Props) {
                         )}
                       </>
                     ) : (
-                      <Link href={`/app/produksi/po/${po.no_po}`}>
-                        <Button variant="ghost" size="sm" className="h-8 text-[11px] font-bold text-[#e5c17b] hover:bg-[#e5c17b]/10 gap-1">
-                          DETAIL <ExternalLink size={12} />
-                        </Button>
-                      </Link>
+                      <>
+                        {activeSubTab === 'selesai_dikirim' && (
+                          <span className="text-[10px] font-bold text-[#a855f7] bg-[#a855f7]/10 px-2 py-0.5 rounded uppercase">Terkirim Semua</span>
+                        )}
+                        {activeSubTab === 'selesai_produksi' && (
+                          <span className="text-[10px] font-bold text-[#e5c17b] bg-[#e5c17b]/10 px-2 py-0.5 rounded uppercase">
+                            {(po.progress['pengiriman']?.done ?? 0) > 0 ? 'Sebagian Terkirim' : 'Belum Dikirim'}
+                          </span>
+                        )}
+                        <Link href={`/app/produksi/po/${po.no_po}`}>
+                          <Button variant="ghost" size="sm" className="h-8 text-[11px] font-bold text-[#e5c17b] hover:bg-[#e5c17b]/10 gap-1">
+                            DETAIL <ExternalLink size={12} />
+                          </Button>
+                        </Link>
+                      </>
                     )}
                   </div>
                 </TableCell>
@@ -268,7 +282,8 @@ export default function MonitoringStatusPO({ initialData, role }: Props) {
         <div className="flex gap-6 px-2">
           <TabTrigger id="belum_mulai" label="Belum Mulai" count={initialData.belum_mulai.length} />
           <TabTrigger id="sedang_diproses" label="Sedang Dikerjakan" count={initialData.sedang_diproses.length} />
-          <TabTrigger id="selesai" label="Selesai" count={initialData.selesai.length} />
+          <TabTrigger id="selesai_produksi" label="Selesai Produksi" count={initialData.selesai_produksi.length} />
+          <TabTrigger id="selesai_dikirim" label="Selesai Dikirim" count={initialData.selesai_dikirim.length} />
         </div>
         <div className="relative mb-1 sm:mb-0 sm:mr-2">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#9aa0a6] pointer-events-none" />

@@ -9,6 +9,7 @@ export interface MonitoringStats {
   po_aktif: number;
   total_bundle: number;
   bundle_selesai: number;
+  bundle_terkirim: number;
   bermasalah: number;
 }
 
@@ -23,7 +24,15 @@ export interface PoRow {
 export interface PoGrouped {
   belum_mulai: PoRow[];
   sedang_diproses: PoRow[];
-  selesai: PoRow[];
+  selesai_produksi: PoRow[];
+  selesai_dikirim: PoRow[];
+}
+
+export interface SjHistoryEntry {
+  nomor_sj: string;
+  tanggal: string;
+  qty_kirim: number;
+  qty_diterima: number | null;
 }
 
 export interface ArtikelRow {
@@ -36,6 +45,9 @@ export interface ArtikelRow {
   qty_order: number;
   total_bundle: number;
   progress: Record<string, { done: number; total: number; pct: number }>;
+  qty_terkirim: number;
+  qty_diterima: number;
+  sj_history: SjHistoryEntry[];
 }
 
 export interface WarningRow {
@@ -89,6 +101,15 @@ export async function getMonitoringStats(): Promise<MonitoringStats> {
 
   const uniqueSelesaiCount = new Set((logs ?? []).map((l: any) => l.bundle_id)).size;
 
+  // 4. Hitung Bundle Terkirim (sudah punya surat_jalan_id)
+  const { count: terkirimCount, error: terkirimErr } = await supabase
+    .from('bundle')
+    .select('*', { count: 'exact', head: true })
+    .not('surat_jalan_id', 'is', null)
+    .eq('tenant_id', TENANT_ID);
+
+  if (terkirimErr) throw new Error(`Gagal hitung bundle terkirim: ${terkirimErr.message}`);
+
   // M-04: Calculate warnings count (default 24h)
   const warnings = await getMonitoringWarnings(24);
 
@@ -96,6 +117,7 @@ export async function getMonitoringStats(): Promise<MonitoringStats> {
     po_aktif: poAktifCount || 0,
     total_bundle: bundleCount || 0,
     bundle_selesai: uniqueSelesaiCount,
+    bundle_terkirim: terkirimCount || 0,
     bermasalah: warnings.length,
   };
 }
@@ -118,6 +140,7 @@ export async function getPoGrouped(): Promise<PoGrouped> {
       bundle(
         id,
         status_tahap,
+        surat_jalan_id,
         scan_log(tahap, tipe)
       )
     `)
@@ -130,17 +153,20 @@ export async function getPoGrouped(): Promise<PoGrouped> {
 
   const belum_mulai: PoRow[] = [];
   const sedang_diproses: PoRow[] = [];
-  const selesai: PoRow[] = [];
+  const selesai_produksi: PoRow[] = [];
+  const selesai_dikirim: PoRow[] = [];
 
   (data as any[]).forEach((po) => {
     const total_bundle = po.bundle?.length ?? 0;
     const progress: Record<string, { done: number; total: number }> = {};
 
-    // Initialize progress for all stages
+    // Initialize progress for all stages + pengiriman
     STAGES.forEach(s => progress[s] = { done: 0, total: total_bundle });
+    progress['pengiriman'] = { done: 0, total: total_bundle };
 
     let hasAnyScan = false;
     let allFinishedPacking = total_bundle > 0;
+    let allShipped = total_bundle > 0;
 
     po.bundle?.forEach((b: any) => {
       const logs = b.scan_log || [];
@@ -159,6 +185,13 @@ export async function getPoGrouped(): Promise<PoGrouped> {
         if (isDone) progress[stage].done++;
       });
 
+      // Pengiriman: bundle sudah punya surat_jalan_id
+      if (b.surat_jalan_id) {
+        progress['pengiriman'].done++;
+      } else {
+        allShipped = false;
+      }
+
       // Special check for packing
       const isPackingDone = logs.some((l: any) => l.tahap === 'packing' && l.tipe === 'selesai');
       if (!isPackingDone) allFinishedPacking = false;
@@ -174,14 +207,16 @@ export async function getPoGrouped(): Promise<PoGrouped> {
 
     if (!hasAnyScan && total_bundle > 0) {
       belum_mulai.push(row);
+    } else if (allFinishedPacking && allShipped && total_bundle > 0) {
+      selesai_dikirim.push(row);
     } else if (allFinishedPacking && total_bundle > 0) {
-      selesai.push(row);
+      selesai_produksi.push(row);
     } else {
       sedang_diproses.push(row);
     }
   });
 
-  return { belum_mulai, sedang_diproses, selesai };
+  return { belum_mulai, sedang_diproses, selesai_produksi, selesai_dikirim };
 }
 
 /**
@@ -212,6 +247,7 @@ export async function getMonitoringPerArtikel(): Promise<ArtikelRow[]> {
       bundle(
         id,
         status_tahap,
+        surat_jalan_id,
         scan_log(tahap, tipe)
       )
     `)
@@ -258,6 +294,43 @@ export async function getMonitoringPerArtikel(): Promise<ArtikelRow[]> {
     groupMap[key].bundles.push(...(item.bundle ?? []));
   });
 
+  // Kumpulkan semua bundle yang sudah punya surat_jalan_id, untuk agregasi qty terkirim/diterima
+  const shippedBundleIds: string[] = [];
+  Object.values(groupMap).forEach(g => {
+    g.bundles.forEach((b: any) => {
+      if (b.surat_jalan_id) shippedBundleIds.push(b.id);
+    });
+  });
+
+  const sjiMap = new Map<string, { qty_kirim: number; qty_diterima: number | null; sj_id: string }>();
+  const sjMap = new Map<string, { nomor_sj: string; tanggal: string }>();
+
+  if (shippedBundleIds.length > 0) {
+    const { data: sjiList, error: sjiErr } = await supabase
+      .from('surat_jalan_item')
+      .select('bundle_id, sj_id, qty_kirim, qty_diterima')
+      .in('bundle_id', shippedBundleIds)
+      .eq('tenant_id', TENANT_ID);
+
+    if (sjiErr) throw new Error(`Gagal ambil data surat_jalan_item: ${sjiErr.message}`);
+
+    (sjiList ?? []).forEach((s: any) => {
+      sjiMap.set(s.bundle_id, { qty_kirim: s.qty_kirim, qty_diterima: s.qty_diterima, sj_id: s.sj_id });
+    });
+
+    const sjIds = [...new Set((sjiList ?? []).map((s: any) => s.sj_id))];
+    if (sjIds.length > 0) {
+      const { data: sjList, error: sjErr } = await supabase
+        .from('surat_jalan')
+        .select('id, nomor_sj, tanggal')
+        .in('id', sjIds);
+
+      if (sjErr) throw new Error(`Gagal ambil data surat_jalan: ${sjErr.message}`);
+
+      (sjList ?? []).forEach((s: any) => sjMap.set(s.id, { nomor_sj: s.nomor_sj, tanggal: s.tanggal }));
+    }
+  }
+
   // Build ArtikelRow dari setiap group
   const result: ArtikelRow[] = Object.values(groupMap).map((group) => {
     const total_bundle = group.bundles.length;
@@ -266,6 +339,13 @@ export async function getMonitoringPerArtikel(): Promise<ArtikelRow[]> {
     STAGES.forEach(s => {
       progress[s] = { done: 0, total: total_bundle, pct: 0 };
     });
+    progress['pengiriman'] = { done: 0, total: total_bundle, pct: 0 };
+
+    let qty_terkirim = 0;
+    let qty_diterima = 0;
+
+    // Agregasi riwayat SJ per group (bundle bisa tersebar di beberapa SJ berbeda)
+    const sjAgg: Record<string, { nomor_sj: string; tanggal: string; qty_kirim: number; qty_diterima: number; hasNullDiterima: boolean }> = {};
 
     group.bundles.forEach((b: any) => {
       const logs = b.scan_log || [];
@@ -278,14 +358,46 @@ export async function getMonitoringPerArtikel(): Promise<ArtikelRow[]> {
         }
         if (isDone) progress[stage].done++;
       });
+
+      if (b.surat_jalan_id) {
+        progress['pengiriman'].done++;
+
+        const sji = sjiMap.get(b.id);
+        if (sji) {
+          qty_terkirim += sji.qty_kirim ?? 0;
+          if (sji.qty_diterima != null) qty_diterima += sji.qty_diterima;
+
+          const sjInfo = sjMap.get(sji.sj_id);
+          if (sjInfo) {
+            if (!sjAgg[sji.sj_id]) {
+              sjAgg[sji.sj_id] = { nomor_sj: sjInfo.nomor_sj, tanggal: sjInfo.tanggal, qty_kirim: 0, qty_diterima: 0, hasNullDiterima: false };
+            }
+            sjAgg[sji.sj_id].qty_kirim += sji.qty_kirim ?? 0;
+            if (sji.qty_diterima == null) {
+              sjAgg[sji.sj_id].hasNullDiterima = true;
+            } else {
+              sjAgg[sji.sj_id].qty_diterima += sji.qty_diterima;
+            }
+          }
+        }
+      }
     });
 
     // Hitung pct
-    STAGES.forEach(s => {
+    [...STAGES, 'pengiriman'].forEach(s => {
       if (progress[s].total > 0) {
         progress[s].pct = Math.round((progress[s].done / progress[s].total) * 100);
       }
     });
+
+    const sj_history: SjHistoryEntry[] = Object.values(sjAgg)
+      .map(s => ({
+        nomor_sj: s.nomor_sj,
+        tanggal: s.tanggal,
+        qty_kirim: s.qty_kirim,
+        qty_diterima: s.hasNullDiterima ? null : s.qty_diterima,
+      }))
+      .sort((a, b) => a.tanggal.localeCompare(b.tanggal));
 
     return {
       id         : group.id,
@@ -297,6 +409,9 @@ export async function getMonitoringPerArtikel(): Promise<ArtikelRow[]> {
       qty_order  : group.qty_order,
       total_bundle,
       progress,
+      qty_terkirim,
+      qty_diterima,
+      sj_history,
     };
   });
 

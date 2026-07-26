@@ -13,7 +13,7 @@ export default async function MonitoringPage() {
     getMonitoringPerArtikel()
   ]);
 
-  const allPos = [...poGrouped.belum_mulai, ...poGrouped.sedang_diproses, ...poGrouped.selesai];
+  const allPos = [...poGrouped.belum_mulai, ...poGrouped.sedang_diproses, ...poGrouped.selesai_produksi, ...poGrouped.selesai_dikirim];
   const poListSimplified = allPos.map(po => ({ id: po.id, no_po: po.no_po }));
 
   return (

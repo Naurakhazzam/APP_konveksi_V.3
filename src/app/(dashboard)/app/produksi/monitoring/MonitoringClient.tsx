@@ -8,7 +8,8 @@ import {
   CheckCircle2,
   AlertTriangle,
   History,
-  AlertCircle
+  AlertCircle,
+  Truck
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -39,6 +40,7 @@ const KPI_CONFIG = [
   { label: 'PO AKTIF', key: 'po_aktif', color: '#3b82f6', icon: BarChart3 },
   { label: 'TOTAL BUNDEL', key: 'total_bundle', color: '#22d3ee', icon: Package },
   { label: 'BUNDEL SELESAI', key: 'bundle_selesai', color: '#22c55e', icon: CheckCircle2 },
+  { label: 'BUNDEL TERKIRIM', key: 'bundle_terkirim', color: '#a855f7', icon: Truck },
   { label: 'BERMASALAH', key: 'bermasalah', color: '#ef4444', icon: AlertTriangle },
 ];
 
@@ -67,7 +69,7 @@ export default function MonitoringClient({ stats, klienList, poGrouped, artikelD
       </div>
 
       {/* 2. KPI Cards Row */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         {KPI_CONFIG.map((kpi) => {
           const Icon = kpi.icon;
           const value = kpi.key === 'bermasalah' ? dynamicWarningCount : stats[kpi.key as keyof MonitoringStats];
@@ -87,10 +89,12 @@ export default function MonitoringClient({ stats, klienList, poGrouped, artikelD
               <div className="mt-4 h-1 w-full bg-[#0D0E10] rounded-full overflow-hidden">
                 <div 
                   className="h-full transition-all duration-1000" 
-                  style={{ 
-                    backgroundColor: color, 
-                    width: kpi.key === 'bundle_selesai' ? `${(stats.bundle_selesai / (stats.total_bundle || 1)) * 100}%` : '40%' 
-                  }} 
+                  style={{
+                    backgroundColor: color,
+                    width: kpi.key === 'bundle_selesai' ? `${(stats.bundle_selesai / (stats.total_bundle || 1)) * 100}%`
+                      : kpi.key === 'bundle_terkirim' ? `${(stats.bundle_terkirim / (stats.total_bundle || 1)) * 100}%`
+                      : '40%'
+                  }}
                 />
               </div>
             </div>
