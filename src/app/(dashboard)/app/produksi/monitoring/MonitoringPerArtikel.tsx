@@ -3,7 +3,6 @@
 import React, { useState, useMemo } from 'react';
 import { Filter, ChevronDown, ChevronRight, Truck } from 'lucide-react';
 import {
-  Table,
   TableBody,
   TableCell,
   TableHead,
@@ -82,8 +81,11 @@ export default function MonitoringPerArtikel({ data, poList }: Props) {
 
       {/* 2. Table */}
       <div className="bg-[#1A1D1F] border border-[#2A2D31] rounded-2xl overflow-hidden shadow-sm">
-        <div className="overflow-x-auto max-h-[70vh] overflow-y-auto">
-          <Table>
+        <div className="overflow-auto max-h-[70vh]">
+          {/* Tabel <table> polos (bukan komponen Table bersama) — komponen Table membungkus
+              dirinya sendiri dengan div overflow-x-auto, yang jadi konteks scroll bersarang
+              dan membuat header sticky "menempel" ke kotak yang salah (tidak pernah discroll). */}
+          <table className="w-full caption-bottom text-sm">
             <TableHeader>
               <TableRow className="border-[#2A2D31] hover:bg-transparent">
                 <TableHead className={`${STICKY_HEAD} w-8`} />
@@ -185,7 +187,7 @@ export default function MonitoringPerArtikel({ data, poList }: Props) {
                 })
               )}
             </TableBody>
-          </Table>
+          </table>
         </div>
       </div>
     </div>
