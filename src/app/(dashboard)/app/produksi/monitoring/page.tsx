@@ -13,8 +13,11 @@ export default async function MonitoringPage() {
     getMonitoringPerArtikel()
   ]);
 
-  const allPos = [...poGrouped.belum_mulai, ...poGrouped.sedang_diproses, ...poGrouped.selesai_produksi, ...poGrouped.selesai_dikirim];
-  const poListSimplified = allPos.map(po => ({ id: po.id, no_po: po.no_po }));
+  // Dropdown filter Monitor Artikel harus mencakup semua PO yang muncul di artikelData
+  // (termasuk PO berstatus 'selesai'), bukan cuma PO aktif dari poGrouped.
+  const poListSimplified = Array.from(
+    new Map(artikelData.map(a => [a.no_po, { id: a.id, no_po: a.no_po }])).values()
+  ).sort((a, b) => a.no_po.localeCompare(b.no_po));
 
   return (
     <PageWrapper

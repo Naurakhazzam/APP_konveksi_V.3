@@ -252,12 +252,12 @@ export async function getMonitoringPerArtikel(): Promise<ArtikelRow[]> {
       )
     `)
     .eq('tenant_id', TENANT_ID)
-    .eq('po.status', 'aktif')
+    .neq('po.status', 'dibatalkan')
     .limit(500);
 
   if (error) throw new Error(`Gagal ambil data monitoring artikel: ${error.message}`);
 
-  // Sudah difilter di DB — ambil semua hasil
+  // Sudah difilter di DB — ambil semua hasil (aktif & selesai, kecuali PO dibatalkan)
   const filteredData = (data as any[]).filter(item => item.po !== null);
 
   // Group by (po_id + model_id + warna + size)

@@ -32,6 +32,10 @@ const STAGE_ORDER = ['cutting', 'jahit', 'buang_benang', 'lubang_kancing', 'qc',
 const STAGE_ORDER_WITH_SHIP = [...STAGE_ORDER, 'pengiriman'];
 const TOTAL_COLS = 1 + 7 + STAGE_ORDER_WITH_SHIP.length + 2; // expand + info cols + stages + terkirim/diterima
 
+// Header dibekukan (freeze pane): sticky relatif ke container overflow-y sendiri,
+// bg solid supaya baris di bawahnya tidak tembus pandang saat discroll.
+const STICKY_HEAD = 'sticky top-0 z-20 bg-[#1A1D1F] border-b border-[#2A2D31]';
+
 export default function MonitoringPerArtikel({ data, poList }: Props) {
   const [selectedPo, setSelectedPo] = useState<string>('all');
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
@@ -78,25 +82,25 @@ export default function MonitoringPerArtikel({ data, poList }: Props) {
 
       {/* 2. Table */}
       <div className="bg-[#1A1D1F] border border-[#2A2D31] rounded-2xl overflow-hidden shadow-sm">
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto max-h-[70vh] overflow-y-auto">
           <Table>
             <TableHeader>
               <TableRow className="border-[#2A2D31] hover:bg-transparent">
-                <TableHead className="w-8" />
-                <TableHead className="text-[#9aa0a6] font-semibold text-[10px] uppercase">No. PO</TableHead>
-                <TableHead className="text-[#9aa0a6] font-semibold text-[10px] uppercase">Klien</TableHead>
-                <TableHead className="text-[#9aa0a6] font-semibold text-[10px] uppercase">Model</TableHead>
-                <TableHead className="text-[#9aa0a6] font-semibold text-[10px] uppercase">Warna</TableHead>
-                <TableHead className="text-[#9aa0a6] font-semibold text-[10px] uppercase">Size</TableHead>
-                <TableHead className="text-[#9aa0a6] font-semibold text-[10px] uppercase text-center">Qty</TableHead>
-                <TableHead className="text-[#9aa0a6] font-semibold text-[10px] uppercase text-center border-r border-[#2A2D31]">Bdl</TableHead>
+                <TableHead className={`${STICKY_HEAD} w-8`} />
+                <TableHead className={`${STICKY_HEAD} text-[#9aa0a6] font-semibold text-[10px] uppercase`}>No. PO</TableHead>
+                <TableHead className={`${STICKY_HEAD} text-[#9aa0a6] font-semibold text-[10px] uppercase`}>Klien</TableHead>
+                <TableHead className={`${STICKY_HEAD} text-[#9aa0a6] font-semibold text-[10px] uppercase`}>Model</TableHead>
+                <TableHead className={`${STICKY_HEAD} text-[#9aa0a6] font-semibold text-[10px] uppercase`}>Warna</TableHead>
+                <TableHead className={`${STICKY_HEAD} text-[#9aa0a6] font-semibold text-[10px] uppercase`}>Size</TableHead>
+                <TableHead className={`${STICKY_HEAD} text-[#9aa0a6] font-semibold text-[10px] uppercase text-center`}>Qty</TableHead>
+                <TableHead className={`${STICKY_HEAD} text-[#9aa0a6] font-semibold text-[10px] uppercase text-center border-r border-[#2A2D31]`}>Bdl</TableHead>
                 {STAGE_ORDER_WITH_SHIP.map(s => (
-                  <TableHead key={s} className="text-[#9aa0a6] font-semibold text-[10px] uppercase text-center px-1">
+                  <TableHead key={s} className={`${STICKY_HEAD} text-[#9aa0a6] font-semibold text-[10px] uppercase text-center px-1`}>
                     {STAGE_LABELS[s]}
                   </TableHead>
                 ))}
-                <TableHead className="text-[#9aa0a6] font-semibold text-[10px] uppercase text-center border-l border-[#2A2D31]">Terkirim (pcs)</TableHead>
-                <TableHead className="text-[#9aa0a6] font-semibold text-[10px] uppercase text-center">Diterima (pcs)</TableHead>
+                <TableHead className={`${STICKY_HEAD} text-[#9aa0a6] font-semibold text-[10px] uppercase text-center border-l border-[#2A2D31]`}>Terkirim (pcs)</TableHead>
+                <TableHead className={`${STICKY_HEAD} text-[#9aa0a6] font-semibold text-[10px] uppercase text-center`}>Diterima (pcs)</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
