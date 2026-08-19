@@ -153,7 +153,7 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
   };
 
   const TableHeader = ({ children, className = "" }: { children: React.ReactNode, className?: string }) => (
-    <th className={`px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-[#9aa0a6] bg-[#16181A] border-b border-[#2A2D31] ${className}`}>
+    <th className={`sticky top-0 z-20 px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-[#9aa0a6] bg-[#16181A] border-b border-[#2A2D31] ${className}`}>
       {children}
     </th>
   );
@@ -248,13 +248,13 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
 
           {activeTab === 'antrian' ? (
             <div>
-              <div className="overflow-x-auto">
+              <div className="overflow-auto max-h-[65vh]">
                 <table className="w-full text-sm border-collapse">
                   <thead>
                     <tr>
                       <TableHeader className="w-12 text-center">
-                        <input 
-                          type="checkbox" 
+                        <input
+                          type="checkbox"
                           checked={selectedBundleIds.size === antrianBelum.length && antrianBelum.length > 0}
                           onChange={toggleSelectAll}
                           className="accent-[#e5c17b] w-4 h-4 rounded border-[#2A2D31] cursor-pointer"
@@ -315,13 +315,13 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
             </div>
           ) : activeTab === 'sedang_proses' ? (
             <div>
-              <div className="overflow-x-auto">
+              <div className="overflow-auto max-h-[65vh]">
                 <table className="w-full text-sm border-collapse">
                   <thead>
                     <tr>
                       <TableHeader className="w-12 text-center">
-                        <input 
-                          type="checkbox" 
+                        <input
+                          type="checkbox"
                           checked={selectedProsesIds.size === antrianProses.length && antrianProses.length > 0}
                           onChange={toggleSelectAllProses}
                           className="accent-[#e5c17b] w-4 h-4 rounded border-[#2A2D31] cursor-pointer"
@@ -410,7 +410,7 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
             </div>
           ) : (
             <div>
-              <div className="overflow-x-auto">
+              <div className="overflow-auto max-h-[65vh]">
                 <table className="w-full text-sm border-collapse">
                   <thead>
                     <tr>
