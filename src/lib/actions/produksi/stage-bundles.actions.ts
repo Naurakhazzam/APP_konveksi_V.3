@@ -11,6 +11,7 @@ export interface AntrianBundleItem {
   barcode: string;
   status_tahap: any;
   no_po: string;
+  po_item_id: string;
   klien_nama: string;
   warna: string;
   size: string;
@@ -38,7 +39,7 @@ export async function getAntrianPerTahap(tahap: TahapKey, page: number, pageSize
   const offset = (page - 1) * pageSize;
 
   const selectClause = `
-    id, barcode, status_tahap,
+    id, barcode, status_tahap, po_item_id,
     po:po_id(no_po, klien:klien_id(nama)),
     po_item:po_item_id(
       warna, size, qty_per_bundle,
@@ -95,6 +96,7 @@ export async function getAntrianPerTahap(tahap: TahapKey, page: number, pageSize
       barcode: item.barcode,
       status_tahap: item.status_tahap,
       no_po: item.po?.no_po ?? '-',
+      po_item_id: item.po_item_id,
       klien_nama: item.po?.klien?.nama ?? '-',
       warna: item.po_item?.warna ?? '-',
       size: item.po_item?.size ?? '-',
@@ -120,7 +122,7 @@ export async function getSelesaiPerTahap(tahap: TahapKey, page: number, pageSize
   const offset = (page - 1) * pageSize;
 
   const selectClause = `
-    id, barcode, status_tahap,
+    id, barcode, status_tahap, po_item_id,
     po:po_id(no_po, klien:klien_id(nama)),
     po_item:po_item_id(
       warna, size, qty_per_bundle,
@@ -174,6 +176,7 @@ export async function getSelesaiPerTahap(tahap: TahapKey, page: number, pageSize
       barcode: item.barcode,
       status_tahap: item.status_tahap,
       no_po: item.po?.no_po ?? '-',
+      po_item_id: item.po_item_id,
       klien_nama: item.po?.klien?.nama ?? '-',
       warna: item.po_item?.warna ?? '-',
       size: item.po_item?.size ?? '-',

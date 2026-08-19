@@ -62,7 +62,17 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
     router.refresh();
   };
 
-  const handlePrintUlang = async (bundle: AntrianJahitBundle) => {
+  const handlePrintUlang = async (bundle: {
+    id: string;
+    barcode: string;
+    po_item_id: string;
+    no_po: string;
+    klien_nama: string;
+    model_nama: string | null;
+    warna: string;
+    size: string;
+    qty_per_bundle: number;
+  }, karyawanNama: string) => {
     const aksesoriMap = await getAksesoriForKartuKerja([bundle.po_item_id]);
     const aks: AksesoriItem[] = (aksesoriMap[bundle.po_item_id] ?? []).map((item: any) => ({
       nama: item.inventory_item_nama,
@@ -73,9 +83,6 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
     let parsedUrut = 0;
     const bMatch = bundle.barcode.match(/bdl(\d+)$/i);
     if (bMatch) parsedUrut = parseInt(bMatch[1], 10);
-    const karyawanNama = karyawanList.find(
-      k => k.id === ((bundle as any).status_tahap?.['jahit'])?.karyawan_id
-    )?.nama ?? '';
     setPrintUlangData([{
       id: bundle.id, barcode: bundle.barcode, no_urut: parsedUrut,
       po_id: '', po_item_id: bundle.po_item_id, no_po: bundle.no_po,
@@ -388,7 +395,9 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
                             })()}
                           </td>
                           <td className="px-4 py-3">
-                            <button onClick={() => handlePrintUlang(item)}
+                            <button onClick={() => handlePrintUlang(item, karyawanList.find(
+                              k => k.id === ((item as any).status_tahap?.['jahit'])?.karyawan_id
+                            )?.nama ?? '')}
                               className="flex items-center gap-1 text-[10px] font-bold text-[#9aa0a6] hover:text-[#e5c17b] border border-[#2A2D31] px-2 py-1 rounded-lg transition-colors">
                               <Printer className="w-3 h-3" /> Print Ulang
                             </button>
@@ -422,12 +431,13 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
                       <TableHeader>QTY</TableHeader>
                       <TableHeader>Karyawan</TableHeader>
                       <TableHeader>Waktu Selesai</TableHeader>
+                      <TableHeader>Aksi</TableHeader>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#2A2D31]">
                     {selesaiData.length === 0 ? (
                       <tr>
-                        <td colSpan={8} className="px-4 py-12 text-center text-[#9aa0a6]">
+                        <td colSpan={9} className="px-4 py-12 text-center text-[#9aa0a6]">
                           <Package className="w-8 h-8 mx-auto mb-2 opacity-20" />
                           Belum ada bundle yang selesai di tahap jahit
                         </td>
@@ -463,6 +473,12 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
                                   <Clock size={12} />
                                   <span className="text-xs">{formatDateTime(item.waktu_selesai)}</span>
                               </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <button onClick={() => handlePrintUlang(item, item.jahit_karyawan_nama === '-' ? '' : item.jahit_karyawan_nama)}
+                              className="flex items-center gap-1 text-[10px] font-bold text-[#9aa0a6] hover:text-[#e5c17b] border border-[#2A2D31] px-2 py-1 rounded-lg transition-colors">
+                              <Printer className="w-3 h-3" /> Print Ulang
+                            </button>
                           </td>
                         </tr>
                       ))
