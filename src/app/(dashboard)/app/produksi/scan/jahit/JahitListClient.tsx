@@ -256,7 +256,7 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
           {activeTab === 'antrian' ? (
             <div>
               <div className="overflow-auto max-h-[65vh]">
-                <table className="w-full text-sm border-collapse">
+                <table className="w-full text-sm border-separate border-spacing-0">
                   <thead>
                     <tr>
                       <TableHeader className="w-12 text-center">
@@ -323,7 +323,7 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
           ) : activeTab === 'sedang_proses' ? (
             <div>
               <div className="overflow-auto max-h-[65vh]">
-                <table className="w-full text-sm border-collapse">
+                <table className="w-full text-sm border-separate border-spacing-0">
                   <thead>
                     <tr>
                       <TableHeader className="w-12 text-center">
@@ -420,7 +420,7 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
           ) : (
             <div>
               <div className="overflow-auto max-h-[65vh]">
-                <table className="w-full text-sm border-collapse">
+                <table className="w-full text-sm border-separate border-spacing-0">
                   <thead>
                     <tr>
                       <TableHeader>No.</TableHeader>

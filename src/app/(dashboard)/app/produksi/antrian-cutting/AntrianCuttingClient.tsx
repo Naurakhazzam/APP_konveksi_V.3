@@ -406,7 +406,7 @@ export default function AntrianCuttingClient({ poList, role }: Props) {
       {/* Tabel PO (semua tab kecuali pending) */}
       {!isPendingTab && (
       <div className="print:hidden rounded-xl border border-[#2A2D31] bg-[#1A1D1F]">
-        <table className="w-full text-sm border-collapse">
+        <table className="w-full text-sm border-separate border-spacing-0">
           <thead>
             <tr className="bg-[#16181A]">
               {!isPendingTab && (
