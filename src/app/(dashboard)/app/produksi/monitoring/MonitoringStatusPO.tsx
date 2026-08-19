@@ -3,13 +3,12 @@
 import React, { useState, useMemo } from 'react';
 import { Trash2, ExternalLink, ChevronUp, ChevronDown, Search, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableHead, 
-  TableHeader, 
-  TableRow 
+import {
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow
 } from '@/components/ui/table';
 import { deletePoById } from '@/lib/actions/produksi/po.actions';
 import { toast } from 'sonner';
@@ -39,6 +38,10 @@ const STAGE_LABELS: Record<string, string> = {
 
 const STAGE_ORDER = ['cutting', 'jahit', 'buang_benang', 'lubang_kancing', 'qc', 'steam', 'packing'];
 const STAGE_ORDER_WITH_SHIP = [...STAGE_ORDER, 'pengiriman'];
+
+// Header dibekukan (freeze pane) relatif ke container overflow-y sendiri,
+// bg solid supaya baris di bawahnya tidak tembus pandang saat discroll.
+const STICKY_HEAD = 'sticky top-0 z-20 bg-[#1A1D1F]';
 
 export default function MonitoringStatusPO({ initialData, role }: Props) {
   const router = useRouter();
@@ -142,36 +145,36 @@ export default function MonitoringStatusPO({ initialData, role }: Props) {
     };
 
     return (
-      <div className="overflow-x-auto text-[#e8eaed]">
-        <Table>
+      <div className="overflow-auto max-h-[65vh] text-[#e8eaed]">
+        <table className="w-full caption-bottom text-sm">
           <TableHeader>
             <TableRow className="border-[#2A2D31] hover:bg-transparent">
-              <TableHead className="p-0">
-                <button 
+              <TableHead className={`${STICKY_HEAD} p-0`}>
+                <button
                   onClick={() => handleSort('no_po')}
                   className="flex items-center gap-1 w-full h-full px-4 py-3 text-[#9aa0a6] font-semibold hover:text-[#e8eaed] group transition-colors"
                 >
                   NO. PO <SortIcon col="no_po" />
                 </button>
               </TableHead>
-              <TableHead className="p-0">
-                <button 
+              <TableHead className={`${STICKY_HEAD} p-0`}>
+                <button
                   onClick={() => handleSort('klien')}
                   className="flex items-center gap-1 w-full h-full px-4 py-3 text-[#9aa0a6] font-semibold hover:text-[#e8eaed] group transition-colors"
                 >
                   KLIEN <SortIcon col="klien" />
                 </button>
               </TableHead>
-              
+
               {showStageColumns ? (
                 STAGE_ORDER_WITH_SHIP.map(s => (
-                  <TableHead key={s} className="text-[#9aa0a6] font-semibold text-center text-[10px] uppercase tracking-wider">
+                  <TableHead key={s} className={`${STICKY_HEAD} text-[#9aa0a6] font-semibold text-center text-[10px] uppercase tracking-wider`}>
                     {STAGE_LABELS[s]}
                   </TableHead>
                 ))
               ) : (
-                <TableHead className="p-0">
-                  <button 
+                <TableHead className={`${STICKY_HEAD} p-0`}>
+                  <button
                     onClick={() => handleSort('total_bundle')}
                     className="flex items-center gap-1 w-full h-full px-4 py-3 text-[#9aa0a6] font-semibold hover:text-[#e8eaed] group transition-colors justify-center"
                   >
@@ -179,8 +182,8 @@ export default function MonitoringStatusPO({ initialData, role }: Props) {
                   </button>
                 </TableHead>
               )}
-              
-              <TableHead className="text-[#9aa0a6] font-semibold text-right px-4">AKSI</TableHead>
+
+              <TableHead className={`${STICKY_HEAD} text-[#9aa0a6] font-semibold text-right px-4`}>AKSI</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -257,7 +260,7 @@ export default function MonitoringStatusPO({ initialData, role }: Props) {
               </TableRow>
             ))}
           </TableBody>
-        </Table>
+        </table>
       </div>
     );
   };
