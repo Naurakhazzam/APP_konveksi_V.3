@@ -134,8 +134,14 @@ export default function AntrianCuttingClient({ poList, role }: Props) {
     });
   };
 
+  // Bundle yang cutting-nya sudah "selesai" tidak boleh dipilih lagi — kalau
+  // diproses ulang lewat Selesai Cutting, pemakaian bahan bisa terpotong dua
+  // kali untuk bundle yang sama (RPC di-database juga sudah menolaknya).
+  const getPilihableBundles = (row_id: string) =>
+    (bundleCache[row_id] ?? []).filter(b => b.cutting_status !== 'selesai');
+
   const toggleAllBundlesForPO = (row_id: string) => {
-    const all = bundleCache[row_id] ?? [];
+    const all = getPilihableBundles(row_id);
     setSelectedBundleIds(prev => {
       const set = prev[row_id] ?? new Set();
       const next = set.size === all.length ? new Set<string>() : new Set(all.map(b => b.id));
@@ -491,24 +497,33 @@ export default function AntrianCuttingClient({ poList, role }: Props) {
                           <div>
                             {/* Header ringkasan + select all */}
                             <div className="flex items-center justify-between mb-3">
-                              <p className="text-[10px] text-[#9aa0a6] uppercase font-bold tracking-widest">
-                                {bundleCache[po.row_id].length} Bundle
-                                · {[...new Set(bundleCache[po.row_id].map(b => b.warna))].length} Warna
-                                · {[...new Set(bundleCache[po.row_id].map(b => b.size))].length} Size
-                              </p>
+                              {(() => {
+                                const visibleBundles = isSelesaiTab
+                                  ? bundleCache[po.row_id]
+                                  : getPilihableBundles(po.row_id);
+                                return (
+                                  <p className="text-[10px] text-[#9aa0a6] uppercase font-bold tracking-widest">
+                                    {visibleBundles.length} Bundle
+                                    · {[...new Set(visibleBundles.map(b => b.warna))].length} Warna
+                                    · {[...new Set(visibleBundles.map(b => b.size))].length} Size
+                                  </p>
+                                );
+                              })()}
                               {!isSelesaiTab && (
                                 <label className="flex items-center gap-1.5 text-[10px] text-[#9aa0a6] cursor-pointer hover:text-[#e5c17b]">
                                   <input
                                     type="checkbox"
                                     className="accent-[#e5c17b] w-3.5 h-3.5"
-                                    checked={(selectedBundleIds[po.row_id]?.size ?? 0) === bundleCache[po.row_id].length}
+                                    checked={(selectedBundleIds[po.row_id]?.size ?? 0) === getPilihableBundles(po.row_id).length}
                                     onChange={() => toggleAllBundlesForPO(po.row_id)}
                                   />
                                   Pilih Semua
                                 </label>
                               )}
                             </div>
-                            {/* Tabel bundle dengan checkbox */}
+                            {/* Tabel bundle dengan checkbox — bundle yang cutting-nya
+                                sudah "selesai" disembunyikan dari tab selain Selesai,
+                                supaya tidak bisa dipilih & diproses ulang. */}
                             <table className="w-full text-xs border-collapse">
                               <thead>
                                 <tr className="border-b border-[#2A2D31]">
@@ -521,7 +536,7 @@ export default function AntrianCuttingClient({ poList, role }: Props) {
                                 </tr>
                               </thead>
                               <tbody>
-                                {bundleCache[po.row_id].map(bundle => (
+                                {(isSelesaiTab ? bundleCache[po.row_id] : getPilihableBundles(po.row_id)).map(bundle => (
                                   <tr key={bundle.id} className="border-b border-[#2A2D31]/50 hover:bg-[#1A1D1F]">
                                     {!isSelesaiTab && (
                                       <td className="py-1.5 px-2">
