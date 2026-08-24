@@ -252,6 +252,12 @@ export async function getAntrianJahit(): Promise<AntrianJahitBundle[]> {
     const produk = Array.isArray(poItem?.produk) ? poItem.produk[0] : poItem?.produk;
     const model = Array.isArray(produk?.model_produk) ? produk.model_produk[0] : produk?.model_produk;
 
+    // Pakai qty hasil cutting aktual (kalau lebih/kurang dari rencana) sebagai
+    // target tahap berikutnya, bukan qty_per_bundle rencana yang statis —
+    // supaya kelebihan/kekurangan hasil cutting ikut terbawa ke Jahit dst.
+    const qtyAktualCutting = b.status_tahap?.cutting?.qty_aktual;
+    const qtyEfektif = (qtyAktualCutting != null) ? qtyAktualCutting : (poItem?.qty_per_bundle ?? 0);
+
     return {
       id: b.id,
       barcode: b.barcode,
@@ -260,7 +266,7 @@ export async function getAntrianJahit(): Promise<AntrianJahitBundle[]> {
       model_nama: model?.nama ?? null,
       warna: poItem?.warna ?? '',
       size: poItem?.size ?? '',
-      qty_per_bundle: poItem?.qty_per_bundle ?? 0,
+      qty_per_bundle: qtyEfektif,
       po_item_id: b.po_item_id,
       status_tahap: b.status_tahap ?? {},
     };

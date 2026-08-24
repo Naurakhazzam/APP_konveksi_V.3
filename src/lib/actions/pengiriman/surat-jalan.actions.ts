@@ -94,18 +94,26 @@ export async function getBundlesReadyToShip(): Promise<BundleReadyToShip[]> {
     return b.status_tahap?.packing?.status === 'selesai';
   });
 
-  return readyBundles.map((b: any) => ({
-    id: b.id,
-    barcode: b.barcode,
-    no_po: b.po?.no_po || '-',
-    klien_id: b.po?.klien?.id || '',
-    klien_nama: b.po?.klien?.nama || 'Unknown',
-    model_nama: b.po_item?.produk?.model_produk?.nama || null,
-    warna: b.po_item?.warna || '-',
-    size: b.po_item?.size || '-',
-    qty_per_bundle: b.po_item?.qty_per_bundle || 0,
-    qty_kirim: b.po_item?.qty_per_bundle || 0, // Default qty_kirim
-  }));
+  return readyBundles.map((b: any) => {
+    // Pakai qty hasil cutting aktual (kalau beda dari rencana) sebagai qty
+    // efektif bundle ini, supaya default qty kirim ikut mengikuti hasil
+    // cutting yang sebenarnya, bukan rencana awal yang sudah tidak akurat.
+    const qtyAktualCutting = b.status_tahap?.cutting?.qty_aktual;
+    const qtyEfektif = (qtyAktualCutting != null) ? qtyAktualCutting : (b.po_item?.qty_per_bundle || 0);
+
+    return {
+      id: b.id,
+      barcode: b.barcode,
+      no_po: b.po?.no_po || '-',
+      klien_id: b.po?.klien?.id || '',
+      klien_nama: b.po?.klien?.nama || 'Unknown',
+      model_nama: b.po_item?.produk?.model_produk?.nama || null,
+      warna: b.po_item?.warna || '-',
+      size: b.po_item?.size || '-',
+      qty_per_bundle: qtyEfektif,
+      qty_kirim: qtyEfektif, // Default qty_kirim
+    };
+  });
 }
 
 export async function createSuratJalan(input: {

@@ -144,9 +144,10 @@ export async function getPOCuttingList(): Promise<POCuttingItem[]> {
       });
     }
 
+    const qtyAktualCutting = raw.status_tahap?.cutting?.qty_aktual;
     poMap.get(row_id)!.bundles.push({
       status_tahap: raw.status_tahap,
-      qty_per_bundle: po_item?.qty_per_bundle ?? 0,
+      qty_per_bundle: (qtyAktualCutting != null) ? qtyAktualCutting : (po_item?.qty_per_bundle ?? 0),
     });
   }
 

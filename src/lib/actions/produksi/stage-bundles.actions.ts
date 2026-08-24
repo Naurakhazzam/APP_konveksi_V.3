@@ -91,6 +91,12 @@ export async function getAntrianPerTahap(tahap: TahapKey, page: number, pageSize
     const status: 'menunggu' | 'sedang_proses' = (stageInfo?.status === 'terima') ? 'sedang_proses' : 'menunggu';
     const jahitInfo = item.status_tahap?.jahit;
 
+    // Pakai qty hasil cutting aktual sebagai target tahap ini kalau ada
+    // (beda dari qty_per_bundle rencana) — supaya kelebihan/kekurangan
+    // hasil cutting ikut terbawa ke tahap-tahap berikutnya.
+    const qtyAktualCutting = item.status_tahap?.cutting?.qty_aktual;
+    const qtyEfektif = (qtyAktualCutting != null) ? qtyAktualCutting : (item.po_item?.qty_per_bundle ?? 0);
+
     return {
       id: item.id,
       barcode: item.barcode,
@@ -100,7 +106,7 @@ export async function getAntrianPerTahap(tahap: TahapKey, page: number, pageSize
       klien_nama: item.po?.klien?.nama ?? '-',
       warna: item.po_item?.warna ?? '-',
       size: item.po_item?.size ?? '-',
-      qty_per_bundle: item.po_item?.qty_per_bundle ?? 0,
+      qty_per_bundle: qtyEfektif,
       model_nama: item.po_item?.produk?.model?.nama ?? '-',
       status,
       jahit_karyawan_nama: jahitKaryawanMap[jahitInfo?.karyawan_id] ?? '-',
@@ -171,6 +177,9 @@ export async function getSelesaiPerTahap(tahap: TahapKey, page: number, pageSize
     const stageInfo = item.status_tahap?.[tahap];
     const jahitInfo = item.status_tahap?.jahit;
 
+    const qtyAktualCutting = item.status_tahap?.cutting?.qty_aktual;
+    const qtyEfektif = (qtyAktualCutting != null) ? qtyAktualCutting : (item.po_item?.qty_per_bundle ?? 0);
+
     return {
       id: item.id,
       barcode: item.barcode,
@@ -180,7 +189,7 @@ export async function getSelesaiPerTahap(tahap: TahapKey, page: number, pageSize
       klien_nama: item.po?.klien?.nama ?? '-',
       warna: item.po_item?.warna ?? '-',
       size: item.po_item?.size ?? '-',
-      qty_per_bundle: item.po_item?.qty_per_bundle ?? 0,
+      qty_per_bundle: qtyEfektif,
       model_nama: item.po_item?.produk?.model?.nama ?? '-',
       karyawan_id: stageInfo?.karyawan_id ?? '-',
       karyawan_nama: karyawanMap[stageInfo?.karyawan_id] ?? '-',
