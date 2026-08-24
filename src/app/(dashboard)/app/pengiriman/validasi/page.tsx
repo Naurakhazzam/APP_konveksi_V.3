@@ -1,6 +1,8 @@
 import { getSuratJalanSiapValidasi } from '@/lib/actions/pengiriman/validasi-pengiriman.actions';
 import { getAlasanRejectList } from '@/lib/actions/produksi/reject.actions';
+import { getQtyLebihKirimPending } from '@/lib/actions/pengiriman/surat-jalan.actions';
 import ValidasiClient from './ValidasiClient';
+import QtyLebihKirimSection from './QtyLebihKirimSection';
 
 export const metadata = {
   title: 'Validasi Pengiriman | Stitchlyx Syncore',
@@ -8,9 +10,10 @@ export const metadata = {
 };
 
 export default async function ValidasiPage() {
-  const [sjList, alasanList] = await Promise.all([
+  const [sjList, alasanList, qtyLebihPending] = await Promise.all([
     getSuratJalanSiapValidasi(),
     getAlasanRejectList(),
+    getQtyLebihKirimPending(),
   ]);
 
   return (
@@ -21,6 +24,8 @@ export default async function ValidasiPage() {
           Catat qty yang diterima klien dan konfirmasi selisih (kurang / lebih)
         </p>
       </div>
+
+      <QtyLebihKirimSection initialPending={qtyLebihPending} />
 
       <ValidasiClient initialSjList={sjList} alasanList={alasanList} />
     </div>

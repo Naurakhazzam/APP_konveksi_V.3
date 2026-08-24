@@ -3,8 +3,16 @@
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { revalidatePath } from 'next/cache';
+import bcrypt from 'bcryptjs';
 
 const TENANT_ID = 'STX-001';
+
+async function resolveUserId(): Promise<string> {
+  const supabase = await createClient();
+  const { data: { user }, error } = await supabase.auth.getUser();
+  if (error || !user) throw new Error('Unauthorized: User session not found.');
+  return user.id;
+}
 
 export interface BundleReadyToShip {
   id: string;
@@ -104,7 +112,7 @@ export async function createSuratJalan(input: {
   klien_id: string;
   tanggal: string;
   catatan: string;
-  bundles: { bundle_id: string; qty_kirim: number }[];
+  bundles: { bundle_id: string; qty_kirim: number; alasan_lebih?: string }[];
 }): Promise<string> {
   const supabase = await createClient();
 
@@ -231,4 +239,127 @@ export async function getSuratJalanDetail(id: string): Promise<SuratJalanDetail 
     klien_alamat: (Array.isArray(data.klien) ? data.klien[0]?.alamat : (data.klien as any)?.alamat) || null,
     items,
   };
+}
+
+// ─── Qty lebih saat Buat Surat Jalan — menunggu approval PIN Owner ──────────
+
+export interface QtyLebihKirimPending {
+  approval_id: string;
+  bundle_id: string;
+  barcode: string;
+  no_po: string;
+  klien_nama: string;
+  model_nama: string | null;
+  warna: string;
+  size: string;
+  qty_rencana: number;
+  qty_lebih: number;
+  qty_kirim: number;
+  alasan_pengajuan: string | null;
+  diajukan_oleh: string;
+  diajukan_pada: string;
+}
+
+export async function getQtyLebihKirimPending(): Promise<QtyLebihKirimPending[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from('qty_approval_request')
+    .select(`
+      id,
+      qty_diajukan,
+      qty_default,
+      catatan_pengajuan,
+      created_at,
+      created_by,
+      bundle:bundle_id (
+        id,
+        barcode,
+        po:po_id (no_po, klien:klien_id (nama)),
+        po_item:po_item_id (
+          warna, size,
+          produk:produk_id (model_produk:model_id (nama))
+        )
+      )
+    `)
+    .eq('tenant_id', TENANT_ID)
+    .eq('sumber', 'buat_surat_jalan')
+    .eq('status', 'pending')
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('Error fetching qty lebih kirim pending:', error);
+    throw new Error('Gagal memuat daftar qty lebih menunggu approval');
+  }
+
+  const pengajuIds = Array.from(new Set((data ?? []).map((r: any) => r.created_by).filter(Boolean)));
+  let pengajuMap: Record<string, string> = {};
+  if (pengajuIds.length > 0) {
+    const { data: profiles } = await supabase.from('user_profile').select('id, nama').in('id', pengajuIds);
+    profiles?.forEach(p => { pengajuMap[p.id] = p.nama; });
+  }
+
+  return (data ?? []).map((r: any) => {
+    const b = r.bundle;
+    const po = Array.isArray(b?.po) ? b.po[0] : b?.po;
+    const klien = Array.isArray(po?.klien) ? po.klien[0] : po?.klien;
+    const poItem = Array.isArray(b?.po_item) ? b.po_item[0] : b?.po_item;
+    const produk = Array.isArray(poItem?.produk) ? poItem.produk[0] : poItem?.produk;
+    const model = Array.isArray(produk?.model_produk) ? produk.model_produk[0] : produk?.model_produk;
+
+    return {
+      approval_id: r.id,
+      bundle_id: b?.id ?? '',
+      barcode: b?.barcode ?? '-',
+      no_po: po?.no_po ?? '-',
+      klien_nama: klien?.nama ?? '-',
+      model_nama: model?.nama ?? null,
+      warna: poItem?.warna ?? '-',
+      size: poItem?.size ?? '-',
+      qty_rencana: r.qty_default ?? 0,
+      qty_lebih: r.qty_diajukan ?? 0,
+      qty_kirim: (r.qty_default ?? 0) + (r.qty_diajukan ?? 0),
+      alasan_pengajuan: r.catatan_pengajuan ?? null,
+      diajukan_oleh: pengajuMap[r.created_by] ?? '-',
+      diajukan_pada: r.created_at,
+    };
+  });
+}
+
+export async function resolveQtyLebihKirim(
+  approval_id: string,
+  pin: string,
+  action: 'approved' | 'rejected',
+  catatan?: string,
+): Promise<{ success: boolean; status: string }> {
+  const userId = await resolveUserId();
+  const supabase = await createClient();
+
+  const { data: profile, error: profileErr } = await supabase
+    .from('user_profile')
+    .select('approval_pin')
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (profileErr) throw new Error(profileErr.message);
+  if (!profile?.approval_pin) {
+    throw new Error('PIN belum diset. Setup PIN terlebih dahulu di Settings.');
+  }
+
+  const isPinValid = await bcrypt.compare(pin, profile.approval_pin);
+  if (!isPinValid) throw new Error('PIN tidak valid');
+
+  const { data, error } = await supabase.rpc('resolve_qty_lebih_kirim', {
+    p_approval_id: approval_id,
+    p_status: action,
+    p_catatan: catatan ?? null,
+    p_user_id: userId,
+    p_tenant_id: TENANT_ID,
+  });
+
+  if (error) throw new Error(error.message || 'Gagal memproses approval');
+
+  revalidatePath('/app/pengiriman/validasi');
+
+  return data as { success: boolean; status: string };
 }

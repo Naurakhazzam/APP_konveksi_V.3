@@ -64,6 +64,7 @@ export default function BuatSuratJalanClient({ initialBundles }: { initialBundle
   const [tanggal, setTanggal] = useState<string>(new Date().toISOString().split('T')[0]);
   const [catatan, setCatatan] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [alasanLebih, setAlasanLebih] = useState<Record<string, string>>({});
 
   // ─── Derived state ─────────────────────────────────────────────────────────
 
@@ -163,20 +164,35 @@ export default function BuatSuratJalanClient({ initialBundles }: { initialBundle
   const handleUpdateQty = (id: string, qty: number) => {
     setBundles(prev => prev.map(b => {
       if (b.id === id) {
-        return { ...b, qty_kirim: Math.min(Math.max(1, qty), b.qty_per_bundle) };
+        return { ...b, qty_kirim: Math.max(1, qty) };
       }
       return b;
     }));
   };
 
+  const handleUpdateAlasanLebih = (id: string, alasan: string) => {
+    setAlasanLebih(prev => ({ ...prev, [id]: alasan }));
+  };
+
   const handleFinalize = async () => {
     if (selectedBundles.length === 0 || !currentKlienId) return;
+
+    // Bundle dengan qty kirim melebihi qty rencana wajib diisi alasan dulu
+    // sebelum bisa difinalisasi — kelebihannya nanti menunggu approval PIN Owner.
+    const belumIsiAlasan = selectedBundles.filter(
+      b => b.qty_kirim > b.qty_per_bundle && !alasanLebih[b.id]?.trim()
+    );
+    if (belumIsiAlasan.length > 0) {
+      toast.error(`Isi alasan untuk ${belumIsiAlasan.length} bundle yang qty-nya melebihi rencana`);
+      return;
+    }
 
     try {
       setIsSubmitting(true);
       const items = selectedBundles.map(b => ({
         bundle_id: b.id,
         qty_kirim: b.qty_kirim,
+        ...(b.qty_kirim > b.qty_per_bundle ? { alasan_lebih: alasanLebih[b.id]?.trim() } : {}),
       }));
 
       const nomorSj = await createSuratJalan({
@@ -189,6 +205,7 @@ export default function BuatSuratJalanClient({ initialBundles }: { initialBundle
       toast.success(`Surat Jalan ${nomorSj} berhasil dibuat!`);
       setSelectedIds(new Set());
       setCatatan('');
+      setAlasanLebih({});
       setTanggal(new Date().toISOString().split('T')[0]);
       router.refresh();
     } catch (error: any) {
@@ -419,6 +436,8 @@ export default function BuatSuratJalanClient({ initialBundles }: { initialBundle
           setCatatan={setCatatan}
           onFinalize={handleFinalize}
           isSubmitting={isSubmitting}
+          alasanLebih={alasanLebih}
+          onUpdateAlasanLebih={handleUpdateAlasanLebih}
         />
       </div>
     </div>

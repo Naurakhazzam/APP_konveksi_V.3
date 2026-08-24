@@ -2,7 +2,7 @@
 
 import React, { useMemo } from 'react';
 import type { BundleReadyToShip } from '@/lib/actions/pengiriman/surat-jalan.actions';
-import { Package, X } from 'lucide-react';
+import { Package, X, AlertTriangle } from 'lucide-react';
 
 interface CartPanelProps {
   selectedBundles: BundleReadyToShip[];
@@ -14,6 +14,8 @@ interface CartPanelProps {
   setCatatan: (c: string) => void;
   onFinalize: () => void;
   isSubmitting: boolean;
+  alasanLebih: Record<string, string>;
+  onUpdateAlasanLebih: (id: string, alasan: string) => void;
 }
 
 interface CartGroup {
@@ -35,6 +37,8 @@ export default function CartPanel({
   setCatatan,
   onFinalize,
   isSubmitting,
+  alasanLebih,
+  onUpdateAlasanLebih,
 }: CartPanelProps) {
   if (selectedBundles.length === 0) return null;
 
@@ -123,39 +127,69 @@ export default function CartPanel({
 
             {/* Sub-rows: satu per bundle */}
             <div className="divide-y divide-[#2A2D31]/60">
-              {group.bundles.map(b => (
+              {group.bundles.map(b => {
+                const isLebih = b.qty_kirim > b.qty_per_bundle;
+                return (
                 <div
                   key={b.id}
-                  className="flex items-center gap-2 px-3 py-2 bg-[#16181A] hover:bg-[#1A1D1F] transition-colors"
+                  className="bg-[#16181A] hover:bg-[#1A1D1F] transition-colors"
                 >
-                  {/* Barcode */}
-                  <span className="flex-1 font-mono text-[10px] text-[#9aa0a6] truncate">
-                    {b.barcode}
-                  </span>
+                  <div className="flex items-center gap-2 px-3 py-2">
+                    {/* Barcode */}
+                    <span className="flex-1 font-mono text-[10px] text-[#9aa0a6] truncate">
+                      {b.barcode}
+                    </span>
 
-                  {/* QTY input */}
-                  <div className="flex items-center gap-1 shrink-0">
-                    <input
-                      type="number"
-                      min={1}
-                      max={b.qty_per_bundle}
-                      value={b.qty_kirim}
-                      onChange={(e) => onUpdateQty(b.id, parseInt(e.target.value) || 1)}
-                      className="w-14 bg-[#0D0E10] border border-[#2A2D31] text-[#e8eaed] rounded px-2 py-1 text-xs text-center focus:outline-none focus:border-[#e5c17b]"
-                    />
-                    <span className="text-[10px] text-[#9aa0a6]">/{b.qty_per_bundle}</span>
+                    {/* QTY input */}
+                    <div className="flex items-center gap-1 shrink-0">
+                      <input
+                        type="number"
+                        min={1}
+                        value={b.qty_kirim}
+                        onChange={(e) => onUpdateQty(b.id, parseInt(e.target.value) || 1)}
+                        className={`w-14 bg-[#0D0E10] border rounded px-2 py-1 text-xs text-center focus:outline-none ${
+                          isLebih
+                            ? 'border-amber-500/60 text-amber-300 focus:border-amber-400'
+                            : 'border-[#2A2D31] text-[#e8eaed] focus:border-[#e5c17b]'
+                        }`}
+                      />
+                      <span className="text-[10px] text-[#9aa0a6]">/{b.qty_per_bundle}</span>
+                    </div>
+
+                    {/* Hapus */}
+                    <button
+                      onClick={() => onRemove(b.id)}
+                      title="Hapus bundle ini"
+                      className="shrink-0 w-5 h-5 flex items-center justify-center rounded hover:bg-red-900/30 text-[#9aa0a6] hover:text-red-400 transition-colors"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
                   </div>
 
-                  {/* Hapus */}
-                  <button
-                    onClick={() => onRemove(b.id)}
-                    title="Hapus bundle ini"
-                    className="shrink-0 w-5 h-5 flex items-center justify-center rounded hover:bg-red-900/30 text-[#9aa0a6] hover:text-red-400 transition-colors"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
+                  {/* Alasan wajib kalau qty melebihi rencana — kelebihannya akan
+                      menunggu approval PIN Owner, tapi SJ tetap langsung jadi. */}
+                  {isLebih && (
+                    <div className="px-3 pb-2 -mt-1">
+                      <div className="flex items-start gap-1.5 bg-amber-950/20 border border-amber-800/30 rounded-lg px-2.5 py-2">
+                        <AlertTriangle className="w-3 h-3 text-amber-400 shrink-0 mt-0.5" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[9px] text-amber-400 mb-1">
+                            Qty melebihi rencana ({b.qty_per_bundle}) — wajib isi alasan, akan menunggu approval PIN Owner
+                          </p>
+                          <input
+                            type="text"
+                            value={alasanLebih[b.id] ?? ''}
+                            onChange={(e) => onUpdateAlasanLebih(b.id, e.target.value)}
+                            placeholder="Alasan kelebihan qty..."
+                            className="w-full bg-[#0D0E10] border border-amber-800/40 text-[#e8eaed] rounded px-2 py-1 text-[10px] focus:outline-none focus:border-amber-500"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              ))}
+                );
+              })}
             </div>
 
             {/* Group subtotal */}
