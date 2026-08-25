@@ -10,7 +10,7 @@ import {
 import { type TahapKey } from '@/modules/produksi/constants/tahap';
 import StageStatusBadge from './StageStatusBadge';
 import StagePagination from './StagePagination';
-import { Package, Clock, Loader2, CheckCircle, X } from 'lucide-react';
+import { Package, Clock, Loader2, CheckCircle, X, Search, Printer } from 'lucide-react';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
 import { scanLanjutTahap, scanSelesai } from '@/lib/actions/produksi/scan-mutations.actions';
@@ -25,6 +25,7 @@ interface Props {
   pageSize?: number;
   onBulkSelesaiDone?: (selesaiBundles: AntrianBundleItem[]) => void;
   onBulkTerimaDone?: (bundles: AntrianBundleItem[]) => void;
+  onReprintHangTag?: (bundle: SelesaiBundleItem) => void;
 }
 
 export default function StageListSection({
@@ -35,24 +36,30 @@ export default function StageListSection({
   selesaiTotal: initialSelesaiTotal,
   pageSize = 20,
   onBulkSelesaiDone,
-  onBulkTerimaDone
+  onBulkTerimaDone,
+  onReprintHangTag
 }: Props) {
   const isPacking = tahap === 'packing';
-  
+
   const [activeTab, setActiveTab] = useState<'antrian' | 'sedang_proses' | 'selesai'>(
     isPacking ? 'antrian' : 'sedang_proses'
   );
-  
+
   // Local Data & Pagination State
   const [antrianData, setAntrianData] = useState<AntrianBundleItem[]>(initialAntrianData);
   const [antrianTotal, setAntrianTotal] = useState(initialAntrianTotal);
   const [antrianPage, setAntrianPage] = useState(1);
-  
+
   const [selesaiData, setSelesaiData] = useState<SelesaiBundleItem[]>(initialSelesaiData);
   const [selesaiTotal, setSelesaiTotal] = useState(initialSelesaiTotal);
   const [selesaiPage, setSelesaiPage] = useState(1);
-  
+
   const [isLoading, setIsLoading] = useState(false);
+
+  // Search (khusus Packing) — mencocokkan per kata (bebas urutan) ke No PO,
+  // Klien, Model, Warna, Size, Barcode; dikirim ke server supaya menjangkau
+  // seluruh data, bukan cuma halaman yang sedang tampil.
+  const [searchQuery, setSearchQuery] = useState('');
   
   // Selection & Modal State
   const [selectedAntrianIds, setSelectedAntrianIds] = useState<Set<string>>(new Set());
@@ -81,22 +88,53 @@ export default function StageListSection({
     setSelectedProsesIds(new Set());
   }, [activeTab]);
 
-  // Sync with initial props if they change
+  // Sync with initial props if they change — dilewati kalau sedang ada
+  // pencarian aktif, supaya router.refresh() (misal setelah bulk action)
+  // tidak menimpa balik hasil pencarian dengan data tak terfilter.
   useEffect(() => {
+    if (searchQuery.trim()) return;
     setAntrianData(initialAntrianData);
     setAntrianTotal(initialAntrianTotal);
-  }, [initialAntrianData, initialAntrianTotal]);
+  }, [initialAntrianData, initialAntrianTotal, searchQuery]);
 
   useEffect(() => {
+    if (searchQuery.trim()) return;
     setSelesaiData(initialSelesaiData);
     setSelesaiTotal(initialSelesaiTotal);
-  }, [initialSelesaiData, initialSelesaiTotal]);
+  }, [initialSelesaiData, initialSelesaiTotal, searchQuery]);
+
+  // Debounce pencarian — refetch antrian & selesai (halaman 1) dari server
+  // setiap kata kunci berubah. Khusus Packing.
+  useEffect(() => {
+    if (!isPacking) return;
+    const handle = setTimeout(async () => {
+      setIsLoading(true);
+      try {
+        const [antrianRes, selesaiRes] = await Promise.all([
+          getAntrianPerTahap(tahap, 1, pageSize, searchQuery),
+          getSelesaiPerTahap(tahap, 1, pageSize, searchQuery),
+        ]);
+        setAntrianData(antrianRes.data);
+        setAntrianTotal(antrianRes.total);
+        setAntrianPage(1);
+        setSelesaiData(selesaiRes.data);
+        setSelesaiTotal(selesaiRes.total);
+        setSelesaiPage(1);
+      } catch (e: any) {
+        toast.error('Gagal mencari data');
+      } finally {
+        setIsLoading(false);
+      }
+    }, 350);
+    return () => clearTimeout(handle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery, isPacking, tahap, pageSize]);
 
   const handleAntrianPageChange = async (newPage: number) => {
     setAntrianPage(newPage);
     setIsLoading(true);
     try {
-      const res = await getAntrianPerTahap(tahap, newPage, pageSize);
+      const res = await getAntrianPerTahap(tahap, newPage, pageSize, searchQuery);
       setAntrianData(res.data);
       setAntrianTotal(res.total);
     } catch (error: any) {
@@ -110,7 +148,7 @@ export default function StageListSection({
     setSelesaiPage(newPage);
     setIsLoading(true);
     try {
-      const res = await getSelesaiPerTahap(tahap, newPage, pageSize);
+      const res = await getSelesaiPerTahap(tahap, newPage, pageSize, searchQuery);
       setSelesaiData(res.data);
       setSelesaiTotal(res.total);
     } catch (error: any) {
@@ -322,6 +360,7 @@ export default function StageListSection({
     <div className="space-y-4">
       {/* Header & Tabs */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
         {/* Tab Switcher */}
         <div className="flex p-1 bg-[#1A1D1F] rounded-xl border border-[#2A2D31] w-fit">
           {isPacking && (
@@ -350,6 +389,29 @@ export default function StageListSection({
           >
             SELESAI <span className="ml-1 opacity-50">({selesaiTotal})</span>
           </button>
+        </div>
+
+        {/* Search — khusus Packing */}
+        {isPacking && (
+          <div className="relative w-full sm:w-64">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#9aa0a6] pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Cari model, warna, size, no PO..."
+              className="w-full bg-[#16181A] border border-[#2A2D31] rounded-lg pl-8 pr-8 py-2 text-xs text-[#e8eaed] placeholder-[#9aa0a6]/50 focus:outline-none focus:border-[#e5c17b] transition-colors"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-[#9aa0a6] hover:text-[#e8eaed] transition-colors"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        )}
         </div>
 
         {/* Bulk Action Button */}
@@ -553,12 +615,13 @@ export default function StageListSection({
                     <TableHeader>Waktu Selesai</TableHeader>
                     <TableHeader>Nama Penjahit</TableHeader>
                     <TableHeader>Tgl Selesai Jahit</TableHeader>
+                    {isPacking && <TableHeader>Aksi</TableHeader>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#2A2D31]">
                   {selesaiData.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="px-4 py-12 text-center text-[#9aa0a6]">
+                      <td colSpan={isPacking ? 10 : 9} className="px-4 py-12 text-center text-[#9aa0a6]">
                         <Package className="w-8 h-8 mx-auto mb-2 opacity-20" />
                         Belum ada bundle yang selesai di tahap {tahap}
                       </td>
@@ -589,6 +652,16 @@ export default function StageListSection({
                         </td>
                         <td className="px-4 py-3 text-[#9aa0a6]">{item.jahit_karyawan_nama}</td>
                         <td className="px-4 py-3 text-xs text-[#9aa0a6]">{formatTanggalSelesaiJahit(item.jahit_waktu_selesai)}</td>
+                        {isPacking && (
+                          <td className="px-4 py-3">
+                            <button
+                              onClick={() => onReprintHangTag?.(item)}
+                              className="flex items-center gap-1 text-[10px] font-bold text-[#9aa0a6] hover:text-[#e5c17b] border border-[#2A2D31] px-2 py-1 rounded-lg transition-colors"
+                            >
+                              <Printer className="w-3 h-3" /> Print Ulang
+                            </button>
+                          </td>
+                        )}
                       </tr>
                     ))
                   )}
@@ -596,10 +669,10 @@ export default function StageListSection({
               </table>
             </div>
             <div className="p-4 border-t border-[#2A2D31]">
-                <StagePagination 
-                    page={selesaiPage} 
-                    totalPages={totalSelesaiPages} 
-                    onPageChange={handleSelesaiPageChange} 
+                <StagePagination
+                    page={selesaiPage}
+                    totalPages={totalSelesaiPages}
+                    onPageChange={handleSelesaiPageChange}
                 />
             </div>
           </div>

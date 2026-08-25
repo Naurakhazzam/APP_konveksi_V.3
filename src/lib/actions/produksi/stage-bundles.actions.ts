@@ -6,6 +6,20 @@ import { TAHAP_ORDER as STAGE_ORDER, type TahapKey } from '@/modules/produksi/co
 
 const TENANT_ID = 'STX-001';
 
+// Cocokkan per-kata (bebas urutan): setiap kata di query harus ada di
+// salah satu field yang dicari (no_po, klien, model, warna, size, barcode).
+function matchesSearch(
+  item: { no_po: string; klien_nama: string; model_nama: string | null; warna: string; size: string; barcode: string },
+  search: string,
+): boolean {
+  const tokens = search.toLowerCase().trim().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return true;
+  const haystack = [item.no_po, item.klien_nama, item.model_nama, item.warna, item.size, item.barcode]
+    .join(' ')
+    .toLowerCase();
+  return tokens.every(t => haystack.includes(t));
+}
+
 export interface AntrianBundleItem {
   id: string;
   barcode: string;
@@ -31,12 +45,13 @@ export interface SelesaiBundleItem extends Omit<AntrianBundleItem, 'status'> {
 /**
  * Mengambil antrian bundle per tahap produksi.
  */
-export async function getAntrianPerTahap(tahap: TahapKey, page: number, pageSize: number): Promise<{ data: AntrianBundleItem[], total: number }> {
+export async function getAntrianPerTahap(tahap: TahapKey, page: number, pageSize: number, search?: string): Promise<{ data: AntrianBundleItem[], total: number }> {
   const profile = await getCurrentUserProfile();
   if (!profile) throw new Error('Unauthorized');
 
   const supabase = await createClient();
   const offset = (page - 1) * pageSize;
+  const hasSearch = !!search?.trim();
 
   const selectClause = `
     id, barcode, status_tahap, po_item_id,
@@ -68,8 +83,15 @@ export async function getAntrianPerTahap(tahap: TahapKey, page: number, pageSize
       .not('status_tahap', 'cs', JSON.stringify({ [tahap]: { status: 'selesai' } }));
   }
 
+  // Saat mencari (search), ambil semua baris yang cocok filter tahap dulu
+  // (tanpa .range()) supaya pencarian menjangkau seluruh data, bukan cuma
+  // halaman yang sedang tampil — baru dipotong per halaman manual di JS
+  // setelah difilter oleh kata kunci.
+  if (!hasSearch) {
+    query = query.range(offset, offset + pageSize - 1);
+  }
+
   const { data, count, error } = await query
-    .range(offset, offset + pageSize - 1)
     .order('created_at', { ascending: true });
 
   if (error) throw new Error(`Gagal ambil antrian ${tahap}: ${error.message}`);
@@ -114,18 +136,25 @@ export async function getAntrianPerTahap(tahap: TahapKey, page: number, pageSize
     };
   });
 
-  return { data: mappedData, total: count || 0 };
+  if (!hasSearch) {
+    return { data: mappedData, total: count || 0 };
+  }
+
+  const filtered = mappedData.filter(item => matchesSearch(item, search!));
+  const start = (page - 1) * pageSize;
+  return { data: filtered.slice(start, start + pageSize), total: filtered.length };
 }
 
 /**
  * Mengambil daftar bundle yang sudah selesai di tahap tertentu namun belum lanjut ke tahap berikutnya.
  */
-export async function getSelesaiPerTahap(tahap: TahapKey, page: number, pageSize: number): Promise<{ data: SelesaiBundleItem[], total: number }> {
+export async function getSelesaiPerTahap(tahap: TahapKey, page: number, pageSize: number, search?: string): Promise<{ data: SelesaiBundleItem[], total: number }> {
   const profile = await getCurrentUserProfile();
   if (!profile) throw new Error('Unauthorized');
 
   const supabase = await createClient();
   const offset = (page - 1) * pageSize;
+  const hasSearch = !!search?.trim();
 
   const selectClause = `
     id, barcode, status_tahap, po_item_id,
@@ -154,8 +183,11 @@ export async function getSelesaiPerTahap(tahap: TahapKey, page: number, pageSize
       .not('status_tahap', 'cs', JSON.stringify({ [nextStage]: { status: 'selesai' } }));
   }
 
+  if (!hasSearch) {
+    query = query.range(offset, offset + pageSize - 1);
+  }
+
   const { data, count, error } = await query
-    .range(offset, offset + pageSize - 1)
     .order('created_at', { ascending: false });
 
   if (error) throw new Error(`Gagal ambil data selesai ${tahap}: ${error.message}`);
@@ -199,5 +231,11 @@ export async function getSelesaiPerTahap(tahap: TahapKey, page: number, pageSize
     };
   });
 
-  return { data: mappedData, total: count || 0 };
+  if (!hasSearch) {
+    return { data: mappedData, total: count || 0 };
+  }
+
+  const filtered = mappedData.filter(item => matchesSearch(item, search!));
+  const start = (page - 1) * pageSize;
+  return { data: filtered.slice(start, start + pageSize), total: filtered.length };
 }

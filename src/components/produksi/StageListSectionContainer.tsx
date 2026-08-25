@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import type { AntrianBundleItem, SelesaiBundleItem } from '@/lib/actions/produksi/stage-bundles.actions';
+import { toast } from 'sonner';
 import StageListSection from './StageListSection';
 import { type TahapKey } from '@/modules/produksi/constants/tahap';
 import PrintHangTagLayout from '@/app/(dashboard)/app/produksi/scan/packing/PrintHangTagLayout';
@@ -31,9 +32,25 @@ export function StageListSectionContainer({
       model_nama: b.model_nama ?? null,
       warna: b.warna,
       size: b.size,
-      qty: b.qty_per_bundle, // wait, shouldn't this be qtyAktual? The user's prompt said qty: b.qty_per_bundle. I'll stick to what they said, or maybe I should adapt it. Actually, `onBulkSelesaiDone` receives `AntrianBundleItem[]`. Wait, I can pass qtyAktual. But the user wrote `qty: b.qty_per_bundle`. Let's stick to their prompt exactly.
+      qty: b.qty_per_bundle,
     }));
     setHangTagData(items);
+    setTimeout(() => {
+      window.print();
+      setHangTagData(null);
+    }, 600);
+  };
+
+  const handleReprintHangTag = (bundle: SelesaiBundleItem) => {
+    if (tahap !== 'packing') return;
+    setHangTagData([{
+      noUrut: bundle.barcode.split('-')[2] ?? '',
+      model_nama: bundle.model_nama ?? null,
+      warna: bundle.warna,
+      size: bundle.size,
+      qty: bundle.qty_per_bundle,
+    }]);
+    toast.success(`Mencetak ulang hang tag ${bundle.barcode}`);
     setTimeout(() => {
       window.print();
       setHangTagData(null);
@@ -63,6 +80,7 @@ export function StageListSectionContainer({
         selesaiTotal={initialSelesai.total}
         pageSize={pageSize}
         onBulkSelesaiDone={tahap === 'packing' ? handleBulkSelesaiDone : undefined}
+        onReprintHangTag={tahap === 'packing' ? handleReprintHangTag : undefined}
       />
 
       {/* Print hang tag — hanya untuk packing, hidden kecuali saat print */}
