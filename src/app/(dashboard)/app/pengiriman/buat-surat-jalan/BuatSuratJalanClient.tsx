@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { BundleReadyToShip, createSuratJalan } from '@/lib/actions/pengiriman/surat-jalan.actions';
 import CartPanel from './CartPanel';
-import { ChevronRight, ChevronDown } from 'lucide-react';
+import { ChevronRight, ChevronDown, Search, X } from 'lucide-react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -65,6 +65,12 @@ export default function BuatSuratJalanClient({ initialBundles }: { initialBundle
   const [catatan, setCatatan] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [alasanLebih, setAlasanLebih] = useState<Record<string, string>>({});
+  // Pencarian per-kata (bebas urutan) ke No PO, Klien, Model, Warna, Size,
+  // Barcode. Murni di sisi tampilan — semua bundle memang sudah dimuat
+  // sekaligus di halaman ini, jadi tidak perlu bolak-balik ke server.
+  // Centang tetap tersimpan saat kata kunci berubah, karena selectedIds
+  // menyimpan id-nya sendiri, terpisah dari daftar yang sedang tampil.
+  const [searchQuery, setSearchQuery] = useState('');
 
   // ─── Derived state ─────────────────────────────────────────────────────────
 
@@ -74,9 +80,25 @@ export default function BuatSuratJalanClient({ initialBundles }: { initialBundle
 
   const currentKlienId = selectedBundles.length > 0 ? selectedBundles[0].klien_id : null;
 
-  // Select-all: hanya bundle dengan klien yang sama (constraint SJ)
-  const selectAllKlienId = currentKlienId ?? (bundles.length > 0 ? bundles[0].klien_id : null);
-  const eligibleBundles  = selectAllKlienId ? bundles.filter(b => b.klien_id === selectAllKlienId) : bundles;
+  const matchesSearch = (b: BundleReadyToShip, tokens: string[]) => {
+    if (tokens.length === 0) return true;
+    const haystack = [b.no_po, b.klien_nama, b.model_nama, b.warna, b.size, b.barcode]
+      .join(' ')
+      .toLowerCase();
+    return tokens.every(t => haystack.includes(t));
+  };
+
+  const visibleBundles = useMemo(() => {
+    const tokens = searchQuery.toLowerCase().trim().split(/\s+/).filter(Boolean);
+    if (tokens.length === 0) return bundles;
+    return bundles.filter(b => matchesSearch(b, tokens));
+  }, [bundles, searchQuery]);
+
+  // Select-all: hanya bundle dengan klien yang sama (constraint SJ), dan hanya
+  // yang sedang tampil — supaya "Pilih Semua" tidak diam-diam mencentang
+  // bundle yang tersembunyi oleh pencarian.
+  const selectAllKlienId = currentKlienId ?? (visibleBundles.length > 0 ? visibleBundles[0].klien_id : null);
+  const eligibleBundles  = selectAllKlienId ? visibleBundles.filter(b => b.klien_id === selectAllKlienId) : visibleBundles;
   const allEligibleSelected  = eligibleBundles.length > 0 && eligibleBundles.every(b => selectedIds.has(b.id));
   const someEligibleSelected = !allEligibleSelected && eligibleBundles.some(b => selectedIds.has(b.id));
 
@@ -85,7 +107,7 @@ export default function BuatSuratJalanClient({ initialBundles }: { initialBundle
   const groups = useMemo((): BundleGroup[] => {
     const map = new Map<string, BundleGroup>();
 
-    bundles.forEach(b => {
+    visibleBundles.forEach(b => {
       const key = `${b.model_nama}||${b.warna}||${b.size}||${b.no_po}||${b.klien_id}`;
       if (!map.has(key)) {
         map.set(key, {
@@ -106,7 +128,7 @@ export default function BuatSuratJalanClient({ initialBundles }: { initialBundle
     });
 
     return Array.from(map.values());
-  }, [bundles]);
+  }, [visibleBundles]);
 
   // ─── Handlers ─────────────────────────────────────────────────────────────
 
@@ -221,14 +243,33 @@ export default function BuatSuratJalanClient({ initialBundles }: { initialBundle
     <div className="grid lg:grid-cols-3 gap-6">
       <div className="lg:col-span-2 space-y-4">
         <div className="bg-[#1A1D1F] border border-[#2A2D31] rounded-lg overflow-hidden">
-          <div className="p-4 border-b border-[#2A2D31] flex justify-between items-center bg-[#0D0E10]">
+          <div className="p-4 border-b border-[#2A2D31] flex flex-col md:flex-row md:justify-between md:items-center gap-3 bg-[#0D0E10]">
             <h2 className="font-semibold text-[#e8eaed]">
               Pilih Bundle{' '}
               <span className="text-[#9aa0a6] font-normal text-sm">
-                ({groups.length} grup · {bundles.length} bundle)
+                ({groups.length} grup · {visibleBundles.length} bundle
+                {searchQuery.trim() && visibleBundles.length !== bundles.length && ` dari ${bundles.length}`})
               </span>
             </h2>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="relative w-full sm:w-56">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#9aa0a6] pointer-events-none" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Cari model, warna, size, no PO..."
+                  className="w-full bg-[#16181A] border border-[#2A2D31] rounded-lg pl-8 pr-8 py-1.5 text-xs text-[#e8eaed] placeholder-[#9aa0a6]/50 focus:outline-none focus:border-[#e5c17b] transition-colors"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-[#9aa0a6] hover:text-[#e8eaed] transition-colors"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
               {selectedIds.size > 0 && (
                 <span className="text-xs text-[#e5c17b] font-medium">
                   {selectedIds.size} bundle dipilih
@@ -236,7 +277,7 @@ export default function BuatSuratJalanClient({ initialBundles }: { initialBundle
               )}
               <button
                 onClick={handleSelectAll}
-                disabled={bundles.length === 0}
+                disabled={eligibleBundles.length === 0}
                 className="text-xs font-semibold text-[#9aa0a6] hover:text-[#e5c17b] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {allEligibleSelected ? 'Batal Pilih Semua' : 'Pilih Semua'}
@@ -252,7 +293,7 @@ export default function BuatSuratJalanClient({ initialBundles }: { initialBundle
                     <IndeterminateCheckbox
                       checked={allEligibleSelected}
                       indeterminate={someEligibleSelected}
-                      disabled={bundles.length === 0}
+                      disabled={eligibleBundles.length === 0}
                       onChange={handleSelectAll}
                     />
                   </th>
@@ -268,7 +309,13 @@ export default function BuatSuratJalanClient({ initialBundles }: { initialBundle
                 {groups.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="px-4 py-8 text-center text-[#9aa0a6]">
-                      Tidak ada bundle siap kirim.
+                      {searchQuery.trim()
+                        ? <>Tidak ada hasil untuk &quot;<span className="text-[#e5c17b]">{searchQuery}</span>&quot;.{' '}
+                            <button onClick={() => setSearchQuery('')} className="underline hover:text-[#e8eaed]">
+                              Hapus pencarian
+                            </button>
+                          </>
+                        : 'Tidak ada bundle siap kirim.'}
                     </td>
                   </tr>
                 ) : (
