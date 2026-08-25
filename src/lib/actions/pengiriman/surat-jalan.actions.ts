@@ -95,11 +95,12 @@ export async function getBundlesReadyToShip(): Promise<BundleReadyToShip[]> {
   });
 
   return readyBundles.map((b: any) => {
-    // Pakai qty hasil cutting aktual (kalau beda dari rencana) sebagai qty
-    // efektif bundle ini, supaya default qty kirim ikut mengikuti hasil
-    // cutting yang sebenarnya, bukan rencana awal yang sudah tidak akurat.
+    // Prioritas qty efektif bundle ini: qty_selesai packing sendiri (paling
+    // otoritatif — termasuk untuk bundle hasil Split) → qty_aktual cutting →
+    // qty_per_bundle rencana sebagai fallback terakhir.
+    const qtySelesaiPacking = b.status_tahap?.packing?.qty_selesai;
     const qtyAktualCutting = b.status_tahap?.cutting?.qty_aktual;
-    const qtyEfektif = (qtyAktualCutting != null) ? qtyAktualCutting : (b.po_item?.qty_per_bundle || 0);
+    const qtyEfektif = qtySelesaiPacking ?? qtyAktualCutting ?? (b.po_item?.qty_per_bundle || 0);
 
     return {
       id: b.id,

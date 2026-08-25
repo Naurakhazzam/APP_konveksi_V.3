@@ -69,6 +69,7 @@ export async function getAntrianPerTahap(tahap: TahapKey, page: number, pageSize
 
   const stageIndex = STAGE_ORDER.indexOf(tahap);
   if (stageIndex === -1) throw new Error(`Tahap ${tahap} tidak valid`);
+  const prevStage = stageIndex > 0 ? STAGE_ORDER[stageIndex - 1] : null;
 
   if (tahap === 'cutting') {
     query = query.not('status_tahap', 'cs', JSON.stringify({ cutting: { status: 'selesai' } }));
@@ -77,9 +78,8 @@ export async function getAntrianPerTahap(tahap: TahapKey, page: number, pageSize
     // bukan 'terima' (masih dikerjakan) — sebelum bundle boleh masuk antrian tahap ini.
     // Dicek di query (bukan filter JS setelah .range()) supaya total & isi per
     // halaman selalu konsisten.
-    const prevStage = STAGE_ORDER[stageIndex - 1];
     query = query
-      .contains('status_tahap', { [prevStage]: { status: 'selesai' } })
+      .contains('status_tahap', { [prevStage!]: { status: 'selesai' } })
       .not('status_tahap', 'cs', JSON.stringify({ [tahap]: { status: 'selesai' } }));
   }
 
@@ -113,11 +113,15 @@ export async function getAntrianPerTahap(tahap: TahapKey, page: number, pageSize
     const status: 'menunggu' | 'sedang_proses' = (stageInfo?.status === 'terima') ? 'sedang_proses' : 'menunggu';
     const jahitInfo = item.status_tahap?.jahit;
 
-    // Pakai qty hasil cutting aktual sebagai target tahap ini kalau ada
-    // (beda dari qty_per_bundle rencana) — supaya kelebihan/kekurangan
-    // hasil cutting ikut terbawa ke tahap-tahap berikutnya.
+    // Prioritas qty efektif bundle ini: qty_terima tahap ini sendiri (kalau
+    // sudah diserahterimakan — termasuk bundle hasil Split, yang qty-nya
+    // memang beda dari qty tahap sebelumnya) → qty_selesai tahap sebelumnya
+    // (rencana yang akan diterima di tahap ini) → qty_aktual cutting →
+    // qty_per_bundle rencana sebagai fallback terakhir.
+    const qtyTerimaCurrent = stageInfo?.qty_terima;
+    const qtyPrevSelesai = prevStage ? item.status_tahap?.[prevStage]?.qty_selesai : null;
     const qtyAktualCutting = item.status_tahap?.cutting?.qty_aktual;
-    const qtyEfektif = (qtyAktualCutting != null) ? qtyAktualCutting : (item.po_item?.qty_per_bundle ?? 0);
+    const qtyEfektif = qtyTerimaCurrent ?? qtyPrevSelesai ?? qtyAktualCutting ?? (item.po_item?.qty_per_bundle ?? 0);
 
     return {
       id: item.id,
@@ -209,8 +213,13 @@ export async function getSelesaiPerTahap(tahap: TahapKey, page: number, pageSize
     const stageInfo = item.status_tahap?.[tahap];
     const jahitInfo = item.status_tahap?.jahit;
 
+    // qty_selesai tahap ini sudah final/otoritatif begitu tahap ini selesai
+    // (termasuk untuk bundle hasil Split — qty_selesai-nya sudah benar
+    // sesuai porsi bundle itu sendiri, bukan qty_aktual cutting induknya).
+    const qtySelesaiCurrent = stageInfo?.qty_selesai;
+    const qtyTerimaCurrent = stageInfo?.qty_terima;
     const qtyAktualCutting = item.status_tahap?.cutting?.qty_aktual;
-    const qtyEfektif = (qtyAktualCutting != null) ? qtyAktualCutting : (item.po_item?.qty_per_bundle ?? 0);
+    const qtyEfektif = qtySelesaiCurrent ?? qtyTerimaCurrent ?? qtyAktualCutting ?? (item.po_item?.qty_per_bundle ?? 0);
 
     return {
       id: item.id,

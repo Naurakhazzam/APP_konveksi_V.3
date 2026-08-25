@@ -252,11 +252,14 @@ export async function getAntrianJahit(): Promise<AntrianJahitBundle[]> {
     const produk = Array.isArray(poItem?.produk) ? poItem.produk[0] : poItem?.produk;
     const model = Array.isArray(produk?.model_produk) ? produk.model_produk[0] : produk?.model_produk;
 
-    // Pakai qty hasil cutting aktual (kalau lebih/kurang dari rencana) sebagai
-    // target tahap berikutnya, bukan qty_per_bundle rencana yang statis —
-    // supaya kelebihan/kekurangan hasil cutting ikut terbawa ke Jahit dst.
+    // Prioritas qty efektif bundle ini: qty_terima jahit sendiri (kalau
+    // sudah diserahterimakan — termasuk bundle hasil Split, yang qty-nya
+    // memang beda dari qty_aktual cutting induknya) → qty_aktual cutting
+    // (kalau belum diserahterimakan, ini target rencana serah terima) →
+    // qty_per_bundle rencana sebagai fallback terakhir.
+    const qtyTerimaJahit = b.status_tahap?.jahit?.qty_terima;
     const qtyAktualCutting = b.status_tahap?.cutting?.qty_aktual;
-    const qtyEfektif = (qtyAktualCutting != null) ? qtyAktualCutting : (poItem?.qty_per_bundle ?? 0);
+    const qtyEfektif = qtyTerimaJahit ?? qtyAktualCutting ?? (poItem?.qty_per_bundle ?? 0);
 
     return {
       id: b.id,
