@@ -41,16 +41,20 @@ export function StageListSectionContainer({
     }, 600);
   };
 
-  const handleReprintHangTag = (bundle: SelesaiBundleItem) => {
-    if (tahap !== 'packing') return;
-    setHangTagData([{
+  const handleReprintHangTag = (bundles: SelesaiBundleItem[]) => {
+    if (tahap !== 'packing' || bundles.length === 0) return;
+    setHangTagData(bundles.map(bundle => ({
       noUrut: bundle.barcode.split('-')[2] ?? '',
       model_nama: bundle.model_nama ?? null,
       warna: bundle.warna,
       size: bundle.size,
       qty: bundle.qty_per_bundle,
-    }]);
-    toast.success(`Mencetak ulang hang tag ${bundle.barcode}`);
+    })));
+    toast.success(
+      bundles.length === 1
+        ? `Mencetak ulang hang tag ${bundles[0].barcode}`
+        : `Mencetak ulang hang tag ${bundles.length} bundle`
+    );
     setTimeout(() => {
       window.print();
       setHangTagData(null);

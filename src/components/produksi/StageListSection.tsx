@@ -25,7 +25,7 @@ interface Props {
   pageSize?: number;
   onBulkSelesaiDone?: (selesaiBundles: AntrianBundleItem[]) => void;
   onBulkTerimaDone?: (bundles: AntrianBundleItem[]) => void;
-  onReprintHangTag?: (bundle: SelesaiBundleItem) => void;
+  onReprintHangTag?: (bundles: SelesaiBundleItem[]) => void;
 }
 
 export default function StageListSection({
@@ -64,6 +64,11 @@ export default function StageListSection({
   // Selection & Modal State
   const [selectedAntrianIds, setSelectedAntrianIds] = useState<Set<string>>(new Set());
   const [selectedProsesIds, setSelectedProsesIds]   = useState<Set<string>>(new Set());
+
+  // Pilihan "Print Ulang" di tab Selesai (khusus Packing) — simpan datanya
+  // langsung (bukan cuma ID), supaya tetap tersedia untuk cetak gabungan
+  // meski barisnya sudah tidak tampil lagi setelah ganti kata kunci pencarian.
+  const [selesaiSelected, setSelesaiSelected] = useState<Map<string, SelesaiBundleItem>>(new Map());
   const [isBulkLoading, setIsBulkLoading] = useState(false);
   const [isBulkTerimaLoading, setIsBulkTerimaLoading] = useState(false);
   
@@ -327,6 +332,33 @@ export default function StageListSection({
     setSelectedProsesIds(newSet);
   };
 
+  const toggleSelesaiSelect = (item: SelesaiBundleItem) => {
+    setSelesaiSelected(prev => {
+      const next = new Map(prev);
+      if (next.has(item.id)) next.delete(item.id);
+      else next.set(item.id, item);
+      return next;
+    });
+  };
+
+  const handleSelectAllSelesai = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSelesaiSelected(prev => {
+      const next = new Map(prev);
+      if (e.target.checked) {
+        selesaiData.forEach(item => next.set(item.id, item));
+      } else {
+        selesaiData.forEach(item => next.delete(item.id));
+      }
+      return next;
+    });
+  };
+
+  const handleBulkReprintSelesai = () => {
+    if (selesaiSelected.size === 0) return;
+    onReprintHangTag?.(Array.from(selesaiSelected.values()));
+    setSelesaiSelected(new Map());
+  };
+
   const formatDateTime = (dateStr: string) => {
     if (dateStr === '-' || !dateStr) return '-';
     return new Date(dateStr).toLocaleString('id-ID', {
@@ -441,6 +473,23 @@ export default function StageListSection({
               <><CheckCircle className="w-4 h-4" /> Selesaikan ({selectedProsesIds.size} Bundle)</>
             )}
           </button>
+        )}
+
+        {isPacking && activeTab === 'selesai' && selesaiSelected.size > 0 && (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setSelesaiSelected(new Map())}
+              className="text-xs font-semibold text-[#9aa0a6] hover:text-[#e8eaed] transition-colors px-2"
+            >
+              Batal Pilih
+            </button>
+            <button
+              onClick={handleBulkReprintSelesai}
+              className="flex items-center gap-2 bg-[#e5c17b] hover:bg-[#d4b06a] text-[#0D0E10] px-4 py-2 rounded-lg text-xs font-bold transition-colors shadow-lg"
+            >
+              <Printer className="w-4 h-4" /> Print Ulang ({selesaiSelected.size} Bundle)
+            </button>
+          </div>
         )}
       </div>
 
@@ -606,6 +655,16 @@ export default function StageListSection({
               <table className="w-full text-sm border-collapse">
                 <thead>
                   <tr>
+                    {isPacking && (
+                      <TableHeader>
+                        <input
+                          type="checkbox"
+                          checked={selesaiData.length > 0 && selesaiData.every(item => selesaiSelected.has(item.id))}
+                          onChange={handleSelectAllSelesai}
+                          className="accent-[#e5c17b] w-4 h-4 rounded cursor-pointer"
+                        />
+                      </TableHeader>
+                    )}
                     <TableHeader>No.</TableHeader>
                     <TableHeader>No. PO</TableHeader>
                     <TableHeader>Artikel</TableHeader>
@@ -621,7 +680,7 @@ export default function StageListSection({
                 <tbody className="divide-y divide-[#2A2D31]">
                   {selesaiData.length === 0 ? (
                     <tr>
-                      <td colSpan={isPacking ? 10 : 9} className="px-4 py-12 text-center text-[#9aa0a6]">
+                      <td colSpan={isPacking ? 11 : 9} className="px-4 py-12 text-center text-[#9aa0a6]">
                         <Package className="w-8 h-8 mx-auto mb-2 opacity-20" />
                         Belum ada bundle yang selesai di tahap {tahap}
                       </td>
@@ -629,6 +688,16 @@ export default function StageListSection({
                   ) : (
                     selesaiData.map((item, idx) => (
                       <tr key={item.id} className="hover:bg-[#2A2D31]/40 transition-colors">
+                        {isPacking && (
+                          <td className="px-4 py-3">
+                            <input
+                              type="checkbox"
+                              checked={selesaiSelected.has(item.id)}
+                              onChange={() => toggleSelesaiSelect(item)}
+                              className="accent-[#e5c17b] w-4 h-4 rounded cursor-pointer"
+                            />
+                          </td>
+                        )}
                         <td className="px-4 py-3 text-xs font-bold text-[#9aa0a6]">
                           {(selesaiPage - 1) * pageSize + idx + 1}
                         </td>
@@ -655,7 +724,7 @@ export default function StageListSection({
                         {isPacking && (
                           <td className="px-4 py-3">
                             <button
-                              onClick={() => onReprintHangTag?.(item)}
+                              onClick={() => onReprintHangTag?.([item])}
                               className="flex items-center gap-1 text-[10px] font-bold text-[#9aa0a6] hover:text-[#e5c17b] border border-[#2A2D31] px-2 py-1 rounded-lg transition-colors"
                             >
                               <Printer className="w-3 h-3" /> Print Ulang
