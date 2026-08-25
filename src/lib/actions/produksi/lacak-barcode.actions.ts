@@ -103,6 +103,23 @@ async function fetchDetail(supabase: SupabaseClient, barcode: string): Promise<L
     }
   }
 
+  // Qty efektif bundle ini: qty tahap paling akhir yang sudah tersentuh
+  // (qty_selesai lebih diutamakan dari qty_terima, cutting pakai qty_aktual)
+  // — supaya benar untuk bundle hasil Split, yang qty-nya beda dari
+  // qty_per_bundle rencana po_item.
+  let qtyEfektif: number | null = null;
+  for (const t of [...TAHAP_ORDER].reverse()) {
+    const info = statusTahap[t] as any;
+    if (!info) continue;
+    if (t === 'cutting') {
+      if (info.qty_aktual != null) { qtyEfektif = info.qty_aktual; break; }
+    } else {
+      if (info.qty_selesai != null) { qtyEfektif = info.qty_selesai; break; }
+      if (info.qty_terima != null) { qtyEfektif = info.qty_terima; break; }
+    }
+  }
+  const qtyFinal: number = qtyEfektif ?? (poItem?.qty_per_bundle ?? 0);
+
   return {
     barcode: row.barcode,
     no_po: po?.no_po ?? '',
@@ -110,7 +127,7 @@ async function fetchDetail(supabase: SupabaseClient, barcode: string): Promise<L
     model_nama: model?.nama ?? null,
     warna: poItem?.warna ?? '',
     size: poItem?.size ?? '',
-    qty_per_bundle: poItem?.qty_per_bundle ?? 0,
+    qty_per_bundle: qtyFinal,
     tahap_sekarang: tahapSekarang,
     status_kirim: sj ? 'sudah_dikirim' : 'belum_dikirim',
     nomor_sj: sj?.nomor_sj ?? null,
