@@ -243,3 +243,46 @@ export async function scanLanjutTahap(input: {
     upah_nominal:  result.upah_nominal ?? 0,
   };
 }
+
+// 7. splitBundleAwalJahit — split bundle SEBELUM serah terima (masih di Antrian).
+// Sebagian qty langsung diserahterimakan ke seorang penjahit, sisanya tetap
+// jadi bundle yang sama, tetap belum ditugaskan siapapun (tetap di Antrian).
+export interface SplitBundleAwalJahitResult {
+  scan_log_id:        string;
+  new_bundle_id:       string;
+  new_bundle_barcode:  string;
+  new_bundle_qty:      number;
+  parent_bundle_id:    string;
+  parent_sisa_qty:     number;
+  stok_warnings:       StokWarning[];
+}
+
+export async function splitBundleAwalJahit(input: {
+  barcode:      string;
+  qty_assign:   number;
+  karyawan_id:  string;
+}): Promise<SplitBundleAwalJahitResult> {
+  const user_id  = await resolveUserId();
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.rpc('split_bundle_awal_jahit', {
+    p_barcode:     input.barcode,
+    p_qty_assign:  input.qty_assign,
+    p_karyawan_id: input.karyawan_id,
+    p_user_id:     user_id,
+    p_tenant_id:   TENANT_ID,
+  });
+
+  if (error) throw new Error(error.message);
+
+  const result = data as SplitBundleAwalJahitResult;
+  return {
+    scan_log_id:       result.scan_log_id,
+    new_bundle_id:      result.new_bundle_id,
+    new_bundle_barcode: result.new_bundle_barcode,
+    new_bundle_qty:     result.new_bundle_qty,
+    parent_bundle_id:   result.parent_bundle_id,
+    parent_sisa_qty:    result.parent_sisa_qty,
+    stok_warnings:      result.stok_warnings ?? [],
+  };
+}

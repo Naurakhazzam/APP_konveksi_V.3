@@ -8,6 +8,7 @@ import StageStatusBadge from '@/components/produksi/StageStatusBadge';
 import StagePagination from '@/components/produksi/StagePagination';
 import ModalSerahTerimaJahit from './ModalSerahTerimaJahit';
 import ModalSplitBundle from './ModalSplitBundle';
+import ModalSplitAwalJahit from './ModalSplitAwalJahit';
 import ModalBatchSelesaiJahit from './ModalBatchSelesaiJahit';
 import { Package, Clock, User, Loader2, Users, Printer, CheckCircle, AlertTriangle, Scissors } from 'lucide-react';
 import { toast } from 'sonner';
@@ -49,6 +50,7 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
   const [showModalSerahTerima, setShowModalSerahTerima] = useState(false);
   const [showBatchSelesaiModal, setShowBatchSelesaiModal] = useState(false);
   const [splitBundle, setSplitBundle] = useState<AntrianJahitBundle | null>(null);
+  const [splitAwalBundle, setSplitAwalBundle] = useState<AntrianJahitBundle | null>(null);
 
   const handleSerahTerimaSuccess = () => {
     setShowModalSerahTerima(false);
@@ -59,6 +61,12 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
   const handleSplitSuccess = () => {
     setSplitBundle(null);
     setSelectedProsesIds(new Set());
+    router.refresh();
+  };
+
+  const handleSplitAwalSuccess = () => {
+    setSplitAwalBundle(null);
+    setSelectedBundleIds(new Set());
     router.refresh();
   };
 
@@ -274,12 +282,13 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
                       <TableHeader>Barcode</TableHeader>
                       <TableHeader>QTY</TableHeader>
                       <TableHeader>Status</TableHeader>
+                      <TableHeader>Aksi</TableHeader>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#2A2D31]">
                     {antrianBelum.length === 0 ? (
                       <tr>
-                        <td colSpan={8} className="px-4 py-12 text-center text-[#9aa0a6]">
+                        <td colSpan={9} className="px-4 py-12 text-center text-[#9aa0a6]">
                           <Package className="w-8 h-8 mx-auto mb-2 opacity-20" />
                           Tidak ada antrian di tahap jahit
                         </td>
@@ -312,6 +321,16 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
                           </td>
                           <td className="px-4 py-3">
                             <StageStatusBadge status="menunggu" />
+                          </td>
+                          <td className="px-4 py-3">
+                            <button
+                              onClick={() => setSplitAwalBundle(item)}
+                              disabled={item.qty_per_bundle <= 1}
+                              title={item.qty_per_bundle <= 1 ? 'Qty cuma 1 pcs, tidak bisa di-split' : undefined}
+                              className="flex items-center gap-1 text-[10px] font-bold text-[#9aa0a6] hover:text-orange-400 border border-[#2A2D31] hover:border-orange-400/40 px-2 py-1 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:text-[#9aa0a6] disabled:hover:border-[#2A2D31]"
+                            >
+                              <Scissors className="w-3 h-3" /> Split
+                            </button>
                           </td>
                         </tr>
                       ))
@@ -513,6 +532,15 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
           karyawanList={karyawanList}
           onSuccess={handleSplitSuccess}
           onClose={() => setSplitBundle(null)}
+        />
+      )}
+
+      {splitAwalBundle && (
+        <ModalSplitAwalJahit
+          bundle={splitAwalBundle}
+          karyawanList={karyawanList}
+          onSuccess={handleSplitAwalSuccess}
+          onClose={() => setSplitAwalBundle(null)}
         />
       )}
 
