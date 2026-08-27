@@ -134,11 +134,18 @@ export default function AntrianCuttingClient({ poList, role }: Props) {
     });
   };
 
-  // Bundle yang cutting-nya sudah "selesai" tidak boleh dipilih lagi — kalau
+  // Bundle yang cutting-nya sudah diselesaikan tidak boleh dipilih lagi — kalau
   // diproses ulang lewat Selesai Cutting, pemakaian bahan bisa terpotong dua
   // kali untuk bundle yang sama (RPC di-database juga sudah menolaknya).
+  //
+  // 'partial' ikut dikunci: bundle itu SUDAH memotong stok bahan sekali, dan
+  // Selesai Cutting menimpa qty_aktual (bukan menambah) — memprosesnya lagi
+  // dari sini akan memotong stok dua kali sekaligus menghapus qty yang sudah
+  // tercatat. Potongan susulannya dicatat lewat tab Pending.
   const getPilihableBundles = (row_id: string) =>
-    (bundleCache[row_id] ?? []).filter(b => b.cutting_status !== 'selesai');
+    (bundleCache[row_id] ?? []).filter(
+      b => b.cutting_status !== 'selesai' && b.cutting_status !== 'partial'
+    );
 
   const toggleAllBundlesForPO = (row_id: string) => {
     const all = getPilihableBundles(row_id);

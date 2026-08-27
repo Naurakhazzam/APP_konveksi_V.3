@@ -59,6 +59,25 @@ export interface PemakaianInput {
   total_qty_artikel: number;
 }
 
+// ─ Input & hasil untuk lanjutCuttingPartial (potongan susulan bundle partial).
+// Beda dengan PemakaianInput: qty-nya bukan total per artikel, melainkan qty
+// susulan itu sendiri — dihitung di RPC, jadi tidak perlu dikirim.
+export interface PemakaianTambahanInput {
+  inventory_item_id: string;
+  rate_per_pcs: number;
+}
+
+export interface LanjutCuttingResult {
+  success: boolean;
+  new_bundle_barcode: string;
+  qty_tambahan: number;
+  qty_terpotong: number;
+  qty_rencana: number;
+  sisa_baru: number;
+  stok_warnings: StokWarning[];
+  error?: string;
+}
+
 // ─ Type untuk getPendingCuttingBundles
 export interface PendingBundle {
   id: string;
@@ -68,7 +87,10 @@ export interface PendingBundle {
   warna: string;
   size: string;
   qty_order: number;
+  /** Qty bundle induk sendiri — angka inilah yang jalan ke Antrian Jahit. */
   qty_aktual: number;
+  /** Total qty dari potongan susulan (bundle-bundle turunan), 0 kalau belum ada. */
+  qty_susulan: number;
   tenant_id: string;
 }
 
@@ -299,6 +321,54 @@ export async function closeBundleCutting(
   }
 }
 
+// ─── FUNGSI 4b: lanjutCuttingPartial ─────────────────────────────────────────
+// Mencatat potongan SUSULAN untuk bundle partial (mis. sudah 8 dari rencana 12,
+// lalu 4 sisanya dipotong menyusul). Hasilnya jadi BUNDLE BARU yang masuk
+// Antrian Jahit sendiri — bundle induk tidak diubah qty-nya, karena yang 8 pcs
+// itu sudah/sedang dipegang penjahit. Stok bahan terpotong hanya untuk qty
+// susulannya saja.
+
+const EMPTY_LANJUT: Omit<LanjutCuttingResult, 'error'> = {
+  success: false, new_bundle_barcode: '', qty_tambahan: 0,
+  qty_terpotong: 0, qty_rencana: 0, sisa_baru: 0, stok_warnings: [],
+};
+
+export async function lanjutCuttingPartial(
+  bundle_id: string,
+  qty_tambahan: number,
+  pemakaian: PemakaianTambahanInput[],
+): Promise<LanjutCuttingResult> {
+  try {
+    const user_id = await resolveUserId();
+    const supabase = await createClient();
+
+    const { data, error } = await supabase.rpc('lanjut_cutting_partial', {
+      p_bundle_id:    bundle_id,
+      p_qty_tambahan: qty_tambahan,
+      p_pemakaian:    pemakaian,
+      p_user_id:      user_id,
+      p_tenant_id:    TENANT_ID,
+    });
+
+    if (error) return { ...EMPTY_LANJUT, error: error.message };
+
+    const result = data as Partial<LanjutCuttingResult> | null;
+
+    revalidatePath('/app/produksi/antrian-cutting');
+    return {
+      success:            true,
+      new_bundle_barcode: result?.new_bundle_barcode ?? '',
+      qty_tambahan:       result?.qty_tambahan ?? 0,
+      qty_terpotong:      result?.qty_terpotong ?? 0,
+      qty_rencana:        result?.qty_rencana ?? 0,
+      sisa_baru:          result?.sisa_baru ?? 0,
+      stok_warnings:      result?.stok_warnings ?? [],
+    };
+  } catch (e: any) {
+    return { ...EMPTY_LANJUT, error: e.message ?? 'Terjadi kesalahan' };
+  }
+}
+
 // ─── FUNGSI 5: getPendingCuttingBundles ──────────────────────────────────────
 
 export async function getPendingCuttingBundles(): Promise<PendingBundle[]> {
@@ -310,6 +380,7 @@ export async function getPendingCuttingBundles(): Promise<PendingBundle[]> {
       id,
       barcode,
       tenant_id,
+      parent_bundle_id,
       status_tahap,
       po:po_id (
         no_po,
@@ -326,9 +397,23 @@ export async function getPendingCuttingBundles(): Promise<PendingBundle[]> {
 
   if (error) throw new Error(`Gagal fetch pending cutting: ${error.message}`);
 
+  const rows = (data ?? []) as any[];
+
+  // Kumpulkan qty potongan susulan per bundle induk. Bundle susulan ditandai
+  // 'susulan_dari' oleh lanjut_cutting_partial dan berstatus 'selesai', jadi
+  // dia tidak ikut muncul sebagai baris pending — qty-nya hanya dipakai untuk
+  // menghitung sisa yang benar-benar belum dipotong.
+  const susulanPerInduk: Record<string, number> = {};
+  for (const raw of rows) {
+    const cutting = raw.status_tahap?.cutting;
+    if (!raw.parent_bundle_id || !cutting?.susulan_dari) continue;
+    susulanPerInduk[raw.parent_bundle_id] =
+      (susulanPerInduk[raw.parent_bundle_id] ?? 0) + Number(cutting.qty_aktual ?? 0);
+  }
+
   const result: PendingBundle[] = [];
 
-  for (const raw of (data ?? []) as any[]) {
+  for (const raw of rows) {
     const cuttingStatus = raw.status_tahap?.cutting?.status;
     if (cuttingStatus !== 'partial') continue;
 
@@ -345,7 +430,8 @@ export async function getPendingCuttingBundles(): Promise<PendingBundle[]> {
       warna:       poItem?.warna ?? '-',
       size:        poItem?.size ?? '-',
       qty_order:   poItem?.qty_per_bundle ?? 0,
-      qty_aktual:  raw.status_tahap?.cutting?.qty_aktual ?? 0,
+      qty_aktual:  Number(raw.status_tahap?.cutting?.qty_aktual ?? 0),
+      qty_susulan: susulanPerInduk[raw.id] ?? 0,
     });
   }
 
