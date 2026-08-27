@@ -242,7 +242,19 @@ export async function getAntrianJahit(): Promise<AntrianJahitBundle[]> {
   if (error) throw new Error(error.message);
 
   const filtered = (data ?? []).filter((b: any) => {
-    return b.status_tahap?.cutting?.status === 'selesai' && b.status_tahap?.jahit?.status !== 'selesai';
+    const cutting = b.status_tahap?.cutting;
+
+    // Cutting 'partial' (dipotong lebih sedikit dari rencana) juga sudah
+    // beres — kainnya nyata ada, jadi harus tetap masuk antrian jahit.
+    // Dulu hanya 'selesai' yang diterima, sehingga bundle yang dipotong
+    // sebagian terjebak: dianggap selesai di Antrian Cutting, tapi tidak
+    // pernah muncul di sini. Partial dengan qty 0 dikecualikan — tidak
+    // ada barang yang bisa dijahit.
+    const cuttingBeres =
+      cutting?.status === 'selesai' ||
+      (cutting?.status === 'partial' && (cutting?.qty_aktual ?? 0) > 0);
+
+    return cuttingBeres && b.status_tahap?.jahit?.status !== 'selesai';
   });
 
   const result: AntrianJahitBundle[] = filtered.map((b: any) => {
