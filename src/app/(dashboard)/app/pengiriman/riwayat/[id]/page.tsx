@@ -3,6 +3,7 @@ import { PageWrapper } from '@/components/ui/PageWrapper';
 import { redirect } from 'next/navigation';
 import PrintButton from './PrintButton';
 import PrintSuratJalanLayout from './PrintSuratJalanLayout';
+import EditItemButton from './EditItemButton';
 import Link from 'next/link';
 
 export default async function DetailSuratJalanPage({ params }: { params: Promise<{ id: string }> }) {
@@ -30,7 +31,10 @@ export default async function DetailSuratJalanPage({ params }: { params: Promise
             >
               &larr; Kembali ke Riwayat
             </Link>
-            <PrintButton />
+            <div className="flex items-center gap-3">
+              <EditItemButton sjId={detail.id} items={detail.items} />
+              <PrintButton />
+            </div>
           </div>
 
           <div className="grid md:grid-cols-2 gap-6">

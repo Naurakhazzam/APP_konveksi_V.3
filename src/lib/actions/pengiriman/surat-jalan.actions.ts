@@ -52,15 +52,20 @@ export interface SuratJalanDetail {
   klien_id: string;
   klien_nama: string;
   klien_alamat: string | null;
-  items: {
-    bundle_id: string;
-    barcode: string;
-    no_po: string;
-    model_nama: string | null;
-    warna: string;
-    size: string;
-    qty_kirim: number;
-  }[];
+  items: SuratJalanDetailItem[];
+}
+
+export interface SuratJalanDetailItem {
+  surat_jalan_item_id: string;
+  bundle_id: string;
+  barcode: string;
+  no_po: string;
+  model_nama: string | null;
+  warna: string;
+  size: string;
+  qty_kirim: number;
+  /** Total pcs yang jadi di bundle ini — batas atas qty kirim saat diedit. */
+  qty_jadi: number;
 }
 
 export async function getBundlesReadyToShip(): Promise<BundleReadyToShip[]> {
@@ -218,15 +223,18 @@ export async function getSuratJalanDetail(id: string): Promise<SuratJalanDetail 
       klien_id,
       klien:klien_id (nama, alamat),
       surat_jalan_item (
+        id,
         qty_kirim,
         urutan,
         bundle:bundle_id (
           id,
           barcode,
+          status_tahap,
           po:po_id (no_po),
           po_item:po_item_id (
             warna,
             size,
+            qty_per_bundle,
             produk:produk_id (
               model_produk:model_id (nama)
             )
@@ -249,7 +257,13 @@ export async function getSuratJalanDetail(id: string): Promise<SuratJalanDetail 
     .sort((a: any, b: any) => (a.urutan ?? 0) - (b.urutan ?? 0))
     .map((it: any) => {
     const b = it.bundle;
+    const qtyJadi =
+      b.status_tahap?.packing?.qty_selesai ??
+      b.status_tahap?.cutting?.qty_aktual ??
+      (b.po_item?.qty_per_bundle || 0);
+
     return {
+      surat_jalan_item_id: it.id,
       bundle_id: b.id,
       barcode: b.barcode,
       no_po: b.po?.no_po || '-',
@@ -257,6 +271,7 @@ export async function getSuratJalanDetail(id: string): Promise<SuratJalanDetail 
       warna: b.po_item?.warna || '-',
       size: b.po_item?.size || '-',
       qty_kirim: it.qty_kirim,
+      qty_jadi: qtyJadi,
     };
   });
 
@@ -393,6 +408,67 @@ export async function resolveQtyLebihKirim(
   revalidatePath('/app/pengiriman/validasi');
 
   return data as { success: boolean; status: string };
+}
+
+export interface EditSuratJalanResult {
+  success: boolean;
+  nomor_sj: string;
+  item_diubah: number;
+  item_dihapus: number;
+  sisa_item: number;
+  total_invoice: number;
+}
+
+/**
+ * Koreksi qty item pada surat jalan yang sudah terbit — nomor SJ tetap.
+ * Qty 0 berarti barang itu dikeluarkan dari surat jalan.
+ *
+ * Butuh PIN Owner: perubahan qty ikut mengubah nilai tagihan. RPC di
+ * database yang menghitung ulang invoice serta status siap-kirim bundle,
+ * dan menolak kalau sudah divalidasi klien atau invoice sudah dibayar.
+ */
+export async function editSuratJalan(
+  sj_id: string,
+  items: { surat_jalan_item_id: string; qty_kirim: number }[],
+  pin: string,
+  alasan: string,
+): Promise<EditSuratJalanResult> {
+  const userId = await resolveUserId();
+  const supabase = await createClient();
+
+  if (!alasan?.trim()) throw new Error('Alasan perubahan wajib diisi');
+  if (items.length === 0) throw new Error('Tidak ada perubahan untuk disimpan');
+
+  const { data: profile, error: profileErr } = await supabase
+    .from('user_profile')
+    .select('approval_pin')
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (profileErr) throw new Error(profileErr.message);
+  if (!profile?.approval_pin) {
+    throw new Error('PIN belum diset. Setup PIN terlebih dahulu di Settings.');
+  }
+
+  const isPinValid = await bcrypt.compare(pin, profile.approval_pin);
+  if (!isPinValid) throw new Error('PIN tidak valid');
+
+  const { data, error } = await supabase.rpc('edit_surat_jalan', {
+    p_sj_id: sj_id,
+    p_items: items,
+    p_alasan: alasan.trim(),
+    p_user_id: userId,
+    p_tenant_id: TENANT_ID,
+  });
+
+  if (error) throw new Error(error.message || 'Gagal menyimpan perubahan surat jalan');
+
+  revalidatePath('/app/pengiriman/riwayat');
+  revalidatePath(`/app/pengiriman/riwayat/${sj_id}`);
+  revalidatePath('/app/pengiriman/buat-surat-jalan');
+  revalidatePath('/app/keuangan/invoice');
+
+  return data as EditSuratJalanResult;
 }
 
 export interface BatalSuratJalanResult {
