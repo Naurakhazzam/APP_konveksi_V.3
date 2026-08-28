@@ -14,7 +14,7 @@ type ViewState =
   | { phase: 'idle' }
   | { phase: 'loading' }
   | { phase: 'not_found' }
-  | { phase: 'multiple'; candidates: LacakBarcodeCandidate[] }
+  | { phase: 'multiple'; candidates: LacakBarcodeCandidate[]; total: number }
   | { phase: 'found'; data: LacakBarcodeResult };
 
 function formatTanggal(iso: string | null): string {
@@ -43,7 +43,7 @@ export default function LacakBarcodeClient() {
       if (result.type === 'not_found') {
         setState({ phase: 'not_found' });
       } else if (result.type === 'multiple') {
-        setState({ phase: 'multiple', candidates: result.candidates });
+        setState({ phase: 'multiple', candidates: result.candidates, total: result.total });
       } else {
         setState({ phase: 'found', data: result.data });
       }
@@ -93,7 +93,7 @@ export default function LacakBarcodeClient() {
             type="text"
             value={barcode}
             onChange={(e) => setBarcode(e.target.value)}
-            placeholder="Masukkan barcode bundle..."
+            placeholder="Barcode, nomor PO, atau nama artikel..."
             disabled={state.phase === 'loading'}
             autoFocus
             className="w-full bg-[#0D0E10] border-2 border-[#2A2D31] rounded-2xl py-4 px-14 text-lg font-bold text-[#e8eaed] placeholder:text-[#9aa0a6]/30 focus:border-[#e5c17b] focus:ring-4 focus:ring-[#e5c17b]/5 outline-none transition-all"
@@ -133,25 +133,46 @@ export default function LacakBarcodeClient() {
               <Search className="text-[#e5c17b] w-6 h-6" />
             </div>
             <div>
-              <h2 className="text-xl font-bold text-[#e8eaed]">Ditemukan {state.candidates.length} Bundle</h2>
-              <p className="text-[#9aa0a6] text-sm">Ada beberapa barcode yang cocok, pilih salah satu:</p>
+              <h2 className="text-xl font-bold text-[#e8eaed]">Ditemukan {state.total} Bundle</h2>
+              <p className="text-[#9aa0a6] text-sm">
+                {state.total > state.candidates.length
+                  ? `Menampilkan ${state.candidates.length} teratas — persempit kata kuncinya kalau belum ketemu.`
+                  : 'Pilih salah satu untuk melihat rinciannya:'}
+              </p>
             </div>
           </div>
 
-          <div className="grid gap-3">
+          <div className="grid gap-3 max-h-[60vh] overflow-y-auto pr-1">
             {state.candidates.map((c) => (
               <button
                 key={c.barcode}
                 onClick={() => handlePickCandidate(c.barcode)}
-                className="flex items-center justify-between p-4 bg-[#0D0E10] border border-[#2A2D31] hover:border-[#e5c17b]/30 rounded-2xl transition-all group hover:bg-[#e5c17b]/5"
+                className="flex items-center justify-between gap-3 p-4 bg-[#0D0E10] border border-[#2A2D31] hover:border-[#e5c17b]/30 rounded-2xl transition-all group hover:bg-[#e5c17b]/5"
               >
-                <div className="text-left">
-                  <div className="text-xs font-mono font-bold text-[#e5c17b]">{c.barcode}</div>
-                  <div className="text-xs text-[#9aa0a6] mt-0.5">
+                <div className="text-left min-w-0">
+                  <div className="text-xs font-mono font-bold text-[#e5c17b] truncate">{c.barcode}</div>
+                  <div className="text-xs text-[#9aa0a6] mt-0.5 truncate">
                     {c.no_po} · {c.model_nama ?? '-'} / {c.warna} / {c.size}
                   </div>
+                  <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                    <span className="text-[10px] font-bold text-[#e8eaed] bg-[#2A2D31]/60 px-1.5 py-0.5 rounded">
+                      {c.qty} pcs
+                    </span>
+                    <span className="text-[10px] text-[#9aa0a6] bg-[#2A2D31]/60 px-1.5 py-0.5 rounded">
+                      {c.tahap_sekarang}
+                    </span>
+                    {c.status_kirim === 'sudah_dikirim' ? (
+                      <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded">
+                        Terkirim
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-bold text-orange-400 bg-orange-500/10 border border-orange-500/20 px-1.5 py-0.5 rounded">
+                        Belum kirim
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <ChevronRight className="w-5 h-5 text-[#2A2D31] group-hover:text-[#e5c17b]" />
+                <ChevronRight className="w-5 h-5 text-[#2A2D31] group-hover:text-[#e5c17b] shrink-0" />
               </button>
             ))}
           </div>

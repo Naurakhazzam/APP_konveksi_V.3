@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { matchesBundleSearch, tokenizeSearch } from '@/lib/search/bundle-search';
 
 const TENANT_ID = 'STX-001';
 
@@ -35,15 +36,53 @@ export interface LacakBarcodeResult {
 export interface LacakBarcodeCandidate {
   barcode: string;
   no_po: string;
+  klien_nama: string;
   model_nama: string | null;
   warna: string;
   size: string;
+  qty: number;
+  tahap_sekarang: string;
+  status_kirim: 'belum_dikirim' | 'sudah_dikirim';
 }
 
 export type LacakBarcodeResponse =
   | { type: 'found'; data: LacakBarcodeResult }
-  | { type: 'multiple'; candidates: LacakBarcodeCandidate[] }
+  /** `total` bisa lebih besar dari jumlah candidates kalau hasilnya dipangkas. */
+  | { type: 'multiple'; candidates: LacakBarcodeCandidate[]; total: number }
   | { type: 'not_found' };
+
+/** Batas kandidat yang dikirim ke layar. PO terbesar punya 54 bundle, jadi
+ *  satu nomor PO utuh masih muat tanpa terpotong. */
+const MAKS_KANDIDAT = 60;
+
+/** Tahap pertama dalam urutan yang belum berstatus 'selesai'. */
+function tahapBerjalan(statusTahap: any): string {
+  const st = (statusTahap ?? {}) as Record<string, { status?: string }>;
+  for (const t of TAHAP_ORDER) {
+    if (st[t]?.status !== 'selesai') return TAHAP_LABEL[t];
+  }
+  return 'Selesai Semua Tahap';
+}
+
+/**
+ * Qty sebenarnya bundle ini: diambil dari tahap PALING AKHIR yang sudah
+ * tersentuh, bukan dari qty_per_bundle rencana — karena untuk bundle hasil
+ * Split atau cutting partial kedua angka itu berbeda.
+ */
+function qtyEfektifBundle(statusTahap: any, qtyRencana: number): number {
+  const st = (statusTahap ?? {}) as Record<string, any>;
+  for (const t of [...TAHAP_ORDER].reverse()) {
+    const info = st[t];
+    if (!info) continue;
+    if (t === 'cutting') {
+      if (info.qty_aktual != null) return info.qty_aktual;
+    } else {
+      if (info.qty_selesai != null) return info.qty_selesai;
+      if (info.qty_terima != null) return info.qty_terima;
+    }
+  }
+  return qtyRencana;
+}
 
 // Ambil detail lengkap 1 bundle by barcode PERSIS (case-insensitive, tanpa wildcard).
 async function fetchDetail(supabase: SupabaseClient, barcode: string): Promise<LacakBarcodeResult | null> {
@@ -94,31 +133,8 @@ async function fetchDetail(supabase: SupabaseClient, barcode: string): Promise<L
     penjahitWaktu = jahitInfo.waktu_selesai ?? jahitInfo.waktu_terima ?? null;
   }
 
-  // Tahap sekarang = tahap pertama dalam urutan yang belum berstatus 'selesai'.
-  let tahapSekarang = 'Selesai Semua Tahap';
-  for (const t of TAHAP_ORDER) {
-    if (statusTahap[t]?.status !== 'selesai') {
-      tahapSekarang = TAHAP_LABEL[t];
-      break;
-    }
-  }
-
-  // Qty efektif bundle ini: qty tahap paling akhir yang sudah tersentuh
-  // (qty_selesai lebih diutamakan dari qty_terima, cutting pakai qty_aktual)
-  // — supaya benar untuk bundle hasil Split, yang qty-nya beda dari
-  // qty_per_bundle rencana po_item.
-  let qtyEfektif: number | null = null;
-  for (const t of [...TAHAP_ORDER].reverse()) {
-    const info = statusTahap[t] as any;
-    if (!info) continue;
-    if (t === 'cutting') {
-      if (info.qty_aktual != null) { qtyEfektif = info.qty_aktual; break; }
-    } else {
-      if (info.qty_selesai != null) { qtyEfektif = info.qty_selesai; break; }
-      if (info.qty_terima != null) { qtyEfektif = info.qty_terima; break; }
-    }
-  }
-  const qtyFinal: number = qtyEfektif ?? (poItem?.qty_per_bundle ?? 0);
+  const tahapSekarang = tahapBerjalan(statusTahap);
+  const qtyFinal = qtyEfektifBundle(statusTahap, poItem?.qty_per_bundle ?? 0);
 
   return {
     barcode: row.barcode,
@@ -154,40 +170,66 @@ export async function lacakBarcode(query: string): Promise<LacakBarcodeResponse>
   const exact = await fetchDetail(supabase, trimmed);
   if (exact) return { type: 'found', data: exact };
 
-  const { data: matches, error } = await supabase
+  // Pencarian tidak lagi terbatas ke kolom barcode. Nomor PO memang kebetulan
+  // ikut ketemu karena tercetak di dalam barcode, tapi nama artikel (model,
+  // warna, size) tersimpan di tabel lain — mengetik "zubair navy xxl" dulu
+  // menghasilkan nol. Sekarang seluruh field dicocokkan per kata dan bebas
+  // urutan lewat helper yang sama dengan Packing & Buat Surat Jalan, sehingga
+  // "2XL" pun mengerti bahwa di data tertulis "XXL".
+  const { data: rows, error } = await supabase
     .from('bundle')
     .select(`
       barcode,
-      po:po_id(no_po),
-      po_item:po_item_id(warna, size, produk:produk_id(model_produk:model_id(nama)))
+      status_tahap,
+      po:po_id(no_po, klien:klien_id(nama)),
+      po_item:po_item_id(warna, size, qty_per_bundle, produk:produk_id(model_produk:model_id(nama))),
+      surat_jalan_item(id)
     `)
-    .ilike('barcode', `%${trimmed}%`)
-    .eq('tenant_id', TENANT_ID)
-    .limit(10);
+    .eq('tenant_id', TENANT_ID);
 
   if (error) throw new Error(error.message);
-  if (!matches || matches.length === 0) return { type: 'not_found' };
+  if (!rows || rows.length === 0) return { type: 'not_found' };
 
-  if (matches.length === 1) {
-    const detail = await fetchDetail(supabase, matches[0].barcode);
+  const tokens = tokenizeSearch(trimmed);
+
+  const cocok = (rows as any[])
+    .map(m => {
+      const po = Array.isArray(m.po) ? m.po[0] : m.po;
+      const klien = Array.isArray(po?.klien) ? po.klien[0] : po?.klien;
+      const poItem = Array.isArray(m.po_item) ? m.po_item[0] : m.po_item;
+      const produk = Array.isArray(poItem?.produk) ? poItem.produk[0] : poItem?.produk;
+      const model = Array.isArray(produk?.model_produk) ? produk.model_produk[0] : produk?.model_produk;
+
+      return {
+        barcode: m.barcode as string,
+        no_po: po?.no_po ?? '',
+        klien_nama: klien?.nama ?? '',
+        model_nama: model?.nama ?? null,
+        warna: poItem?.warna ?? '',
+        size: poItem?.size ?? '',
+        qty: qtyEfektifBundle(m.status_tahap, poItem?.qty_per_bundle ?? 0),
+        tahap_sekarang: tahapBerjalan(m.status_tahap),
+        status_kirim: ((m.surat_jalan_item ?? []).length > 0
+          ? 'sudah_dikirim' : 'belum_dikirim') as 'sudah_dikirim' | 'belum_dikirim',
+      };
+    })
+    .filter(c => matchesBundleSearch(c, tokens));
+
+  if (cocok.length === 0) return { type: 'not_found' };
+
+  if (cocok.length === 1) {
+    const detail = await fetchDetail(supabase, cocok[0].barcode);
     return detail ? { type: 'found', data: detail } : { type: 'not_found' };
   }
 
-  const candidates: LacakBarcodeCandidate[] = matches.map((m: any) => {
-    const po = Array.isArray(m.po) ? m.po[0] : m.po;
-    const poItem = Array.isArray(m.po_item) ? m.po_item[0] : m.po_item;
-    const produk = Array.isArray(poItem?.produk) ? poItem.produk[0] : poItem?.produk;
-    const model = Array.isArray(produk?.model_produk) ? produk.model_produk[0] : produk?.model_produk;
-    return {
-      barcode: m.barcode,
-      no_po: po?.no_po ?? '',
-      model_nama: model?.nama ?? null,
-      warna: poItem?.warna ?? '',
-      size: poItem?.size ?? '',
-    };
-  });
+  cocok.sort((a, b) =>
+    a.no_po.localeCompare(b.no_po) || a.barcode.localeCompare(b.barcode));
 
-  return { type: 'multiple', candidates };
+  return {
+    type: 'multiple',
+    candidates: cocok.slice(0, MAKS_KANDIDAT),
+    total: cocok.length,
+  };
 }
 
 // Resolusi 1 barcode persis — dipakai saat user memilih salah satu dari
