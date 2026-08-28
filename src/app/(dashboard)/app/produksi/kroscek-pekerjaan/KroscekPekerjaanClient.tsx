@@ -126,8 +126,10 @@ export default function KroscekPekerjaanClient({
 
       {data.length === 0 ? (
         <div className="rounded-xl border border-[#2A2D31] bg-[#1A1D1F] px-4 py-16 text-center">
-          <div className="text-[#9aa0a6] text-sm">Belum ada pekerjaan tercatat di minggu ini</div>
-          <p className="text-[10px] text-[#9aa0a6]/50 mt-1">Coba lihat minggu sebelumnya lewat tombol panah.</p>
+          <div className="text-[#9aa0a6] text-sm">Tidak ada pekerjaan yang perlu dikroscek</div>
+          <p className="text-[10px] text-[#9aa0a6]/50 mt-1">
+            Semua sudah selesai dan terbayar. Coba lihat minggu sebelumnya lewat tombol panah.
+          </p>
         </div>
       ) : (
         <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-3">
@@ -156,6 +158,19 @@ export default function KroscekPekerjaanClient({
                   <div className="text-[10px] uppercase tracking-wider text-[#9aa0a6]">Pekerjaan</div>
                   <div className="text-sm font-bold text-[#e8eaed]">{p.jumlah_pekerjaan}×</div>
                 </div>
+              </div>
+
+              <div className="flex flex-wrap gap-1.5 mb-3">
+                {p.jml_sedang_dikerjakan > 0 && (
+                  <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-full bg-sky-500/10 text-sky-300 border border-sky-500/20">
+                    {p.jml_sedang_dikerjakan} sedang dikerjakan
+                  </span>
+                )}
+                {p.jml_belum_dibayar > 0 && (
+                  <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-full bg-orange-500/10 text-orange-400 border border-orange-500/20">
+                    {p.jml_belum_dibayar} selesai, belum dibayar
+                  </span>
+                )}
               </div>
 
               <div className="flex items-center justify-between gap-2 pt-3 border-t border-[#2A2D31]">
@@ -258,6 +273,7 @@ function ModalRincian({
                   <th className="px-4 py-3 text-left font-bold">PO</th>
                   <th className="px-4 py-3 text-left font-bold">Tahap</th>
                   <th className="px-4 py-3 text-center font-bold">Qty</th>
+                  <th className="px-4 py-3 text-center font-bold">Keadaan</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#2A2D31]">
@@ -285,6 +301,17 @@ function ModalRincian({
                     </td>
                     <td className="px-4 py-3 text-center text-sm font-bold text-[#e8eaed]">
                       {r.qty}
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      {r.keadaan === 'sedang_dikerjakan' ? (
+                        <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-full bg-sky-500/10 text-sky-300 border border-sky-500/20 whitespace-nowrap">
+                          Sedang dikerjakan
+                        </span>
+                      ) : (
+                        <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-full bg-orange-500/10 text-orange-400 border border-orange-500/20 whitespace-nowrap">
+                          Selesai
+                        </span>
+                      )}
                     </td>
                   </tr>
                 ))}

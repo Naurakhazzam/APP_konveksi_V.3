@@ -28,7 +28,7 @@ export default async function KroscekPekerjaanPage() {
   return (
     <PageWrapper
       title="Kroscek Pekerjaan"
-      subtitle="Cocokkan hasil kerja di lapangan dengan yang tercatat di sistem."
+      subtitle="Pekerjaan yang sedang berjalan dan yang belum terbayar — cocokkan dengan lapangan."
     >
       <div className="mt-6">
         <KroscekPekerjaanClient initialData={data} dari={dari} sampai={sampai} />

@@ -12,13 +12,22 @@ const TENANT_ID = 'STX-001';
  * layar. Kalau hanya disembunyikan lewat CSS atau tidak dirender, nilainya
  * tetap ikut terkirim ke browser dan bisa dibaca siapa pun yang membuka
  * panel jaringan. Yang tidak pernah dikirim tidak bisa dibocorkan.
+ *
+ * Isinya hanya pekerjaan yang MASIH TERBUKA: selesai tapi upahnya belum
+ * dibayar, atau sedang dikerjakan. Pekerjaan yang sudah lunas tidak ada lagi
+ * yang perlu dicocokkan ke lapangan, jadi pekerja yang seluruh pekerjaannya
+ * sudah lunas otomatis tidak muncul.
  */
+export type KeadaanKerja = 'belum_dibayar' | 'sedang_dikerjakan';
+
 export interface HasilKerjaPekerja {
   karyawan_id: string;
   nama: string;
   jabatan: string;
   jumlah_pekerjaan: number;
   total_pcs: number;
+  jml_belum_dibayar: number;
+  jml_sedang_dikerjakan: number;
   daftar_tahap: string[];
 }
 
@@ -26,6 +35,7 @@ export interface RincianHasilKerja {
   id: string;
   tanggal: string;
   tahap: string;
+  keadaan: KeadaanKerja;
   qty: number;
   barcode: string;
   no_po: string;
@@ -41,7 +51,7 @@ export async function getHasilKerjaPekerja(
 ): Promise<HasilKerjaPekerja[]> {
   const supabase = await createClient();
 
-  const { data, error } = await supabase.rpc('overview_pekerja_periode', {
+  const { data, error } = await supabase.rpc('kroscek_pekerja_periode', {
     p_dari: dari,
     p_sampai: sampai,
     p_tenant_id: TENANT_ID,
@@ -49,13 +59,14 @@ export async function getHasilKerjaPekerja(
 
   if (error) throw new Error(`Gagal memuat hasil kerja: ${error.message}`);
 
-  // Hanya kolom non-uang yang diteruskan
   return ((data ?? []) as any[]).map(r => ({
     karyawan_id: r.karyawan_id,
     nama: r.nama,
     jabatan: r.jabatan,
     jumlah_pekerjaan: Number(r.jumlah_pekerjaan) || 0,
     total_pcs: Number(r.total_pcs) || 0,
+    jml_belum_dibayar: Number(r.jml_belum_dibayar) || 0,
+    jml_sedang_dikerjakan: Number(r.jml_sedang_dikerjakan) || 0,
     daftar_tahap: r.daftar_tahap ?? [],
   }));
 }
@@ -67,7 +78,7 @@ export async function getRincianHasilKerja(
 ): Promise<RincianHasilKerja[]> {
   const supabase = await createClient();
 
-  const { data, error } = await supabase.rpc('detail_pekerja_periode', {
+  const { data, error } = await supabase.rpc('kroscek_detail_pekerja', {
     p_karyawan_id: karyawan_id,
     p_dari: dari,
     p_sampai: sampai,
@@ -80,6 +91,7 @@ export async function getRincianHasilKerja(
     id: r.id,
     tanggal: r.tanggal,
     tahap: r.tahap ?? '-',
+    keadaan: (r.keadaan === 'sedang_dikerjakan' ? 'sedang_dikerjakan' : 'belum_dibayar') as KeadaanKerja,
     qty: Number(r.qty) || 0,
     barcode: r.barcode,
     no_po: r.no_po,
