@@ -45,6 +45,7 @@ const NAV_MENU = [
       { label: 'Steam',           path: '/app/produksi/scan/steam' },
       { label: 'Packing',         path: '/app/produksi/scan/packing' },
       { label: 'Monitoring',      path: '/app/produksi/monitoring' },
+      { label: 'Kroscek Pekerjaan', path: '/app/produksi/kroscek-pekerjaan' },
       { label: 'Approval QTY',    path: '/app/produksi/approval-qty' },
       { label: 'Reject',          path: '/app/produksi/reject',        icon: AlertTriangle },
     ]
@@ -156,17 +157,38 @@ export function Sidebar({ profile, allowedNavIds, allowedPaths }: SidebarProps) 
   const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
 
+  // Submenu disaring ketat ke path yang benar-benar diizinkan.
+  //
+  // Sebelumnya ada cadangan `allowedChildren.length > 0 ? allowedChildren : item.children`
+  // yang justru membocorkan SELURUH submenu ketika tidak ada satu pun anak
+  // yang cocok. Itu bukan kasus teoretis: Supervisor hanya berhak atas
+  // /app/produksi/po — yang tidak ada di daftar anak menu Produksi — sehingga
+  // kesebelas submenu Produksi (termasuk Input PO dan Approval QTY) tampil
+  // seluruhnya. Aksesnya memang tetap ditolak proxy, tapi menunya menyesatkan.
+  //
+  // Pencocokan memakai `p + '/'` supaya '/app/produksi/po' tidak ikut
+  // membuka path lain yang kebetulan berawalan sama.
   const navItems = useMemo(() =>
     NAV_MENU
       .filter((item) => allowedNavIds.includes(item.id))
       .map((item) => {
         if (!item.children) return item;
         const allowedChildren = item.children.filter(child =>
-          allowedPaths.some(p => p === child.path || child.path.startsWith(p))
+          allowedPaths.some(p => p === child.path || child.path.startsWith(p + '/'))
         );
-        return { ...item, children: allowedChildren.length > 0 ? allowedChildren : item.children };
+        return { ...item, children: allowedChildren };
       }),
   [allowedNavIds, allowedPaths]);
+
+  // Tujuan klik menu induk. Kalau tidak ada submenu yang diizinkan, arahkan ke
+  // path pertama yang memang boleh dibuka di bawah grup itu — bukan ke path
+  // bawaan menu, yang justru akan ditolak proxy dan memantulkan pengguna.
+  const hrefInduk = (item: (typeof NAV_MENU)[number] & { children?: { path: string }[] }) => {
+    if (!item.children) return item.path;
+    if (item.children.length > 0) return item.children[0].path;
+    const prefix = item.matchPath || item.path;
+    return allowedPaths.find(p => p.startsWith(prefix)) ?? item.path;
+  };
 
   const SidebarContent = () => (
     <div className="flex h-full flex-col bg-[#0D0E10] text-[#e8eaed]">
@@ -187,8 +209,8 @@ export function Sidebar({ profile, allowedNavIds, allowedPaths }: SidebarProps) 
           return (
             <div key={item.id} className="flex flex-col">
               <Link
-                href={item.children ? item.children[0].path : item.path}
-                onClick={() => !item.children && setIsOpen(false)}
+                href={hrefInduk(item)}
+                onClick={() => !item.children?.length && setIsOpen(false)}
                 className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
                   isActive
                     ? 'bg-[#1A1D1F] text-[#e5c17b] shadow-[inset_2px_0_0_0_#e5c17b]'
@@ -198,7 +220,7 @@ export function Sidebar({ profile, allowedNavIds, allowedPaths }: SidebarProps) 
                 <Icon size={18} />
                 {item.label}
               </Link>
-              {item.children && isActive && (
+              {item.children && item.children.length > 0 && isActive && (
                 <div className="ml-9 mt-1 flex flex-col space-y-1 border-l border-[#2A2D31] pl-2 mb-1">
                   {item.children.map(child => {
                     const childActive = pathname.startsWith(child.path);
