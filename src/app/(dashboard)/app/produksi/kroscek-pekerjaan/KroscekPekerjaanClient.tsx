@@ -2,13 +2,17 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { toast } from 'sonner';
-import { ChevronLeft, ChevronRight, Loader2, X, Users, Shirt, ClipboardList } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Loader2, X, Users, Shirt, ClipboardList, Printer } from 'lucide-react';
 import {
   getHasilKerjaPekerja,
   getRincianHasilKerja,
   type HasilKerjaPekerja,
   type RincianHasilKerja,
 } from '@/lib/actions/produksi/kroscek-pekerjaan.actions';
+import { getAksesoriForKartuKerja } from '@/lib/actions/produksi/model-aksesori.actions';
+import PrintKartuKerjaLayout, {
+  type KartuBundle, type AksesoriItem,
+} from '@/app/(dashboard)/app/produksi/antrian-cutting/PrintKartuKerjaLayout';
 
 const TAHAP_LABEL: Record<string, string> = {
   cutting: 'Cutting',
@@ -47,7 +51,62 @@ export default function KroscekPekerjaanClient({
   const [isLoading, setIsLoading] = useState(false);
   const [terpilih, setTerpilih] = useState<HasilKerjaPekerja | null>(null);
 
+  // Data cetak sengaja ditahan di sini, bukan di dalam modal. Modal itu
+  // `position: fixed` setinggi layar; kalau layout cetak dirender di dalamnya,
+  // kartu yang lebih panjang dari viewport ikut terpotong saat dicetak.
+  const [cetakData, setCetakData] = useState<KartuBundle[] | null>(null);
+  const [sedangCetak, setSedangCetak] = useState<string | null>(null);
+
   const mingguIni = periode.dari === dariAwal;
+
+  /**
+   * Cetak ulang SK bundle langsung dari layar kroscek — untuk bundle yang
+   * kartu fisiknya hilang, supaya tim tidak perlu balik ke Antrian Cutting.
+   *
+   * Memakai layout kartu kerja yang sama persis dengan cetakan aslinya, jadi
+   * hasilnya bukan dokumen baru yang mirip, melainkan kartu yang sama.
+   */
+  const cetakSK = async (baris: RincianHasilKerja[], penanda: string, namaPekerja: string) => {
+    const layak = baris.filter(r => r.bundle_id && r.po_item_id);
+    if (layak.length === 0) {
+      toast.error('Data bundle tidak lengkap, SK tidak bisa dicetak');
+      return;
+    }
+
+    setSedangCetak(penanda);
+    try {
+      const aksesoriMap = await getAksesoriForKartuKerja(layak.map(r => r.po_item_id));
+
+      const kartu: KartuBundle[] = layak.map(r => {
+        const aks: AksesoriItem[] = (aksesoriMap[r.po_item_id] ?? []).map((item: any) => ({
+          nama: item.inventory_item_nama,
+          qty_per_pcs: item.qty_per_pcs,
+          satuan: item.satuan,
+          tahap_pakai: item.tahap_pakai,
+        }));
+        const cocok = r.barcode.match(/bdl(\d+)/i);
+        return {
+          id: r.bundle_id, barcode: r.barcode, no_urut: cocok ? parseInt(cocok[1], 10) : 0,
+          po_id: '', po_item_id: r.po_item_id, no_po: r.no_po,
+          tanggal_order: '', tanggal_target: '', po_catatan: null,
+          klien_nama: r.klien_nama, model_nama: r.model_nama,
+          warna: r.warna, size: r.size,
+          qty_per_bundle: r.qty,
+          aksesori: aks, nama_penjahit: namaPekerja,
+        };
+      });
+
+      setCetakData(kartu);
+      setTimeout(() => {
+        window.print();
+        setCetakData(null);
+        setSedangCetak(null);
+      }, 500);
+    } catch (e: any) {
+      toast.error(e.message ?? 'Gagal menyiapkan SK');
+      setSedangCetak(null);
+    }
+  };
 
   const muat = useCallback(async (p: { dari: string; sampai: string }) => {
     setIsLoading(true);
@@ -198,6 +257,18 @@ export default function KroscekPekerjaanClient({
           pekerja={terpilih}
           periode={periode}
           onClose={() => setTerpilih(null)}
+          onCetakSK={cetakSK}
+          sedangCetak={sedangCetak}
+        />
+      )}
+
+      {cetakData && cetakData.length > 0 && (
+        <PrintKartuKerjaLayout
+          bundles={cetakData}
+          tglCetak={new Date().toLocaleString('id-ID', {
+            day: '2-digit', month: 'short', year: 'numeric',
+            hour: '2-digit', minute: '2-digit',
+          })}
         />
       )}
     </div>
@@ -217,11 +288,13 @@ function KartuTotal({ icon, label, nilai }: { icon: React.ReactNode; label: stri
 }
 
 function ModalRincian({
-  pekerja, periode, onClose,
+  pekerja, periode, onClose, onCetakSK, sedangCetak,
 }: {
   pekerja: HasilKerjaPekerja;
   periode: { dari: string; sampai: string };
   onClose: () => void;
+  onCetakSK: (baris: RincianHasilKerja[], penanda: string, namaPekerja: string) => void;
+  sedangCetak: string | null;
 }) {
   const [rincian, setRincian] = useState<RincianHasilKerja[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -234,6 +307,7 @@ function ModalRincian({
       .finally(() => { if (!batal) setIsLoading(false); });
     return () => { batal = true; };
   }, [pekerja.karyawan_id, periode.dari, periode.sampai]);
+
 
   return (
     <div className="fixed inset-0 bg-black/75 flex items-center justify-center z-50 p-4">
@@ -274,6 +348,7 @@ function ModalRincian({
                   <th className="px-4 py-3 text-left font-bold">Tahap</th>
                   <th className="px-4 py-3 text-center font-bold">Qty</th>
                   <th className="px-4 py-3 text-center font-bold">Keadaan</th>
+                  <th className="px-4 py-3 text-center font-bold">SK</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#2A2D31]">
@@ -313,6 +388,18 @@ function ModalRincian({
                         </span>
                       )}
                     </td>
+                    <td className="px-4 py-3 text-center">
+                      <button
+                        onClick={() => onCetakSK([r], r.barcode, pekerja.nama)}
+                        disabled={sedangCetak !== null}
+                        title={`Cetak ulang SK ${r.barcode}`}
+                        className="inline-flex items-center justify-center p-1.5 rounded-lg text-[#9aa0a6] hover:text-[#e5c17b] hover:bg-[#2A2D31] transition-colors disabled:opacity-40"
+                      >
+                        {sedangCetak === r.barcode
+                          ? <Loader2 className="w-4 h-4 animate-spin text-[#e5c17b]" />
+                          : <Printer className="w-4 h-4" />}
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -320,14 +407,28 @@ function ModalRincian({
           )}
         </div>
 
-        <div className="px-6 py-3 border-t border-[#2A2D31] flex items-center justify-between">
+        <div className="px-6 py-3 border-t border-[#2A2D31] flex items-center justify-between gap-3">
           <span className="text-[10px] text-[#9aa0a6]">{rincian.length} pekerjaan tercatat</span>
-          <button
-            onClick={onClose}
-            className="px-4 h-9 rounded-lg border border-[#2A2D31] text-[#e8eaed] text-sm hover:bg-[#2A2D31] transition-colors"
-          >
-            Tutup
-          </button>
+          <div className="flex items-center gap-3">
+            {rincian.length > 0 && (
+              <button
+                onClick={() => onCetakSK(rincian, 'semua', pekerja.nama)}
+                disabled={sedangCetak !== null}
+                className="flex items-center gap-2 px-4 h-9 rounded-lg bg-[#e5c17b] hover:bg-[#f0d194] text-[#16181A] text-sm font-bold transition-colors disabled:opacity-50"
+              >
+                {sedangCetak === 'semua'
+                  ? <Loader2 className="w-4 h-4 animate-spin" />
+                  : <Printer className="w-4 h-4" />}
+                Cetak Semua SK ({rincian.length})
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="px-4 h-9 rounded-lg border border-[#2A2D31] text-[#e8eaed] text-sm hover:bg-[#2A2D31] transition-colors"
+            >
+              Tutup
+            </button>
+          </div>
         </div>
       </div>
     </div>

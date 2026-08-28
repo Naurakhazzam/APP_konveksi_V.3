@@ -33,6 +33,9 @@ export interface HasilKerjaPekerja {
 
 export interface RincianHasilKerja {
   id: string;
+  /** Dipakai untuk mencetak ulang SK bundle ini langsung dari layar kroscek. */
+  bundle_id: string;
+  po_item_id: string;
   tanggal: string;
   tahap: string;
   keadaan: KeadaanKerja;
@@ -89,6 +92,8 @@ export async function getRincianHasilKerja(
 
   return ((data ?? []) as any[]).map(r => ({
     id: r.id,
+    bundle_id: r.bundle_id ?? '',
+    po_item_id: r.po_item_id ?? '',
     tanggal: r.tanggal,
     tahap: r.tahap ?? '-',
     keadaan: (r.keadaan === 'sedang_dikerjakan' ? 'sedang_dikerjakan' : 'belum_dibayar') as KeadaanKerja,
