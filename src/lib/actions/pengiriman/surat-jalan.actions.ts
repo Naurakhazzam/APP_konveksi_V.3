@@ -389,3 +389,61 @@ export async function resolveQtyLebihKirim(
 
   return data as { success: boolean; status: string };
 }
+
+export interface BatalSuratJalanResult {
+  success: boolean;
+  nomor_sj: string;
+  nomor_invoice: string | null;
+  jumlah_bundle: number;
+  total_qty: number;
+}
+
+/**
+ * Batalkan surat jalan yang salah input. Barang-barangnya kembali ke daftar
+ * siap kirim, dan invoice yang ikut terbit otomatis dibuang bersamanya.
+ *
+ * Butuh PIN Owner: aksi ini menghapus surat jalan beserta tagihannya.
+ * RPC di database yang menolak kalau pembatalannya sudah tidak aman
+ * (sudah divalidasi klien, atau invoice-nya sudah dibayar).
+ */
+export async function batalSuratJalan(
+  sj_id: string,
+  pin: string,
+  alasan: string,
+): Promise<BatalSuratJalanResult> {
+  const userId = await resolveUserId();
+  const supabase = await createClient();
+
+  if (!alasan?.trim()) {
+    throw new Error('Alasan pembatalan wajib diisi');
+  }
+
+  const { data: profile, error: profileErr } = await supabase
+    .from('user_profile')
+    .select('approval_pin')
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (profileErr) throw new Error(profileErr.message);
+  if (!profile?.approval_pin) {
+    throw new Error('PIN belum diset. Setup PIN terlebih dahulu di Settings.');
+  }
+
+  const isPinValid = await bcrypt.compare(pin, profile.approval_pin);
+  if (!isPinValid) throw new Error('PIN tidak valid');
+
+  const { data, error } = await supabase.rpc('batal_surat_jalan', {
+    p_sj_id: sj_id,
+    p_alasan: alasan.trim(),
+    p_user_id: userId,
+    p_tenant_id: TENANT_ID,
+  });
+
+  if (error) throw new Error(error.message || 'Gagal membatalkan surat jalan');
+
+  revalidatePath('/app/pengiriman/riwayat');
+  revalidatePath('/app/pengiriman/buat-surat-jalan');
+  revalidatePath('/app/keuangan/invoice');
+
+  return data as BatalSuratJalanResult;
+}
