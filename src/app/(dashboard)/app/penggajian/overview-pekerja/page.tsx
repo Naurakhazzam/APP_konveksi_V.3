@@ -31,7 +31,7 @@ export default async function OverviewPekerjaPage() {
   return (
     <PageWrapper
       title="Overview Pekerja"
-      subtitle="Siapa mengerjakan apa minggu ini, dan mana yang upahnya belum dibayar."
+      subtitle="Upah yang masih perlu dibayar minggu ini — yang sudah lunas tidak ditampilkan."
     >
       <div className="mt-6">
         <OverviewPekerjaClient initialData={ringkasan} dari={dari} sampai={sampai} />

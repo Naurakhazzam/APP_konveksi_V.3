@@ -76,6 +76,7 @@ export default function OverviewPekerjaClient({
     pcs: data.reduce((s, d) => s + d.total_pcs, 0),
     upah: data.reduce((s, d) => s + d.total_upah, 0),
     belumLunas: data.reduce((s, d) => s + d.upah_belum_lunas, 0),
+    sedangDikerjakan: data.reduce((s, d) => s + d.jml_sedang_dikerjakan, 0),
   }), [data]);
 
   return (
@@ -125,12 +126,12 @@ export default function OverviewPekerjaClient({
 
       {/* Ringkasan periode */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <KartuTotal icon={<Users className="w-4 h-4" />} label="Pekerja Aktif" nilai={String(total.pekerja)} />
+        <KartuTotal icon={<Users className="w-4 h-4" />} label="Pekerja" nilai={String(total.pekerja)} />
         <KartuTotal icon={<Shirt className="w-4 h-4" />} label="Total Dikerjakan" nilai={`${total.pcs.toLocaleString('id-ID')} pcs`} />
-        <KartuTotal icon={<Wallet className="w-4 h-4" />} label="Total Upah" nilai={rupiah(total.upah)} />
+        <KartuTotal icon={<Wallet className="w-4 h-4" />} label="Sedang Dikerjakan" nilai={`${total.sedangDikerjakan}×`} />
         <KartuTotal
           icon={<AlertCircle className="w-4 h-4" />}
-          label="Belum Dibayar"
+          label="Perlu Dibayar"
           nilai={rupiah(total.belumLunas)}
           waspada={total.belumLunas > 0}
         />
@@ -139,13 +140,14 @@ export default function OverviewPekerjaClient({
       {/* Kartu per pekerja */}
       {data.length === 0 ? (
         <div className="rounded-xl border border-[#2A2D31] bg-[#1A1D1F] px-4 py-16 text-center">
-          <div className="text-[#9aa0a6] text-sm">Belum ada pekerjaan tercatat di minggu ini</div>
-          <p className="text-[10px] text-[#9aa0a6]/50 mt-1">Coba lihat minggu sebelumnya lewat tombol panah.</p>
+          <div className="text-[#9aa0a6] text-sm">Tidak ada upah yang perlu dibayar</div>
+          <p className="text-[10px] text-[#9aa0a6]/50 mt-1">
+            Semua sudah lunas. Coba lihat minggu sebelumnya lewat tombol panah.
+          </p>
         </div>
       ) : (
         <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-3">
           {data.map(p => {
-            const lunasPenuh = p.upah_belum_lunas === 0 && p.total_upah > 0;
             return (
               <button
                 key={p.karyawan_id}
@@ -159,13 +161,18 @@ export default function OverviewPekerjaClient({
                     </div>
                     <div className="text-[10px] text-[#9aa0a6] mt-0.5">{p.jabatan}</div>
                   </div>
-                  <span className={`shrink-0 text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-full border ${
-                    lunasPenuh
-                      ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                      : 'bg-orange-500/10 text-orange-400 border-orange-500/20'
-                  }`}>
-                    {lunasPenuh ? 'Lunas' : 'Belum Dibayar'}
-                  </span>
+                  <div className="flex flex-col items-end gap-1 shrink-0">
+                    {p.jml_belum_dibayar > 0 && (
+                      <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-full bg-orange-500/10 text-orange-400 border border-orange-500/20 whitespace-nowrap">
+                        {p.jml_belum_dibayar} belum dibayar
+                      </span>
+                    )}
+                    {p.jml_sedang_dikerjakan > 0 && (
+                      <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-full bg-sky-500/10 text-sky-300 border border-sky-500/20 whitespace-nowrap">
+                        {p.jml_sedang_dikerjakan} sedang dikerjakan
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3 mb-3">
@@ -280,13 +287,13 @@ function ModalDetail({
             <div className="text-sm font-bold text-[#e8eaed]">{pekerja.total_pcs.toLocaleString('id-ID')} pcs</div>
           </div>
           <div>
-            <div className="text-[10px] uppercase tracking-wider text-[#9aa0a6]">Total Upah</div>
-            <div className="text-sm font-bold text-[#e5c17b]">{rupiah(pekerja.total_upah)}</div>
+            <div className="text-[10px] uppercase tracking-wider text-[#9aa0a6]">Perlu Dibayar</div>
+            <div className="text-sm font-bold text-orange-400">{rupiah(pekerja.total_upah)}</div>
           </div>
           <div>
-            <div className="text-[10px] uppercase tracking-wider text-[#9aa0a6]">Belum Dibayar</div>
-            <div className={`text-sm font-bold ${pekerja.upah_belum_lunas > 0 ? 'text-orange-400' : 'text-emerald-400'}`}>
-              {pekerja.upah_belum_lunas > 0 ? rupiah(pekerja.upah_belum_lunas) : 'Lunas'}
+            <div className="text-[10px] uppercase tracking-wider text-[#9aa0a6]">Sedang Dikerjakan</div>
+            <div className="text-sm font-bold text-sky-300">
+              {pekerja.jml_sedang_dikerjakan > 0 ? `${pekerja.jml_sedang_dikerjakan} pekerjaan` : '—'}
             </div>
           </div>
         </div>
@@ -345,13 +352,13 @@ function ModalDetail({
                       {rupiah(r.upah)}
                     </td>
                     <td className="px-4 py-3 text-center">
-                      {r.status === 'lunas' ? (
-                        <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 whitespace-nowrap">
-                          Lunas
+                      {r.upah === 0 ? (
+                        <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-full bg-sky-500/10 text-sky-300 border border-sky-500/20 whitespace-nowrap">
+                          Sedang dikerjakan
                         </span>
                       ) : (
                         <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-full bg-orange-500/10 text-orange-400 border border-orange-500/20 whitespace-nowrap">
-                          Belum
+                          Perlu dibayar
                         </span>
                       )}
                     </td>

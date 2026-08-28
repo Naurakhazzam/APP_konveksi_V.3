@@ -4,6 +4,11 @@ import { createClient } from '@/lib/supabase/server';
 
 const TENANT_ID = 'STX-001';
 
+/**
+ * Ringkasan upah yang MASIH TERBUKA — belum dibayar atau sedang dikerjakan.
+ * Pekerja yang seluruh upahnya sudah lunas tidak muncul, karena halaman ini
+ * dipakai sebagai acuan untuk melunaskan.
+ */
 export interface RingkasanPekerja {
   karyawan_id: string;
   nama: string;
@@ -15,6 +20,8 @@ export interface RingkasanPekerja {
   upah_lunas: number;
   upah_belum_lunas: number;
   total_potongan: number;
+  jml_belum_dibayar: number;
+  jml_sedang_dikerjakan: number;
   daftar_tahap: string[];
 }
 
@@ -64,6 +71,8 @@ export async function getOverviewPekerja(
     upah_lunas: Number(r.upah_lunas) || 0,
     upah_belum_lunas: Number(r.upah_belum_lunas) || 0,
     total_potongan: Number(r.total_potongan) || 0,
+    jml_belum_dibayar: Number(r.jml_belum_dibayar) || 0,
+    jml_sedang_dikerjakan: Number(r.jml_sedang_dikerjakan) || 0,
     daftar_tahap: r.daftar_tahap ?? [],
   }));
 }
