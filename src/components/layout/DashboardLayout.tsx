@@ -26,6 +26,7 @@ const ALL_APP_PATHS = [
   '/app/pengiriman/buat-surat-jalan',
   '/app/pengiriman/riwayat',
   '/app/pengiriman/validasi',
+  '/app/penggajian/overview-pekerja',
   '/app/penggajian/rekap-gaji',
   '/app/penggajian/kasbon',
   '/app/penggajian/slip-gaji',

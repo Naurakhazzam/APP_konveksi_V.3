@@ -75,6 +75,7 @@ const NAV_MENU = [
     id: 'penggajian', 
     icon: Wallet,
     children: [
+      { label: 'Overview Pekerja', path: '/app/penggajian/overview-pekerja' },
       { label: 'Rekap Gaji', path: '/app/penggajian/rekap-gaji' },
       { label: 'Kasbon',     path: '/app/penggajian/kasbon' },
       { label: 'Slip Gaji',  path: '/app/penggajian/slip-gaji' },
