@@ -379,6 +379,8 @@ export async function lanjutCuttingPartial(
   bundle_id: string,
   qty_tambahan: number,
   pemakaian: PemakaianTambahanInput[],
+  /** Tukang potong — tanpa ini upah cutting susulan tidak terbentuk. */
+  karyawan_id?: string | null,
 ): Promise<LanjutCuttingResult> {
   try {
     const user_id = await resolveUserId();
@@ -390,6 +392,7 @@ export async function lanjutCuttingPartial(
       p_pemakaian:    pemakaian,
       p_user_id:      user_id,
       p_tenant_id:    TENANT_ID,
+      p_karyawan_id:  karyawan_id ?? null,
     });
 
     if (error) return { ...EMPTY_LANJUT, error: error.message };

@@ -6,11 +6,13 @@ import { toast } from 'sonner';
 import {
   getPendingCuttingBundles,
   getInventoryItemsForCutting,
+  getKaryawanCutting,
   closeBundleCutting,
   lanjutCuttingPartial,
   type PendingBundle,
   type InventoryItemOption,
   type StokWarning,
+  type KaryawanOption,
 } from '@/lib/actions/produksi/cutting.actions';
 
 interface BahanRow {
@@ -241,14 +243,22 @@ function ModalLanjutCutting({
   const [qty, setQty] = useState<number>(sisa);
   const [bahanRows, setBahanRows] = useState<BahanRow[]>([]);
   const [inventoryItems, setInventoryItems] = useState<InventoryItemOption[]>([]);
+  const [karyawanList, setKaryawanList] = useState<KaryawanOption[]>([]);
+  const [karyawanId, setKaryawanId] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [stokWarnings, setStokWarnings] = useState<StokWarning[]>([]);
 
   useEffect(() => {
     let cancelled = false;
-    getInventoryItemsForCutting()
-      .then(inv => { if (!cancelled) setInventoryItems(inv); })
-      .catch(e => { if (!cancelled) toast.error('Gagal memuat daftar bahan: ' + e.message); });
+    Promise.all([getInventoryItemsForCutting(), getKaryawanCutting()])
+      .then(([inv, kar]) => {
+        if (cancelled) return;
+        setInventoryItems(inv);
+        setKaryawanList(kar);
+        const operator = kar.filter(k => /cutting|potong/i.test(k.jabatan));
+        if (operator.length === 1) setKaryawanId(operator[0].id);
+      })
+      .catch(e => { if (!cancelled) toast.error('Gagal memuat data: ' + e.message); });
     return () => { cancelled = true; };
   }, []);
 
@@ -296,6 +306,7 @@ function ModalLanjutCutting({
         bahanRows
           .filter(r => r.inventory_item_id && r.rate_per_pcs > 0)
           .map(r => ({ inventory_item_id: r.inventory_item_id, rate_per_pcs: r.rate_per_pcs })),
+        karyawanId || null,
       );
 
       if (!result.success) {
@@ -356,6 +367,30 @@ function ModalLanjutCutting({
             <p className="text-[10px] text-[#9aa0a6]/70 mt-3 leading-relaxed">
               {terpotong(bundle)} pcs yang sudah terpotong tidak diubah — itu yang sedang dikerjakan penjahit.
             </p>
+          </div>
+
+          {/* Tukang potong */}
+          <div className="mb-4">
+            <label className="block text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold mb-2">
+              Tukang Potong
+            </label>
+            <select
+              value={karyawanId}
+              onChange={e => setKaryawanId(e.target.value)}
+              className="w-full bg-[#16181A] border border-[#2A2D31] rounded-lg px-3 py-2 text-sm text-[#e8eaed] outline-none focus:border-[#e5c17b]"
+            >
+              <option value="">— Pilih tukang potong —</option>
+              {karyawanList.map(k => (
+                <option key={k.id} value={k.id}>
+                  {k.nama}{k.jabatan !== '-' ? ` · ${k.jabatan}` : ''}
+                </option>
+              ))}
+            </select>
+            {!karyawanId && (
+              <p className="text-[10px] text-orange-400 mt-1.5">
+                Kalau dikosongkan, upah cutting untuk potongan susulan ini tidak akan terbentuk.
+              </p>
+            )}
           </div>
 
           {/* Qty susulan */}
