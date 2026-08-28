@@ -187,11 +187,6 @@ export default function OverviewPekerjaClient({
                   <div>
                     <div className="text-[10px] uppercase tracking-wider text-[#9aa0a6]">Perlu Dibayar</div>
                     <div className="text-lg font-bold text-[#e5c17b]">{rupiah(p.total_upah)}</div>
-                    {p.upah_perkiraan > 0 && (
-                      <div className="text-[10px] text-sky-300 mt-0.5">
-                        + {rupiah(p.upah_perkiraan)} berjalan
-                      </div>
-                    )}
                   </div>
                 </div>
 
@@ -426,11 +421,12 @@ function ModalDetail({
               <h4 className="text-base font-bold text-[#e8eaed] mb-2">Lunaskan upah {pekerja.nama}?</h4>
               <div className="bg-[#16181A] border border-[#2A2D31] rounded-lg px-4 py-3 text-sm text-[#e8eaed] mb-4">
                 <span className="font-bold text-emerald-400">{rupiah(pekerja.total_upah)}</span>{' '}
-                dari {pekerja.jml_belum_dibayar} pekerjaan akan ditandai sudah dibayar.
+                dari {pekerja.jml_belum_dibayar + pekerja.jml_sedang_dikerjakan} pekerjaan akan ditandai sudah dibayar.
                 {pekerja.jml_sedang_dikerjakan > 0 && (
                   <p className="text-[10px] text-sky-300 mt-2">
-                    {pekerja.jml_sedang_dikerjakan} pekerjaan yang masih berjalan
-                    ({rupiah(pekerja.upah_perkiraan)}) tidak ikut — upahnya baru terbentuk setelah selesai.
+                    Termasuk {pekerja.jml_sedang_dikerjakan} pekerjaan yang masih berjalan
+                    ({rupiah(pekerja.upah_perkiraan)}) — dibayar dimuka sekarang, jadi tidak
+                    akan tertagih lagi minggu depan saat selesai.
                   </p>
                 )}
                 <p className="text-[10px] text-[#9aa0a6] mt-2">
