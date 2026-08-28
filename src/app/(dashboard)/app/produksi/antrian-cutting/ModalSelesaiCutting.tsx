@@ -8,12 +8,14 @@ import { toast } from 'sonner';
 import {
   getBundlesByIds,
   getInventoryItemsForCutting,
+  getKaryawanCutting,
   selesaiCuttingBatch,
   type BundleForModal,
   type InventoryItemOption,
   type StokWarning,
   type BundleQtyInput,
   type PemakaianInput,
+  type KaryawanOption,
 } from '@/lib/actions/produksi/cutting.actions';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -45,6 +47,10 @@ export default function ModalSelesaiCutting({ selectedBundleIds, onSuccess, onCl
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [stokWarnings, setStokWarnings] = useState<StokWarning[]>([]);
 
+  // ─ Tukang potong: tanpa ini upah cutting tidak terbentuk
+  const [karyawanList, setKaryawanList] = useState<KaryawanOption[]>([]);
+  const [karyawanId, setKaryawanId] = useState<string>('');
+
   // ─ Section A: qty aktual per bundle
   const [bundleQty, setBundleQty] = useState<Record<string, number>>({});
 
@@ -58,10 +64,16 @@ export default function ModalSelesaiCutting({ selectedBundleIds, onSuccess, onCl
     Promise.all([
       getBundlesByIds(selectedBundleIds),
       getInventoryItemsForCutting(),
-    ]).then(([b, inv]) => {
+      getKaryawanCutting(),
+    ]).then(([b, inv, kar]) => {
       if (cancelled) return;
       setBundles(b);
       setInventoryItems(inv);
+      setKaryawanList(kar);
+      // Kalau cuma ada satu Operator Cutting, langsung dipilihkan supaya
+      // tidak jadi langkah tambahan yang mudah terlewat.
+      const operator = kar.filter(k => /cutting|potong/i.test(k.jabatan));
+      if (operator.length === 1) setKaryawanId(operator[0].id);
       // Init bundleQty defaults
       const qtyInit: Record<string, number> = {};
       b.forEach(bd => { qtyInit[bd.id] = bd.qty_per_bundle; });
@@ -202,7 +214,7 @@ export default function ModalSelesaiCutting({ selectedBundleIds, onSuccess, onCl
       }
     }
 
-    const result = await selesaiCuttingBatch(bundleQtyPayload, pemakaianPayload);
+    const result = await selesaiCuttingBatch(bundleQtyPayload, pemakaianPayload, karyawanId || null);
     setIsSubmitting(false);
 
     if (result.stok_warnings?.length) {
@@ -211,9 +223,12 @@ export default function ModalSelesaiCutting({ selectedBundleIds, onSuccess, onCl
     }
 
     if (result.success) {
-      const msg = result.partial_count > 0
+      const dasar = result.partial_count > 0
         ? `Selesai! ${result.total_qty} pcs selesai, ${result.partial_count} bundle partial.`
         : `Selesai! Total ${result.total_qty} pcs.`;
+      const msg = result.total_upah > 0
+        ? `${dasar} Upah cutting Rp${result.total_upah.toLocaleString('id-ID')}.`
+        : dasar;
       toast.success(msg);
       onSuccess();
     } else {
@@ -250,6 +265,30 @@ export default function ModalSelesaiCutting({ selectedBundleIds, onSuccess, onCl
             </div>
           ) : (
             <>
+              {/* ═══ Tukang potong — penentu upah cutting ═══════════════════ */}
+              <section>
+                <h3 className="text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold mb-3">
+                  Tukang Potong
+                </h3>
+                <select
+                  value={karyawanId}
+                  onChange={(e) => setKaryawanId(e.target.value)}
+                  className="w-full sm:w-72 bg-[#16181A] border border-[#2A2D31] rounded-lg px-3 py-2 text-sm text-[#e8eaed] outline-none focus:border-[#e5c17b]"
+                >
+                  <option value="">— Pilih tukang potong —</option>
+                  {karyawanList.map(k => (
+                    <option key={k.id} value={k.id}>
+                      {k.nama}{k.jabatan !== '-' ? ` · ${k.jabatan}` : ''}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[10px] text-[#9aa0a6] mt-2 leading-relaxed">
+                  {karyawanId
+                    ? 'Upah cutting akan otomatis terhitung dari tarif HPP dan masuk sebagai upah belum dibayar.'
+                    : 'Kalau dikosongkan, cutting tetap tercatat tapi upahnya tidak terbentuk — tidak akan muncul di Kroscek maupun rekap gaji.'}
+                </p>
+              </section>
+
               {/* ═══ BAGIAN A: Qty Aktual per Bundle ════════════════════════ */}
               <section>
                 <h3 className="text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold mb-3">

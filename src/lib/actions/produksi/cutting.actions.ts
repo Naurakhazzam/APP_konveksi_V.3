@@ -38,6 +38,8 @@ export interface SelesaiCuttingResult {
   success: boolean;
   total_qty: number;
   partial_count: number;
+  /** Upah cutting yang terbentuk — 0 kalau tukang potong tidak dipilih. */
+  total_upah: number;
   stok_warnings: StokWarning[];
   error?: string;
 }
@@ -259,29 +261,68 @@ export async function mulaiCuttingBatch(
   }
 }
 
+// ─── Daftar tukang potong untuk modal Selesai Cutting ────────────────────────
+
+export interface KaryawanOption {
+  id: string;
+  nama: string;
+  jabatan: string;
+}
+
+/**
+ * Karyawan aktif untuk dipilih sebagai tukang potong. Operator Cutting
+ * ditaruh paling atas supaya yang lazim dipakai langsung terlihat, tapi
+ * nama lain tetap bisa dipilih — kadang cutting dikerjakan orang lain.
+ */
+export async function getKaryawanCutting(): Promise<KaryawanOption[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from('karyawan')
+    .select('id, nama, jabatan')
+    .eq('tenant_id', TENANT_ID)
+    .eq('aktif', true)
+    .order('nama', { ascending: true });
+
+  if (error) throw new Error(`Gagal memuat daftar karyawan: ${error.message}`);
+
+  const semua = (data ?? []).map((k: any) => ({
+    id: k.id, nama: k.nama, jabatan: k.jabatan ?? '-',
+  }));
+
+  const cutting = semua.filter(k => /cutting|potong/i.test(k.jabatan));
+  const lainnya = semua.filter(k => !/cutting|potong/i.test(k.jabatan));
+  return [...cutting, ...lainnya];
+}
+
 // ─── FUNGSI 3: selesaiCuttingBatch ───────────────────────────────────────────
 
 export async function selesaiCuttingBatch(
   bundle_qty: BundleQtyInput[],
-  pemakaian: PemakaianInput[]
+  pemakaian: PemakaianInput[],
+  /** Tukang potong. Tanpa ini upah cutting tidak terbentuk — sistem tidak
+   *  tahu upahnya milik siapa. */
+  karyawan_id?: string | null,
 ): Promise<SelesaiCuttingResult> {
   try {
     const user_id = await resolveUserId();
     const supabase = await createClient();
 
     const { data, error } = await supabase.rpc('selesai_cutting_batch', {
-      p_bundle_qty: bundle_qty,
-      p_pemakaian:  pemakaian,
-      p_user_id:    user_id,
-      p_tenant_id:  TENANT_ID,
+      p_bundle_qty:  bundle_qty,
+      p_pemakaian:   pemakaian,
+      p_user_id:     user_id,
+      p_tenant_id:   TENANT_ID,
+      p_karyawan_id: karyawan_id ?? null,
     });
 
-    if (error) return { success: false, total_qty: 0, partial_count: 0, stok_warnings: [], error: error.message };
+    if (error) return { success: false, total_qty: 0, partial_count: 0, total_upah: 0, stok_warnings: [], error: error.message };
 
     const result = data as {
       success?: boolean;
       total_qty?: number;
       partial_count?: number;
+      total_upah?: number;
       stok_warnings?: StokWarning[];
     } | null;
 
@@ -290,10 +331,11 @@ export async function selesaiCuttingBatch(
       success:       result?.success ?? true,
       total_qty:     result?.total_qty ?? 0,
       partial_count: result?.partial_count ?? 0,
+      total_upah:    Number(result?.total_upah ?? 0),
       stok_warnings: result?.stok_warnings ?? [],
     };
   } catch (e: any) {
-    return { success: false, total_qty: 0, partial_count: 0, stok_warnings: [], error: e.message ?? 'Terjadi kesalahan' };
+    return { success: false, total_qty: 0, partial_count: 0, total_upah: 0, stok_warnings: [], error: e.message ?? 'Terjadi kesalahan' };
   }
 }
 
