@@ -23,7 +23,12 @@ export interface BundleReadyToShip {
   model_nama: string | null;
   warna: string;
   size: string;
+  /** Sisa yang belum terkirim — ini batas atas qty kirim yang wajar. */
   qty_per_bundle: number;
+  /** Total qty yang benar-benar jadi di bundle ini. */
+  qty_jadi: number;
+  /** Sudah terkirim di surat jalan sebelumnya (0 kalau belum pernah dikirim). */
+  qty_sudah_kirim: number;
   qty_kirim: number;
 }
 
@@ -68,6 +73,7 @@ export async function getBundlesReadyToShip(): Promise<BundleReadyToShip[]> {
       barcode,
       status_tahap,
       surat_jalan_id,
+      surat_jalan_item (qty_kirim),
       po:po_id (
         no_po,
         klien:klien_id (id, nama)
@@ -81,40 +87,51 @@ export async function getBundlesReadyToShip(): Promise<BundleReadyToShip[]> {
         )
       )
     `)
-    .eq('tenant_id', TENANT_ID)
-    .is('surat_jalan_id', null);
+    .eq('tenant_id', TENANT_ID);
 
   if (error) {
     console.error('Error fetching ready bundles:', error);
     throw new Error('Gagal memuat daftar bundle siap kirim');
   }
 
-  // Filter client-side untuk status packing selesai (Supabase filter JSON agak kompleks jika tidak ada index/function spesifik)
-  const readyBundles = (data || []).filter((b: any) => {
-    return b.status_tahap?.packing?.status === 'selesai';
-  });
+  // Bundle disaring dari sisa yang belum terkirim, bukan dari surat_jalan_id.
+  // Satu bundle boleh dikirim bertahap lewat beberapa surat jalan — kalau
+  // patokannya surat_jalan_id, bundle yang baru terkirim sebagian akan lenyap
+  // dari daftar dan sisanya tidak pernah bisa dikirim.
+  const readyBundles = (data || [])
+    .map((b: any) => {
+      // Prioritas qty efektif bundle ini: qty_selesai packing sendiri (paling
+      // otoritatif — termasuk untuk bundle hasil Split) → qty_aktual cutting →
+      // qty_per_bundle rencana sebagai fallback terakhir.
+      const qtySelesaiPacking = b.status_tahap?.packing?.qty_selesai;
+      const qtyAktualCutting = b.status_tahap?.cutting?.qty_aktual;
+      const qtyJadi = qtySelesaiPacking ?? qtyAktualCutting ?? (b.po_item?.qty_per_bundle || 0);
 
-  return readyBundles.map((b: any) => {
-    // Prioritas qty efektif bundle ini: qty_selesai packing sendiri (paling
-    // otoritatif — termasuk untuk bundle hasil Split) → qty_aktual cutting →
-    // qty_per_bundle rencana sebagai fallback terakhir.
-    const qtySelesaiPacking = b.status_tahap?.packing?.qty_selesai;
-    const qtyAktualCutting = b.status_tahap?.cutting?.qty_aktual;
-    const qtyEfektif = qtySelesaiPacking ?? qtyAktualCutting ?? (b.po_item?.qty_per_bundle || 0);
+      const qtySudahKirim = (b.surat_jalan_item || []).reduce(
+        (sum: number, it: any) => sum + (it.qty_kirim || 0), 0
+      );
+      const sisa = qtyJadi - qtySudahKirim;
 
-    return {
-      id: b.id,
-      barcode: b.barcode,
-      no_po: b.po?.no_po || '-',
-      klien_id: b.po?.klien?.id || '',
-      klien_nama: b.po?.klien?.nama || 'Unknown',
-      model_nama: b.po_item?.produk?.model_produk?.nama || null,
-      warna: b.po_item?.warna || '-',
-      size: b.po_item?.size || '-',
-      qty_per_bundle: qtyEfektif,
-      qty_kirim: qtyEfektif, // Default qty_kirim
-    };
-  });
+      return { raw: b, qtyJadi, qtySudahKirim, sisa };
+    })
+    .filter(({ raw, sisa }) =>
+      raw.status_tahap?.packing?.status === 'selesai' && sisa > 0
+    );
+
+  return readyBundles.map(({ raw: b, qtyJadi, qtySudahKirim, sisa }) => ({
+    id: b.id,
+    barcode: b.barcode,
+    no_po: b.po?.no_po || '-',
+    klien_id: b.po?.klien?.id || '',
+    klien_nama: b.po?.klien?.nama || 'Unknown',
+    model_nama: b.po_item?.produk?.model_produk?.nama || null,
+    warna: b.po_item?.warna || '-',
+    size: b.po_item?.size || '-',
+    qty_per_bundle: sisa,
+    qty_jadi: qtyJadi,
+    qty_sudah_kirim: qtySudahKirim,
+    qty_kirim: sisa, // Default: kirim seluruh sisanya
+  }));
 }
 
 export async function createSuratJalan(input: {

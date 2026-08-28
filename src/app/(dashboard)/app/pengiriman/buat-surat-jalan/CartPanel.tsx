@@ -153,7 +153,12 @@ export default function CartPanel({
                             : 'border-[#2A2D31] text-[#e8eaed] focus:border-[#e5c17b]'
                         }`}
                       />
-                      <span className="text-[10px] text-[#9aa0a6]">/{b.qty_per_bundle}</span>
+                      <span className="text-[10px] text-[#9aa0a6]">
+                        /{b.qty_per_bundle}
+                        {b.qty_sudah_kirim > 0 && (
+                          <span className="text-[#e5c17b]"> sisa</span>
+                        )}
+                      </span>
                     </div>
 
                     {/* Hapus */}
@@ -174,7 +179,10 @@ export default function CartPanel({
                         <AlertTriangle className="w-3 h-3 text-amber-400 shrink-0 mt-0.5" />
                         <div className="flex-1 min-w-0">
                           <p className="text-[9px] text-amber-400 mb-1">
-                            Qty melebihi rencana ({b.qty_per_bundle}) — wajib isi alasan, akan menunggu approval PIN Owner
+                            {b.qty_sudah_kirim > 0
+                              ? `Qty melebihi sisa yang belum terkirim (${b.qty_per_bundle} dari ${b.qty_jadi} pcs)`
+                              : `Qty melebihi rencana (${b.qty_per_bundle})`
+                            } — wajib isi alasan, akan menunggu approval PIN Owner
                           </p>
                           <input
                             type="text"

@@ -451,9 +451,17 @@ export default function BuatSuratJalanClient({ initialBundles }: { initialBundle
                                 </span>
                               </td>
 
-                              {/* QTY per bundle */}
+                              {/* Sisa yang belum terkirim. Kalau bundle ini
+                                  pernah dikirim sebagian, riwayatnya ikut
+                                  ditampilkan supaya jelas kenapa angkanya
+                                  lebih kecil dari qty bundle. */}
                               <td className="px-4 py-2 text-right text-xs text-[#9aa0a6]">
                                 {b.qty_per_bundle} pcs
+                                {b.qty_sudah_kirim > 0 && (
+                                  <div className="text-[10px] text-[#e5c17b] mt-0.5">
+                                    sisa dari {b.qty_jadi} · terkirim {b.qty_sudah_kirim}
+                                  </div>
+                                )}
                               </td>
                             </tr>
                           );
