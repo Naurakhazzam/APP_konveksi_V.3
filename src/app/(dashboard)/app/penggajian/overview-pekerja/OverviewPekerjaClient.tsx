@@ -8,6 +8,7 @@ import {
 import {
   getOverviewPekerja,
   getDetailPekerja,
+  lunaskanUpahPekerja,
   type RingkasanPekerja,
   type DetailPekerjaan,
 } from '@/lib/actions/penggajian/overview-pekerja.actions';
@@ -184,8 +185,13 @@ export default function OverviewPekerjaClient({
                     </div>
                   </div>
                   <div>
-                    <div className="text-[10px] uppercase tracking-wider text-[#9aa0a6]">Upah</div>
+                    <div className="text-[10px] uppercase tracking-wider text-[#9aa0a6]">Perlu Dibayar</div>
                     <div className="text-lg font-bold text-[#e5c17b]">{rupiah(p.total_upah)}</div>
+                    {p.upah_perkiraan > 0 && (
+                      <div className="text-[10px] text-sky-300 mt-0.5">
+                        + {rupiah(p.upah_perkiraan)} berjalan
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -215,6 +221,7 @@ export default function OverviewPekerjaClient({
           pekerja={terpilih}
           periode={periode}
           onClose={() => setTerpilih(null)}
+          onLunas={() => { setTerpilih(null); muat(periode); }}
         />
       )}
     </div>
@@ -244,14 +251,31 @@ function KartuTotal({
 // ─── Jendela rincian ─────────────────────────────────────────────────────────
 
 function ModalDetail({
-  pekerja, periode, onClose,
+  pekerja, periode, onClose, onLunas,
 }: {
   pekerja: RingkasanPekerja;
   periode: { dari: string; sampai: string };
   onClose: () => void;
+  onLunas: () => void;
 }) {
   const [rincian, setRincian] = useState<DetailPekerjaan[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [konfirmasiLunas, setKonfirmasiLunas] = useState(false);
+  const [sedangLunas, setSedangLunas] = useState(false);
+
+  const prosesLunas = async () => {
+    setSedangLunas(true);
+    try {
+      const hasil = await lunaskanUpahPekerja(pekerja.karyawan_id, periode.dari, periode.sampai);
+      toast.success(
+        `${hasil.nama} dilunaskan — ${hasil.jumlah_entri} pekerjaan, ${rupiah(hasil.total)}`,
+      );
+      onLunas();
+    } catch (e: any) {
+      toast.error(e.message ?? 'Gagal melunaskan upah');
+      setSedangLunas(false);
+    }
+  };
 
   useEffect(() => {
     let batal = false;
@@ -264,7 +288,7 @@ function ModalDetail({
 
   return (
     <div className="fixed inset-0 bg-black/75 flex items-center justify-center z-50 p-4">
-      <div className="bg-[#1A1D1F] border border-[#2A2D31] rounded-xl w-full max-w-4xl shadow-2xl max-h-[90vh] flex flex-col">
+      <div className="relative bg-[#1A1D1F] border border-[#2A2D31] rounded-xl w-full max-w-4xl shadow-2xl max-h-[90vh] flex flex-col">
         {/* Kepala */}
         <div className="px-6 py-4 border-b border-[#2A2D31] flex items-start justify-between gap-4">
           <div>
@@ -352,7 +376,7 @@ function ModalDetail({
                       {rupiah(r.upah)}
                     </td>
                     <td className="px-4 py-3 text-center">
-                      {r.upah === 0 ? (
+                      {r.keadaan === 'sedang_dikerjakan' ? (
                         <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-full bg-sky-500/10 text-sky-300 border border-sky-500/20 whitespace-nowrap">
                           Sedang dikerjakan
                         </span>
@@ -369,18 +393,72 @@ function ModalDetail({
           )}
         </div>
 
-        <div className="px-6 py-3 border-t border-[#2A2D31] flex items-center justify-between">
+        <div className="px-6 py-3 border-t border-[#2A2D31] flex items-center justify-between gap-3">
           <span className="text-[10px] text-[#9aa0a6] flex items-center gap-1.5">
             <Scissors className="w-3 h-3" />
             {rincian.length} pekerjaan tercatat
           </span>
-          <button
-            onClick={onClose}
-            className="px-4 h-9 rounded-lg border border-[#2A2D31] text-[#e8eaed] text-sm hover:bg-[#2A2D31] transition-colors"
-          >
-            Tutup
-          </button>
+          <div className="flex items-center gap-3">
+            {pekerja.total_upah > 0 && (
+              <button
+                onClick={() => setKonfirmasiLunas(true)}
+                disabled={sedangLunas}
+                className="flex items-center gap-2 px-4 h-9 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold transition-colors disabled:opacity-50"
+              >
+                {sedangLunas
+                  ? <Loader2 className="w-4 h-4 animate-spin" />
+                  : <Wallet className="w-4 h-4" />}
+                Tandai Lunas
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="px-4 h-9 rounded-lg border border-[#2A2D31] text-[#e8eaed] text-sm hover:bg-[#2A2D31] transition-colors"
+            >
+              Tutup
+            </button>
+          </div>
         </div>
+
+        {konfirmasiLunas && (
+          <div className="absolute inset-0 bg-black/80 flex items-center justify-center p-4 rounded-xl">
+            <div className="bg-[#1A1D1F] border border-[#2A2D31] rounded-xl w-full max-w-sm p-5">
+              <h4 className="text-base font-bold text-[#e8eaed] mb-2">Lunaskan upah {pekerja.nama}?</h4>
+              <div className="bg-[#16181A] border border-[#2A2D31] rounded-lg px-4 py-3 text-sm text-[#e8eaed] mb-4">
+                <span className="font-bold text-emerald-400">{rupiah(pekerja.total_upah)}</span>{' '}
+                dari {pekerja.jml_belum_dibayar} pekerjaan akan ditandai sudah dibayar.
+                {pekerja.jml_sedang_dikerjakan > 0 && (
+                  <p className="text-[10px] text-sky-300 mt-2">
+                    {pekerja.jml_sedang_dikerjakan} pekerjaan yang masih berjalan
+                    ({rupiah(pekerja.upah_perkiraan)}) tidak ikut — upahnya baru terbentuk setelah selesai.
+                  </p>
+                )}
+                <p className="text-[10px] text-[#9aa0a6] mt-2">
+                  Setelah ini {pekerja.nama} tidak lagi muncul di halaman ini.
+                </p>
+              </div>
+              <div className="flex items-center justify-end gap-3">
+                <button
+                  onClick={() => setKonfirmasiLunas(false)}
+                  disabled={sedangLunas}
+                  className="px-4 h-9 rounded-lg border border-[#2A2D31] text-[#e8eaed] text-sm hover:bg-[#2A2D31] transition-colors disabled:opacity-50"
+                >
+                  Batal
+                </button>
+                <button
+                  onClick={prosesLunas}
+                  disabled={sedangLunas}
+                  className="flex items-center gap-2 px-4 h-9 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold transition-colors disabled:opacity-50"
+                >
+                  {sedangLunas
+                    ? <Loader2 className="w-4 h-4 animate-spin" />
+                    : <Wallet className="w-4 h-4" />}
+                  Ya, Lunaskan
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

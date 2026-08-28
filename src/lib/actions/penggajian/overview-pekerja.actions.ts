@@ -1,6 +1,8 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
+import { revalidatePath } from 'next/cache';
+import { getCurrentUserProfile } from '@/lib/auth/permissions';
 
 const TENANT_ID = 'STX-001';
 
@@ -20,6 +22,13 @@ export interface RingkasanPekerja {
   upah_lunas: number;
   upah_belum_lunas: number;
   total_potongan: number;
+  /**
+   * Nilai pekerjaan yang MASIH dikerjakan — dihitung dari tarif HPP, bukan
+   * dari entri upah (yang baru terbentuk saat discan selesai). Sengaja
+   * dipisah dari total_upah supaya kewajiban yang sudah pasti tidak
+   * tercampur dengan yang belum jadi.
+   */
+  upah_perkiraan: number;
   jml_belum_dibayar: number;
   jml_sedang_dikerjakan: number;
   daftar_tahap: string[];
@@ -29,6 +38,8 @@ export interface DetailPekerjaan {
   id: string;
   tanggal: string;
   tahap: string;
+  /** 'sedang_dikerjakan' berarti upahnya masih perkiraan, belum jadi kewajiban. */
+  keadaan: 'belum_dibayar' | 'sedang_dikerjakan';
   tipe: string;
   status: 'belum_lunas' | 'lunas' | 'escrow' | 'cancelled';
   tanggal_bayar: string | null;
@@ -71,10 +82,56 @@ export async function getOverviewPekerja(
     upah_lunas: Number(r.upah_lunas) || 0,
     upah_belum_lunas: Number(r.upah_belum_lunas) || 0,
     total_potongan: Number(r.total_potongan) || 0,
+    upah_perkiraan: Number(r.upah_perkiraan) || 0,
     jml_belum_dibayar: Number(r.jml_belum_dibayar) || 0,
     jml_sedang_dikerjakan: Number(r.jml_sedang_dikerjakan) || 0,
     daftar_tahap: r.daftar_tahap ?? [],
   }));
+}
+
+export interface HasilPelunasan {
+  nama: string;
+  jumlah_entri: number;
+  total: number;
+}
+
+/**
+ * Tandai seluruh upah seorang pekerja pada periode ini sebagai lunas.
+ *
+ * Yang masih dikerjakan TIDAK ikut — upahnya belum terbentuk, jadi belum ada
+ * yang bisa dilunaskan. Sesudah ini pekerjanya hilang dari halaman, mengikuti
+ * aturan "sudah lunas = tidak ditampilkan".
+ */
+export async function lunaskanUpahPekerja(
+  karyawan_id: string,
+  dari: string,
+  sampai: string,
+): Promise<HasilPelunasan> {
+  const profile = await getCurrentUserProfile();
+  if (!profile) throw new Error('Unauthorized');
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.rpc('lunaskan_upah_pekerja', {
+    p_karyawan_id: karyawan_id,
+    p_dari: dari,
+    p_sampai: sampai,
+    p_user_id: profile.id,
+    p_tenant_id: TENANT_ID,
+  });
+
+  if (error) throw new Error(error.message || 'Gagal melunaskan upah');
+
+  revalidatePath('/app/penggajian/overview-pekerja');
+  revalidatePath('/app/penggajian/rekap-gaji');
+  revalidatePath('/app/produksi/kroscek-pekerjaan');
+
+  const r = data as any;
+  return {
+    nama: r?.nama ?? '-',
+    jumlah_entri: Number(r?.jumlah_entri) || 0,
+    total: Number(r?.total) || 0,
+  };
 }
 
 /** Rincian pekerjaan satu orang — isi jendela yang terbuka saat kartu diklik. */
@@ -98,6 +155,8 @@ export async function getDetailPekerja(
     id: r.id,
     tanggal: r.tanggal,
     tahap: r.tahap ?? '-',
+    keadaan: (r.keadaan === 'sedang_dikerjakan' ? 'sedang_dikerjakan' : 'belum_dibayar') as
+      DetailPekerjaan['keadaan'],
     tipe: r.tipe,
     status: r.status,
     tanggal_bayar: r.tanggal_bayar ?? null,
