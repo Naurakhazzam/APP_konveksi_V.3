@@ -167,7 +167,7 @@ export default function ApprovalClient({ initialData }: ApprovalClientProps) {
               Konfirmasi Otoritas
             </DialogTitle>
             <DialogDescription className="text-[#9aa0a6]">
-              Masukkan PIN 4 digit Anda untuk {modalState.action === 'approve' ? 'menyetujui' : 'menolak'} permintaan ini.
+              Masukkan PIN Anda untuk {modalState.action === 'approve' ? 'menyetujui' : 'menolak'} permintaan ini.
             </DialogDescription>
           </DialogHeader>
           
@@ -176,13 +176,13 @@ export default function ApprovalClient({ initialData }: ApprovalClientProps) {
               <Input
                 type="password"
                 inputMode="numeric"
-                maxLength={4}
+                maxLength={6}
                 value={pin}
                 onChange={(e) => setPin(e.target.value.replace(/[^0-9]/g, ''))}
                 placeholder="****"
                 className="bg-[#0D0E10] border-[#2A2D31] text-center text-2xl tracking-[1em] focus:ring-[#e5c17b] py-6"
                 autoFocus
-                onKeyDown={(e) => e.key === 'Enter' && pin.length === 4 && handleConfirmPIN()}
+                onKeyDown={(e) => e.key === 'Enter' && pin.length >= 4 && handleConfirmPIN()}
               />
               <p className="text-[10px] text-center text-[#777e85]">Security Verification Required</p>
             </div>
@@ -198,7 +198,7 @@ export default function ApprovalClient({ initialData }: ApprovalClientProps) {
             </Button>
             <Button 
               onClick={handleConfirmPIN}
-              disabled={loading !== null || pin.length !== 4}
+              disabled={loading !== null || pin.length < 4}
               className="bg-[#e5c17b] text-[#2b2318] hover:bg-[#e5c17b]/90 min-w-[80px]"
             >
               {loading !== null ? <Loader2 className="animate-spin h-4 w-4" /> : 'Konfirmasi'}

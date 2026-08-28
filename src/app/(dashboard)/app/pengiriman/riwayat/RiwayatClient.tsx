@@ -121,7 +121,7 @@ function ModalBatalSuratJalan({
   const [alasan, setAlasan] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const bisaKirim = /^\d{4}$/.test(pin) && alasan.trim().length > 0;
+  const bisaKirim = /^\d{4,6}$/.test(pin) && alasan.trim().length > 0;
 
   const handleSubmit = async () => {
     if (!bisaKirim) return;
@@ -183,10 +183,10 @@ function ModalBatalSuratJalan({
             <input
               type="password"
               inputMode="numeric"
-              maxLength={4}
+              maxLength={6}
               value={pin}
               onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
-              placeholder="4 digit"
+              placeholder="4-6 digit"
               className="w-32 bg-[#16181A] border border-[#2A2D31] rounded-lg px-3 py-2 text-sm text-[#e8eaed] text-center tracking-[0.4em] placeholder-[#9aa0a6]/50 placeholder:tracking-normal outline-none focus:border-[#e5c17b]"
             />
           </div>

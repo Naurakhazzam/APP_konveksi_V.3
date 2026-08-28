@@ -3,11 +3,20 @@
 import { createClient } from '@/lib/supabase/server';
 import bcrypt from 'bcryptjs';
 
-/** 1. Set PIN approval owner (4 digit bcrypt hash) */
+/**
+ * 1. Set PIN approval owner (disimpan sebagai bcrypt hash).
+ *
+ * Panjangnya 4–6 digit — dilonggarkan dari 4 saja, supaya orang bisa
+ * memakai angka yang mudah diingat seperti tanggal lahir.
+ *
+ * Catatan: berkas ini 'use server', jadi batasannya tidak bisa diekspor
+ * sebagai konstanta (hanya fungsi async yang boleh diekspor). Kalau angka
+ * ini diubah, sesuaikan juga maxLength di PinSetupSection, ApprovalClient,
+ * dan modal batal surat jalan.
+ */
 export async function setApprovalPin(pin: string): Promise<void> {
-  // Validasi: pin harus 4 digit angka
-  if (!/^\d{4}$/.test(pin)) {
-    throw new Error('PIN harus 4 digit angka');
+  if (!/^\d{4,6}$/.test(pin)) {
+    throw new Error('PIN harus 4–6 digit angka');
   }
 
   const supabase = await createClient();

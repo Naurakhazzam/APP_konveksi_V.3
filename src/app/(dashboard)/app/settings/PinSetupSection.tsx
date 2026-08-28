@@ -21,8 +21,8 @@ export default function PinSetupSection({ hasPinAlready }: PinSetupSectionProps)
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (pin.length !== 4) {
-      toast.error('PIN harus 4 digit angka');
+    if (!/^\d{4,6}$/.test(pin)) {
+      toast.error('PIN harus 4–6 digit angka');
       return;
     }
     
@@ -55,7 +55,7 @@ export default function PinSetupSection({ hasPinAlready }: PinSetupSectionProps)
           <CardTitle>PIN Approval</CardTitle>
         </div>
         <CardDescription className="text-[#9aa0a6]">
-          PIN 4 digit digunakan untuk mengkonfirmasi approve/tolak qty di halaman Approval oleh Owner.
+          PIN 4–6 digit digunakan untuk mengkonfirmasi approve/tolak qty di halaman Approval, dan membatalkan surat jalan.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -77,11 +77,11 @@ export default function PinSetupSection({ hasPinAlready }: PinSetupSectionProps)
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium text-[#e8eaed]">PIN Baru (4 Digit)</label>
+                <label className="text-sm font-medium text-[#e8eaed]">PIN Baru (4–6 Digit)</label>
                 <Input
                   type="password"
                   inputMode="numeric"
-                  maxLength={4}
+                  maxLength={6}
                   value={pin}
                   onChange={(e) => setPin(e.target.value.replace(/[^0-9]/g, ''))}
                   placeholder="****"
@@ -93,7 +93,7 @@ export default function PinSetupSection({ hasPinAlready }: PinSetupSectionProps)
                 <Input
                   type="password"
                   inputMode="numeric"
-                  maxLength={4}
+                  maxLength={6}
                   value={confirmPin}
                   onChange={(e) => setConfirmPin(e.target.value.replace(/[^0-9]/g, ''))}
                   placeholder="****"
@@ -114,7 +114,7 @@ export default function PinSetupSection({ hasPinAlready }: PinSetupSectionProps)
               )}
               <Button 
                 type="submit" 
-                disabled={loading || pin.length !== 4}
+                disabled={loading || pin.length < 4}
                 className="bg-[#e5c17b] text-[#2b2318] hover:bg-[#e5c17b]/90 min-w-[100px]"
               >
                 {loading ? <Loader2 className="animate-spin h-4 w-4" /> : 'Simpan PIN'}
