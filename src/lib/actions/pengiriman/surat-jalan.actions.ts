@@ -291,15 +291,22 @@ export async function getSuratJalanDetail(id: string): Promise<SuratJalanDetail 
 
 export interface QtyLebihKirimPending {
   approval_id: string;
+  /** 'buat_surat_jalan' = qty melebihi rencana; 'edit_surat_jalan' = koreksi qty. */
+  sumber: 'buat_surat_jalan' | 'edit_surat_jalan';
   bundle_id: string;
+  surat_jalan_id: string | null;
+  nomor_sj: string | null;
   barcode: string;
   no_po: string;
   klien_nama: string;
   model_nama: string | null;
   warna: string;
   size: string;
+  /** Angka sebelum perubahan (rencana, atau qty lama saat diedit). */
   qty_rencana: number;
+  /** Selisihnya — bisa negatif untuk koreksi yang menurunkan qty. */
   qty_lebih: number;
+  /** Angka sesudah perubahan. */
   qty_kirim: number;
   alasan_pengajuan: string | null;
   diajukan_oleh: string;
@@ -313,11 +320,14 @@ export async function getQtyLebihKirimPending(): Promise<QtyLebihKirimPending[]>
     .from('qty_approval_request')
     .select(`
       id,
+      sumber,
       qty_diajukan,
       qty_default,
       catatan_pengajuan,
       created_at,
       created_by,
+      surat_jalan_id,
+      surat_jalan:surat_jalan_id (nomor_sj),
       bundle:bundle_id (
         id,
         barcode,
@@ -329,7 +339,7 @@ export async function getQtyLebihKirimPending(): Promise<QtyLebihKirimPending[]>
       )
     `)
     .eq('tenant_id', TENANT_ID)
-    .eq('sumber', 'buat_surat_jalan')
+    .in('sumber', ['buat_surat_jalan', 'edit_surat_jalan'])
     .eq('status', 'pending')
     .order('created_at', { ascending: false });
 
@@ -353,18 +363,34 @@ export async function getQtyLebihKirimPending(): Promise<QtyLebihKirimPending[]>
     const produk = Array.isArray(poItem?.produk) ? poItem.produk[0] : poItem?.produk;
     const model = Array.isArray(produk?.model_produk) ? produk.model_produk[0] : produk?.model_produk;
 
+    const sj = Array.isArray(r.surat_jalan) ? r.surat_jalan[0] : r.surat_jalan;
+    const sumber = (r.sumber === 'edit_surat_jalan' ? 'edit_surat_jalan' : 'buat_surat_jalan') as
+      QtyLebihKirimPending['sumber'];
+
+    // Dua sumber menyimpan qty_diajukan dengan arti berbeda:
+    // - buat_surat_jalan: SELISIH kelebihan di atas rencana
+    // - edit_surat_jalan: qty BARU hasil koreksi
+    // Keduanya diseragamkan jadi sebelum/sesudah/selisih di sini.
+    const qtyLama = r.qty_default ?? 0;
+    const qtySesudah = sumber === 'edit_surat_jalan'
+      ? (r.qty_diajukan ?? 0)
+      : qtyLama + (r.qty_diajukan ?? 0);
+
     return {
       approval_id: r.id,
+      sumber,
       bundle_id: b?.id ?? '',
+      surat_jalan_id: r.surat_jalan_id ?? null,
+      nomor_sj: sj?.nomor_sj ?? null,
       barcode: b?.barcode ?? '-',
       no_po: po?.no_po ?? '-',
       klien_nama: klien?.nama ?? '-',
       model_nama: model?.nama ?? null,
       warna: poItem?.warna ?? '-',
       size: poItem?.size ?? '-',
-      qty_rencana: r.qty_default ?? 0,
-      qty_lebih: r.qty_diajukan ?? 0,
-      qty_kirim: (r.qty_default ?? 0) + (r.qty_diajukan ?? 0),
+      qty_rencana: qtyLama,
+      qty_lebih: qtySesudah - qtyLama,
+      qty_kirim: qtySesudah,
       alasan_pengajuan: r.catatan_pengajuan ?? null,
       diajukan_oleh: pengajuMap[r.created_by] ?? '-',
       diajukan_pada: r.created_at,
@@ -423,14 +449,19 @@ export interface EditSuratJalanResult {
  * Koreksi qty item pada surat jalan yang sudah terbit — nomor SJ tetap.
  * Qty 0 berarti barang itu dikeluarkan dari surat jalan.
  *
- * Butuh PIN Owner: perubahan qty ikut mengubah nilai tagihan. RPC di
- * database yang menghitung ulang invoice serta status siap-kirim bundle,
- * dan menolak kalau sudah divalidasi klien atau invoice sudah dibayar.
+ * TIDAK menunggu PIN Owner. Perubahan langsung berlaku supaya pengiriman
+ * bisa jalan terus tanpa menahan proses menunggu pemegang PIN — lalu
+ * tercatat sebagai pengajuan di halaman Validasi untuk dikonfirmasi Owner
+ * belakangan. Karena itu alasan wajib diisi: itu yang dibaca Owner saat
+ * memutuskan.
+ *
+ * RPC di database yang menghitung ulang invoice serta status siap-kirim
+ * bundle, dan menolak kalau sudah divalidasi klien atau invoice sudah
+ * dibayar.
  */
 export async function editSuratJalan(
   sj_id: string,
   items: { surat_jalan_item_id: string; qty_kirim: number }[],
-  pin: string,
   alasan: string,
 ): Promise<EditSuratJalanResult> {
   const userId = await resolveUserId();
@@ -438,20 +469,6 @@ export async function editSuratJalan(
 
   if (!alasan?.trim()) throw new Error('Alasan perubahan wajib diisi');
   if (items.length === 0) throw new Error('Tidak ada perubahan untuk disimpan');
-
-  const { data: profile, error: profileErr } = await supabase
-    .from('user_profile')
-    .select('approval_pin')
-    .eq('id', userId)
-    .maybeSingle();
-
-  if (profileErr) throw new Error(profileErr.message);
-  if (!profile?.approval_pin) {
-    throw new Error('PIN belum diset. Setup PIN terlebih dahulu di Settings.');
-  }
-
-  const isPinValid = await bcrypt.compare(pin, profile.approval_pin);
-  if (!isPinValid) throw new Error('PIN tidak valid');
 
   const { data, error } = await supabase.rpc('edit_surat_jalan', {
     p_sj_id: sj_id,

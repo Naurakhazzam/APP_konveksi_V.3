@@ -51,7 +51,9 @@ function PinModal({
             </div>
             <div>
               <div className="text-sm font-bold text-[#e8eaed]">
-                {isApprove ? 'Setujui Kelebihan QTY' : 'Tolak Kelebihan QTY'}
+                {item.sumber === 'edit_surat_jalan'
+                  ? (isApprove ? 'Setujui Koreksi QTY' : 'Tolak Koreksi QTY')
+                  : (isApprove ? 'Setujui Kelebihan QTY' : 'Tolak Kelebihan QTY')}
               </div>
               <div className="text-[10px] text-[#9aa0a6] mt-0.5">Verifikasi PIN owner</div>
             </div>
@@ -63,13 +65,25 @@ function PinModal({
 
         <div className="bg-[#0D0E10] rounded-xl p-3 mb-4 space-y-1 text-xs">
           <div className="text-[#9aa0a6]">Bundle: <span className="text-[#e8eaed] font-mono">{item.barcode}</span></div>
+          {item.nomor_sj && (
+            <div className="text-[#9aa0a6]">Surat Jalan: <span className="text-[#e8eaed] font-mono">{item.nomor_sj}</span></div>
+          )}
           <div className="text-[#9aa0a6]">
-            Kelebihan: <span className="text-amber-400 font-bold">+{item.qty_lebih} pcs</span>
-            <span className="text-[#9aa0a6]"> (rencana {item.qty_rencana} → kirim {item.qty_kirim})</span>
+            Perubahan:{' '}
+            <span className={item.qty_lebih < 0 ? 'text-sky-300 font-bold' : 'text-amber-400 font-bold'}>
+              {item.qty_lebih > 0 ? '+' : ''}{item.qty_lebih} pcs
+            </span>
+            <span className="text-[#9aa0a6]">
+              {' '}({item.qty_rencana} → {item.qty_kirim === 0 ? 'dikeluarkan' : item.qty_kirim})
+            </span>
           </div>
           {item.alasan_pengajuan && (
             <div className="text-[#9aa0a6]">Alasan: <span className="text-[#e8eaed]">{item.alasan_pengajuan}</span></div>
           )}
+          <div className="text-[10px] text-[#9aa0a6] pt-1 border-t border-[#2A2D31] mt-1">
+            Barang sudah terlanjur dikirim dengan angka ini — keputusan Anda dicatat sebagai
+            hasil pemeriksaan, tidak mengubah balik qty-nya.
+          </div>
         </div>
 
         <div className="mb-4">
@@ -139,13 +153,14 @@ export default function QtyLebihKirimSection({ initialPending }: Props) {
     <div className="space-y-3">
       <div className="flex items-center gap-2">
         <PackagePlus className="w-4 h-4 text-amber-400" />
-        <h2 className="text-sm font-bold text-[#e8eaed]">Qty Lebih Saat Kirim — Menunggu Approval</h2>
+        <h2 className="text-sm font-bold text-[#e8eaed]">Perubahan Qty Kirim — Menunggu Konfirmasi</h2>
         <span className="text-[10px] font-bold text-amber-400 bg-amber-900/30 border border-amber-700/40 px-2 py-0.5 rounded-full">
           {items.length}
         </span>
       </div>
       <p className="text-xs text-[#9aa0a6]">
-        Bundle-bundle ini dikirim dengan qty melebihi rencana awal (sudah tercatat di invoice) — tinggal dikonfirmasi Owner.
+        Semuanya <span className="text-[#e8eaed]">sudah berlaku dan tercatat di invoice</span> — pengiriman
+        tidak ditahan menunggu PIN. Yang tersisa hanya konfirmasi Owner sebagai catatan pemeriksaan.
       </p>
 
       <div className="space-y-2">
@@ -158,6 +173,13 @@ export default function QtyLebihKirimSection({ initialPending }: Props) {
               <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
               <div className="min-w-0">
                 <div className="flex items-center gap-2 flex-wrap text-xs">
+                  <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${
+                    item.sumber === 'edit_surat_jalan'
+                      ? 'bg-sky-900/40 text-sky-300 border border-sky-700/40'
+                      : 'bg-amber-900/40 text-amber-300 border border-amber-700/40'
+                  }`}>
+                    {item.sumber === 'edit_surat_jalan' ? 'Koreksi' : 'Qty Lebih'}
+                  </span>
                   <span className="font-mono text-[#e5c17b] font-bold">{item.barcode}</span>
                   <span className="text-[#9aa0a6]">·</span>
                   <span className="font-mono text-[10px] text-[#9aa0a6]">{item.no_po}</span>
@@ -165,8 +187,25 @@ export default function QtyLebihKirimSection({ initialPending }: Props) {
                   <span className="text-[#9aa0a6]">{item.warna} / {item.size}</span>
                 </div>
                 <div className="text-[10px] text-[#9aa0a6] mt-0.5">
-                  {item.klien_nama} · Rencana <span className="text-[#e8eaed] font-semibold">{item.qty_rencana}</span> pcs → Kirim{' '}
-                  <span className="text-amber-400 font-bold">{item.qty_kirim}</span> pcs
+                  {item.klien_nama}
+                  {item.nomor_sj && <> · <span className="font-mono text-[#9aa0a6]">{item.nomor_sj}</span></>}
+                  {' · '}
+                  {item.sumber === 'edit_surat_jalan' ? 'Semula' : 'Rencana'}{' '}
+                  <span className="text-[#e8eaed] font-semibold">{item.qty_rencana}</span> pcs →{' '}
+                  {item.qty_kirim === 0 ? (
+                    <span className="text-red-400 font-bold">dikeluarkan</span>
+                  ) : (
+                    <>
+                      <span className={item.qty_lebih < 0 ? 'text-sky-300 font-bold' : 'text-amber-400 font-bold'}>
+                        {item.qty_kirim}
+                      </span> pcs
+                    </>
+                  )}
+                  {item.qty_lebih !== 0 && (
+                    <span className={item.qty_lebih < 0 ? 'text-sky-300' : 'text-amber-400'}>
+                      {' '}({item.qty_lebih > 0 ? '+' : ''}{item.qty_lebih})
+                    </span>
+                  )}
                   {item.alasan_pengajuan && <> · &quot;{item.alasan_pengajuan}&quot;</>}
                   {' · '}oleh {item.diajukan_oleh}
                 </div>

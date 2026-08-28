@@ -50,7 +50,6 @@ function ModalEditItem({
     () => Object.fromEntries(items.map(i => [i.surat_jalan_item_id, i.qty_kirim])),
   );
   const [alasan, setAlasan] = useState('');
-  const [pin, setPin] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Hanya item yang benar-benar berubah yang dikirim ke server.
@@ -68,8 +67,7 @@ function ModalEditItem({
     perubahan.length > 0 &&
     !adaMelebihi &&
     !semuaNol &&
-    alasan.trim().length > 0 &&
-    /^\d{4}$/.test(pin);
+    alasan.trim().length > 0;
 
   const handleSubmit = async () => {
     if (!bisaSimpan) return;
@@ -81,7 +79,6 @@ function ModalEditItem({
           surat_jalan_item_id: i.surat_jalan_item_id,
           qty_kirim: qty[i.surat_jalan_item_id],
         })),
-        pin,
         alasan,
       );
 
@@ -91,7 +88,7 @@ function ModalEditItem({
       ].filter(Boolean).join(', ');
 
       toast.success(
-        `${hasil.nomor_sj} diperbarui — ${bagian}. Tagihan jadi Rp${hasil.total_invoice.toLocaleString('id-ID')}`,
+        `${hasil.nomor_sj} diperbarui — ${bagian}. Tagihan jadi Rp${hasil.total_invoice.toLocaleString('id-ID')}. Menunggu konfirmasi Owner di halaman Validasi.`,
       );
       onClose();
       router.refresh();
@@ -207,34 +204,22 @@ function ModalEditItem({
             </p>
           )}
 
-          <div className="mb-3">
+          <div className="mb-5">
             <label className="block text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold mb-2">
-              Alasan perubahan
+              Alasan perubahan <span className="text-red-400">*</span>
             </label>
             <input
               type="text"
               value={alasan}
               onChange={e => setAlasan(e.target.value)}
-              placeholder="Contoh: salah ketik qty"
+              placeholder="Contoh: salah ketik qty, seharusnya 5"
               className="w-full bg-[#16181A] border border-[#2A2D31] rounded-lg px-3 py-2 text-sm text-[#e8eaed] placeholder-[#9aa0a6]/50 outline-none focus:border-[#e5c17b]"
             />
-          </div>
-
-          <div className="mb-5">
-            <label className="block text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold mb-2">
-              PIN Owner
-            </label>
-            <input
-              type="password"
-              inputMode="numeric"
-              maxLength={4}
-              value={pin}
-              onChange={e => setPin(e.target.value.replace(/\D/g, ''))}
-              placeholder="4 digit"
-              className="w-32 bg-[#16181A] border border-[#2A2D31] rounded-lg px-3 py-2 text-sm text-[#e8eaed] text-center tracking-[0.4em] placeholder-[#9aa0a6]/50 placeholder:tracking-normal outline-none focus:border-[#e5c17b]"
-            />
-            <p className="text-[10px] text-[#9aa0a6] mt-1.5">
-              Perubahan qty ikut mengubah nilai tagihan, jadi butuh PIN.
+            <p className="text-[10px] text-[#9aa0a6] mt-2 leading-relaxed">
+              Perubahan <span className="text-[#e8eaed]">langsung berlaku</span> — pengiriman tidak
+              perlu menunggu PIN. Setelah disimpan, perubahannya masuk ke halaman{' '}
+              <span className="text-[#e5c17b]">Validasi</span> untuk dikonfirmasi Owner. Alasan
+              inilah yang dibacanya, jadi tulis sejelas mungkin.
             </p>
           </div>
 
