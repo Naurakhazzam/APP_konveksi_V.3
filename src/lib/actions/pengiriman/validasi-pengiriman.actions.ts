@@ -77,6 +77,7 @@ export async function getSuratJalanSiapValidasi(): Promise<SuratJalanSiapValidas
         id,
         qty_kirim,
         qty_diterima,
+        urutan,
         bundle:bundle_id (
           id,
           barcode,
@@ -99,7 +100,11 @@ export async function getSuratJalanSiapValidasi(): Promise<SuratJalanSiapValidas
   if (error) throw new Error(`Gagal memuat SJ siap validasi: ${error.message}`);
 
   return (data ?? []).map((sj: any) => {
-    const items: SuratJalanItemValidasi[] = (sj.surat_jalan_item ?? []).map((it: any) => {
+    // Samakan urutannya dengan surat jalan yang dicetak, supaya petugas
+    // validasi mencocokkan baris demi baris tanpa perlu mencari-cari.
+    const items: SuratJalanItemValidasi[] = [...(sj.surat_jalan_item ?? [])]
+      .sort((a: any, b: any) => (a.urutan ?? 0) - (b.urutan ?? 0))
+      .map((it: any) => {
       const b = it.bundle;
       return {
         surat_jalan_item_id: it.id,

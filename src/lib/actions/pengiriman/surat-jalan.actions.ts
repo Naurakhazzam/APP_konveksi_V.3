@@ -219,6 +219,7 @@ export async function getSuratJalanDetail(id: string): Promise<SuratJalanDetail 
       klien:klien_id (nama, alamat),
       surat_jalan_item (
         qty_kirim,
+        urutan,
         bundle:bundle_id (
           id,
           barcode,
@@ -242,7 +243,11 @@ export async function getSuratJalanDetail(id: string): Promise<SuratJalanDetail 
     return null;
   }
 
-  const items = (data.surat_jalan_item || []).map((it: any) => {
+  // Tampilkan sesuai urutan pencentangan saat surat jalan dibuat. PostgREST
+  // tidak menjamin urutan baris anak, jadi diurutkan di sini.
+  const items = [...(data.surat_jalan_item || [])]
+    .sort((a: any, b: any) => (a.urutan ?? 0) - (b.urutan ?? 0))
+    .map((it: any) => {
     const b = it.bundle;
     return {
       bundle_id: b.id,

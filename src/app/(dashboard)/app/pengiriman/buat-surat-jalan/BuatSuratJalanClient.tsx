@@ -75,9 +75,18 @@ export default function BuatSuratJalanClient({ initialBundles }: { initialBundle
 
   // ─── Derived state ─────────────────────────────────────────────────────────
 
-  const selectedBundles = useMemo(() =>
-    bundles.filter(b => selectedIds.has(b.id)),
-  [bundles, selectedIds]);
+  // Urutan keranjang mengikuti URUTAN PENCENTANGAN, bukan urutan data dari
+  // server. Set di JavaScript menyimpan urutan penambahan, jadi cukup
+  // ditelusuri dari selectedIds — bukan dengan menyaring `bundles`, yang
+  // akan mengembalikan urutan asli daftar dan terasa acak bagi yang memilih.
+  // Bundle yang dilepas lalu dicentang lagi otomatis pindah ke urutan
+  // paling akhir, sesuai kapan ia terakhir dipilih.
+  const selectedBundles = useMemo(() => {
+    const perId = new Map(bundles.map(b => [b.id, b]));
+    return Array.from(selectedIds)
+      .map(id => perId.get(id))
+      .filter((b): b is BundleReadyToShip => b !== undefined);
+  }, [bundles, selectedIds]);
 
   const currentKlienId = selectedBundles.length > 0 ? selectedBundles[0].klien_id : null;
 
