@@ -4,6 +4,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { BundleReadyToShip, createSuratJalan } from '@/lib/actions/pengiriman/surat-jalan.actions';
+import { matchesBundleSearch, tokenizeSearch } from '@/lib/search/bundle-search';
 import CartPanel from './CartPanel';
 import { ChevronRight, ChevronDown, Search, X } from 'lucide-react';
 
@@ -80,18 +81,10 @@ export default function BuatSuratJalanClient({ initialBundles }: { initialBundle
 
   const currentKlienId = selectedBundles.length > 0 ? selectedBundles[0].klien_id : null;
 
-  const matchesSearch = (b: BundleReadyToShip, tokens: string[]) => {
-    if (tokens.length === 0) return true;
-    const haystack = [b.no_po, b.klien_nama, b.model_nama, b.warna, b.size, b.barcode]
-      .join(' ')
-      .toLowerCase();
-    return tokens.every(t => haystack.includes(t));
-  };
-
   const visibleBundles = useMemo(() => {
-    const tokens = searchQuery.toLowerCase().trim().split(/\s+/).filter(Boolean);
+    const tokens = tokenizeSearch(searchQuery);
     if (tokens.length === 0) return bundles;
-    return bundles.filter(b => matchesSearch(b, tokens));
+    return bundles.filter(b => matchesBundleSearch(b, tokens));
   }, [bundles, searchQuery]);
 
   // Select-all: hanya bundle dengan klien yang sama (constraint SJ), dan hanya
@@ -258,7 +251,7 @@ export default function BuatSuratJalanClient({ initialBundles }: { initialBundle
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Cari model, warna, size, no PO..."
+                  placeholder="Cari model, warna, size (2XL/XXL), no PO..."
                   className="w-full bg-[#16181A] border border-[#2A2D31] rounded-lg pl-8 pr-8 py-1.5 text-xs text-[#e8eaed] placeholder-[#9aa0a6]/50 focus:outline-none focus:border-[#e5c17b] transition-colors"
                 />
                 {searchQuery && (

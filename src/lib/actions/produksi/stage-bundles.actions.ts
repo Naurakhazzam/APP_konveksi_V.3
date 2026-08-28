@@ -3,22 +3,13 @@
 import { createClient } from '@/lib/supabase/server';
 import { getCurrentUserProfile } from '@/lib/auth/permissions';
 import { TAHAP_ORDER as STAGE_ORDER, type TahapKey } from '@/modules/produksi/constants/tahap';
+import { matchesBundleQuery } from '@/lib/search/bundle-search';
 
 const TENANT_ID = 'STX-001';
 
-// Cocokkan per-kata (bebas urutan): setiap kata di query harus ada di
-// salah satu field yang dicari (no_po, klien, model, warna, size, barcode).
-function matchesSearch(
-  item: { no_po: string; klien_nama: string; model_nama: string | null; warna: string; size: string; barcode: string },
-  search: string,
-): boolean {
-  const tokens = search.toLowerCase().trim().split(/\s+/).filter(Boolean);
-  if (tokens.length === 0) return true;
-  const haystack = [item.no_po, item.klien_nama, item.model_nama, item.warna, item.size, item.barcode]
-    .join(' ')
-    .toLowerCase();
-  return tokens.every(t => haystack.includes(t));
-}
+// Cocokkan per-kata (bebas urutan) ke no_po, klien, model, warna, size,
+// barcode. Logikanya dipakai bersama halaman lain — lihat lib/search.
+const matchesSearch = matchesBundleQuery;
 
 export interface AntrianBundleItem {
   id: string;
