@@ -4,25 +4,32 @@ import KroscekPekerjaanClient from './KroscekPekerjaanClient';
 
 export const metadata = { title: 'Kroscek Pekerjaan' };
 
-/** Rentang minggu berjalan, Senin sampai Minggu. */
-function mingguBerjalan() {
+/**
+ * Rentang satu siklus penggajian: SABTU sampai JUMAT.
+ *
+ * Bukan Senin–Minggu. Cutoff-nya mengikuti siklus gaji yang dipakai halaman
+ * Rekap Gaji, supaya angka di sini bisa langsung dicocokkan dengan
+ * perhitungan upah — kalau batas minggunya beda, jumlah pcs-nya ikut beda
+ * dan kroscek jadi tidak ada gunanya.
+ */
+function siklusGajiBerjalan() {
   const hariIni = new Date();
-  const hari = hariIni.getDay();            // 0 = Minggu
-  const mundur = hari === 0 ? 6 : hari - 1; // Senin sebagai awal minggu
+  const hari = hariIni.getDay();                 // 0 = Minggu, 6 = Sabtu
+  const mundur = hari === 6 ? 0 : hari + 1;      // Sabtu sebagai awal siklus
 
-  const senin = new Date(hariIni);
-  senin.setDate(hariIni.getDate() - mundur);
-  const minggu = new Date(senin);
-  minggu.setDate(senin.getDate() + 6);
+  const sabtu = new Date(hariIni);
+  sabtu.setDate(hariIni.getDate() - mundur);
+  const jumat = new Date(sabtu);
+  jumat.setDate(sabtu.getDate() + 6);
 
   const iso = (d: Date) =>
     `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
-  return { dari: iso(senin), sampai: iso(minggu) };
+  return { dari: iso(sabtu), sampai: iso(jumat) };
 }
 
 export default async function KroscekPekerjaanPage() {
-  const { dari, sampai } = mingguBerjalan();
+  const { dari, sampai } = siklusGajiBerjalan();
   const data = await getHasilKerjaPekerja(dari, sampai);
 
   return (

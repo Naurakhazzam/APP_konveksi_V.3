@@ -90,7 +90,7 @@ export default function KroscekPekerjaanClient({
               {tanggalPendek(periode.dari)} – {tanggalPanjang(periode.sampai)}
             </div>
             <div className="text-[10px] text-[#9aa0a6] mt-0.5">
-              {mingguIni ? 'Minggu berjalan' : 'Senin – Minggu'}
+              {mingguIni ? 'Siklus gaji berjalan' : 'Siklus gaji'} · Sabtu – Jumat
             </div>
           </div>
           <button

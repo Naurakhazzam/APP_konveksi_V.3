@@ -4,25 +4,28 @@ import OverviewPekerjaClient from './OverviewPekerjaClient';
 
 export const metadata = { title: 'Overview Pekerja' };
 
-/** Rentang minggu berjalan, Senin sampai Minggu. */
-function mingguBerjalan() {
+/**
+ * Rentang satu siklus penggajian: SABTU sampai JUMAT — sama seperti Rekap Gaji,
+ * supaya total di halaman ini bisa langsung dicocokkan dengan perhitungan upah.
+ */
+function siklusGajiBerjalan() {
   const hariIni = new Date();
-  const hari = hariIni.getDay();            // 0 = Minggu
-  const mundur = hari === 0 ? 6 : hari - 1; // Senin sebagai awal minggu
+  const hari = hariIni.getDay();                 // 0 = Minggu, 6 = Sabtu
+  const mundur = hari === 6 ? 0 : hari + 1;      // Sabtu sebagai awal siklus
 
-  const senin = new Date(hariIni);
-  senin.setDate(hariIni.getDate() - mundur);
-  const minggu = new Date(senin);
-  minggu.setDate(senin.getDate() + 6);
+  const sabtu = new Date(hariIni);
+  sabtu.setDate(hariIni.getDate() - mundur);
+  const jumat = new Date(sabtu);
+  jumat.setDate(sabtu.getDate() + 6);
 
   const iso = (d: Date) =>
     `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
-  return { dari: iso(senin), sampai: iso(minggu) };
+  return { dari: iso(sabtu), sampai: iso(jumat) };
 }
 
 export default async function OverviewPekerjaPage() {
-  const { dari, sampai } = mingguBerjalan();
+  const { dari, sampai } = siklusGajiBerjalan();
   const ringkasan = await getOverviewPekerja(dari, sampai);
 
   return (
