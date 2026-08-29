@@ -337,6 +337,7 @@ function ModalDetail({
                   <th className="px-4 py-3 text-left font-bold">PO</th>
                   <th className="px-4 py-3 text-left font-bold">Tahap</th>
                   <th className="px-4 py-3 text-center font-bold">Qty</th>
+                  <th className="px-4 py-3 text-right font-bold">Harga/Pcs</th>
                   <th className="px-4 py-3 text-right font-bold">Upah</th>
                   <th className="px-4 py-3 text-center font-bold">Bayar</th>
                 </tr>
@@ -366,6 +367,9 @@ function ModalDetail({
                     </td>
                     <td className="px-4 py-3 text-center text-xs font-semibold text-[#e8eaed]">
                       {r.qty}
+                    </td>
+                    <td className="px-4 py-3 text-right text-xs text-[#9aa0a6] whitespace-nowrap">
+                      {r.harga_per_pcs > 0 ? rupiah(r.harga_per_pcs) : '—'}
                     </td>
                     <td className="px-4 py-3 text-right text-xs font-semibold text-[#e5c17b] whitespace-nowrap">
                       {rupiah(r.upah)}

@@ -44,6 +44,7 @@ export interface DetailPekerjaan {
   status: 'belum_lunas' | 'lunas' | 'escrow' | 'cancelled';
   tanggal_bayar: string | null;
   upah: number;
+  harga_per_pcs: number;
   qty: number;
   barcode: string;
   no_po: string;
@@ -161,6 +162,7 @@ export async function getDetailPekerja(
     status: r.status,
     tanggal_bayar: r.tanggal_bayar ?? null,
     upah: Number(r.upah) || 0,
+    harga_per_pcs: Number(r.harga_per_pcs) || 0,
     qty: Number(r.qty) || 0,
     barcode: r.barcode,
     no_po: r.no_po,
