@@ -135,6 +135,78 @@ export async function lunaskanUpahPekerja(
   };
 }
 
+const TAHAP_LABEL_EXPORT: Record<string, string> = {
+  cutting: 'Cutting',
+  jahit: 'Jahit',
+  lubang_kancing: 'Lubang Kancing',
+  buang_benang: 'Buang Benang',
+  qc: 'QC',
+  steam: 'Steam',
+  packing: 'Packing',
+};
+
+/** Bersihkan satu nilai supaya aman dipakai di CSV berdelimiter ';'. */
+function selCsv(v: string | number): string {
+  return String(v).replace(/[;\n\r]/g, ' ').trim();
+}
+
+/**
+ * Tarik seluruh data Overview Pekerja pada satu periode jadi CSV — susunannya
+ * mengikuti tampilan di layar: ringkasan per pekerja diikuti rincian
+ * pekerjaannya, pekerja demi pekerja, urut sama seperti kartu di halaman.
+ */
+export async function getOverviewPekerjaExportCSV(
+  dari: string,
+  sampai: string,
+): Promise<string> {
+  const profile = await getCurrentUserProfile();
+  if (!profile) throw new Error('Unauthorized');
+
+  const ringkasan = await getOverviewPekerja(dari, sampai);
+
+  const baris: string[] = [
+    `Overview Pekerja;${dari} s.d. ${sampai}`,
+    '',
+  ];
+
+  for (const p of ringkasan) {
+    const rincian = await getDetailPekerja(p.karyawan_id, dari, sampai);
+
+    baris.push(
+      `Nama;${selCsv(p.nama)}`,
+      `Jabatan;${selCsv(p.jabatan)}`,
+      `Total Dikerjakan (pcs);${p.total_pcs}`,
+      `Perlu Dibayar;${p.total_upah}`,
+      `Jumlah Pekerjaan;${p.jumlah_pekerjaan}`,
+      `Belum Dibayar;${p.jml_belum_dibayar}`,
+      `Sedang Dikerjakan;${p.jml_sedang_dikerjakan}`,
+      '',
+      'Tanggal;Artikel;Warna;Size;PO;Klien;Tahap;Qty;Harga/Pcs;Upah;Status',
+    );
+
+    for (const r of rincian) {
+      const status = r.keadaan === 'sedang_dikerjakan' ? 'Sedang Dikerjakan' : 'Perlu Dibayar';
+      baris.push([
+        r.tanggal,
+        selCsv(r.model_nama),
+        selCsv(r.warna),
+        selCsv(r.size),
+        selCsv(r.no_po),
+        selCsv(r.klien_nama),
+        selCsv(TAHAP_LABEL_EXPORT[r.tahap] ?? r.tahap),
+        r.qty,
+        r.harga_per_pcs,
+        r.upah,
+        status,
+      ].join(';'));
+    }
+
+    baris.push('', '');
+  }
+
+  return baris.join('\n');
+}
+
 /** Rincian pekerjaan satu orang — isi jendela yang terbuka saat kartu diklik. */
 export async function getDetailPekerja(
   karyawan_id: string,

@@ -3,12 +3,13 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { toast } from 'sonner';
 import {
-  ChevronLeft, ChevronRight, Loader2, X, Users, Shirt, Wallet, AlertCircle, Scissors,
+  ChevronLeft, ChevronRight, Loader2, X, Users, Shirt, Wallet, AlertCircle, Scissors, Download,
 } from 'lucide-react';
 import {
   getOverviewPekerja,
   getDetailPekerja,
   lunaskanUpahPekerja,
+  getOverviewPekerjaExportCSV,
   type RingkasanPekerja,
   type DetailPekerjaan,
 } from '@/lib/actions/penggajian/overview-pekerja.actions';
@@ -52,8 +53,27 @@ export default function OverviewPekerjaClient({
   const [data, setData] = useState<RingkasanPekerja[]>(initialData);
   const [isLoading, setIsLoading] = useState(false);
   const [terpilih, setTerpilih] = useState<RingkasanPekerja | null>(null);
+  const [exportLoading, setExportLoading] = useState(false);
 
   const mingguIni = periode.dari === dariAwal;
+
+  const handleExport = async () => {
+    setExportLoading(true);
+    try {
+      const csv = await getOverviewPekerjaExportCSV(periode.dari, periode.sampai);
+      const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `overview-pekerja-${periode.dari}_${periode.sampai}.csv`;
+      document.body.appendChild(a); a.click();
+      document.body.removeChild(a); URL.revokeObjectURL(url);
+    } catch (e: any) {
+      toast.error(e.message ?? 'Gagal export data');
+    } finally {
+      setExportLoading(false);
+    }
+  };
 
   const muat = useCallback(async (p: { dari: string; sampai: string }) => {
     setIsLoading(true);
@@ -118,11 +138,23 @@ export default function OverviewPekerjaClient({
             </button>
           )}
         </div>
-        {isLoading && (
-          <span className="flex items-center gap-2 text-xs text-[#9aa0a6]">
-            <Loader2 className="w-3.5 h-3.5 animate-spin text-[#e5c17b]" /> Memuat...
-          </span>
-        )}
+        <div className="flex items-center gap-3">
+          {isLoading && (
+            <span className="flex items-center gap-2 text-xs text-[#9aa0a6]">
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-[#e5c17b]" /> Memuat...
+            </span>
+          )}
+          <button
+            onClick={handleExport}
+            disabled={exportLoading || data.length === 0}
+            className="flex items-center gap-2 h-9 px-3 rounded-lg border border-[#2A2D31] text-[#9aa0a6] text-xs font-medium hover:bg-[#2A2D31] hover:text-[#e8eaed] transition-colors disabled:opacity-40"
+          >
+            {exportLoading
+              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              : <Download className="w-3.5 h-3.5" />}
+            {exportLoading ? 'Mengunduh...' : 'Export CSV'}
+          </button>
+        </div>
       </div>
 
       {/* Ringkasan periode */}
