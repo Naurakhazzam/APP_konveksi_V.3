@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { toast } from 'sonner';
 import {
-  ChevronLeft, ChevronRight, Loader2, X, Users, Shirt, Wallet, AlertCircle, Scissors, Download,
+  ChevronLeft, ChevronRight, ChevronDown, Loader2, X, Users, Shirt, Wallet, AlertCircle, Scissors, Download,
 } from 'lucide-react';
 import {
   getOverviewPekerja,
@@ -25,6 +25,8 @@ const TAHAP_LABEL: Record<string, string> = {
   steam: 'Steam',
   packing: 'Packing',
 };
+
+const TAHAP_URUTAN = ['cutting', 'jahit', 'lubang_kancing', 'buang_benang', 'qc', 'steam', 'packing'];
 
 const tanggalPanjang = (iso: string) =>
   new Date(iso).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
@@ -289,6 +291,37 @@ function ModalDetail({
   const [isLoading, setIsLoading] = useState(true);
   const [konfirmasiLunas, setKonfirmasiLunas] = useState(false);
   const [sedangLunas, setSedangLunas] = useState(false);
+  const [tahapTerbuka, setTahapTerbuka] = useState<Set<string>>(new Set());
+
+  // Dikelompokkan per tahap supaya tidak jadi satu tabel panjang campur —
+  // terutama untuk upah finishing per-pengiriman yang bisa puluhan baris
+  // per tahap dalam satu periode.
+  const kelompok = useMemo(() => {
+    const map = new Map<string, DetailPekerjaan[]>();
+    for (const r of rincian) {
+      if (!map.has(r.tahap)) map.set(r.tahap, []);
+      map.get(r.tahap)!.push(r);
+    }
+    return TAHAP_URUTAN
+      .filter(t => map.has(t))
+      .map(t => {
+        const baris = map.get(t)!;
+        return {
+          tahap: t,
+          baris,
+          qty: baris.reduce((s, r) => s + r.qty, 0),
+          upah: baris.reduce((s, r) => s + r.upah, 0),
+        };
+      });
+  }, [rincian]);
+
+  const toggleTahap = (t: string) => {
+    setTahapTerbuka(prev => {
+      const next = new Set(prev);
+      if (next.has(t)) next.delete(t); else next.add(t);
+      return next;
+    });
+  };
 
   const prosesLunas = async () => {
     setSedangLunas(true);
@@ -349,7 +382,7 @@ function ModalDetail({
           </div>
         </div>
 
-        {/* Daftar pekerjaan */}
+        {/* Daftar pekerjaan, dikelompokkan per tahap */}
         <div className="overflow-y-auto flex-1">
           {isLoading ? (
             <div className="flex items-center justify-center gap-2 py-16 text-[#9aa0a6] text-sm">
@@ -361,66 +394,89 @@ function ModalDetail({
               Tidak ada rincian pekerjaan pada periode ini.
             </div>
           ) : (
-            <table className="w-full text-sm">
-              <thead className="bg-[#0D0E10] text-[10px] uppercase tracking-widest text-[#9aa0a6] sticky top-0">
-                <tr>
-                  <th className="px-4 py-3 text-left font-bold">Tanggal</th>
-                  <th className="px-4 py-3 text-left font-bold">Artikel</th>
-                  <th className="px-4 py-3 text-left font-bold">PO</th>
-                  <th className="px-4 py-3 text-left font-bold">Tahap</th>
-                  <th className="px-4 py-3 text-center font-bold">Qty</th>
-                  <th className="px-4 py-3 text-right font-bold">Harga/Pcs</th>
-                  <th className="px-4 py-3 text-right font-bold">Upah</th>
-                  <th className="px-4 py-3 text-center font-bold">Bayar</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#2A2D31]">
-                {rincian.map(r => (
-                  <tr key={r.id} className="hover:bg-[#1E2124] transition-colors">
-                    <td className="px-4 py-3 text-xs text-[#9aa0a6] whitespace-nowrap">
-                      {tanggalPendek(r.tanggal)}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="text-xs font-medium text-[#e8eaed]">{r.model_nama}</div>
-                      <div className="text-[10px] text-[#9aa0a6] mt-0.5">
-                        {r.warna} · {r.size}
-                        <span className="mx-1.5 text-[#2A2D31]">|</span>
-                        <span className="font-mono">{r.barcode}</span>
+            <div className="divide-y divide-[#2A2D31]">
+              {kelompok.map(g => {
+                const terbuka = tahapTerbuka.has(g.tahap);
+                return (
+                  <div key={g.tahap}>
+                    <button
+                      onClick={() => toggleTahap(g.tahap)}
+                      className="w-full flex items-center justify-between gap-3 px-6 py-3 hover:bg-[#1E2124] transition-colors text-left"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <ChevronDown className={`w-4 h-4 text-[#9aa0a6] shrink-0 transition-transform ${terbuka ? 'rotate-180' : ''}`} />
+                        <span className="text-sm font-bold text-[#e8eaed]">
+                          {TAHAP_LABEL[g.tahap] ?? g.tahap}
+                        </span>
+                        <span className="text-[10px] text-[#9aa0a6]">
+                          {g.baris.length} item · {g.qty.toLocaleString('id-ID')} pcs
+                        </span>
                       </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="font-mono text-xs text-[#e5c17b]">{r.no_po}</div>
-                      <div className="text-[10px] text-[#9aa0a6] mt-0.5">{r.klien_nama}</div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="text-[10px] text-[#9aa0a6] bg-[#2A2D31]/60 px-2 py-0.5 rounded">
-                        {TAHAP_LABEL[r.tahap] ?? r.tahap}
+                      <span className="text-sm font-bold text-[#e5c17b] shrink-0">
+                        {rupiah(g.upah)}
                       </span>
-                    </td>
-                    <td className="px-4 py-3 text-center text-xs font-semibold text-[#e8eaed]">
-                      {r.qty}
-                    </td>
-                    <td className="px-4 py-3 text-right text-xs text-[#9aa0a6] whitespace-nowrap">
-                      {r.harga_per_pcs > 0 ? rupiah(r.harga_per_pcs) : '—'}
-                    </td>
-                    <td className="px-4 py-3 text-right text-xs font-semibold text-[#e5c17b] whitespace-nowrap">
-                      {rupiah(r.upah)}
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      {r.keadaan === 'sedang_dikerjakan' ? (
-                        <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-full bg-sky-500/10 text-sky-300 border border-sky-500/20 whitespace-nowrap">
-                          Sedang dikerjakan
-                        </span>
-                      ) : (
-                        <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-full bg-orange-500/10 text-orange-400 border border-orange-500/20 whitespace-nowrap">
-                          Perlu dibayar
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    </button>
+
+                    {terbuka && (
+                      <table className="w-full text-sm">
+                        <thead className="bg-[#0D0E10] text-[10px] uppercase tracking-widest text-[#9aa0a6]">
+                          <tr>
+                            <th className="px-4 py-2 text-left font-bold">Tanggal</th>
+                            <th className="px-4 py-2 text-left font-bold">Artikel</th>
+                            <th className="px-4 py-2 text-left font-bold">PO</th>
+                            <th className="px-4 py-2 text-center font-bold">Qty</th>
+                            <th className="px-4 py-2 text-right font-bold">Harga/Pcs</th>
+                            <th className="px-4 py-2 text-right font-bold">Upah</th>
+                            <th className="px-4 py-2 text-center font-bold">Bayar</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[#2A2D31]/60">
+                          {g.baris.map(r => (
+                            <tr key={r.id} className="hover:bg-[#1E2124] transition-colors">
+                              <td className="px-4 py-2.5 text-xs text-[#9aa0a6] whitespace-nowrap">
+                                {tanggalPendek(r.tanggal)}
+                              </td>
+                              <td className="px-4 py-2.5">
+                                <div className="text-xs font-medium text-[#e8eaed]">{r.model_nama}</div>
+                                <div className="text-[10px] text-[#9aa0a6] mt-0.5">
+                                  {r.warna} · {r.size}
+                                  <span className="mx-1.5 text-[#2A2D31]">|</span>
+                                  <span className="font-mono">{r.barcode}</span>
+                                </div>
+                              </td>
+                              <td className="px-4 py-2.5">
+                                <div className="font-mono text-xs text-[#e5c17b]">{r.no_po}</div>
+                                <div className="text-[10px] text-[#9aa0a6] mt-0.5">{r.klien_nama}</div>
+                              </td>
+                              <td className="px-4 py-2.5 text-center text-xs font-semibold text-[#e8eaed]">
+                                {r.qty}
+                              </td>
+                              <td className="px-4 py-2.5 text-right text-xs text-[#9aa0a6] whitespace-nowrap">
+                                {r.harga_per_pcs > 0 ? rupiah(r.harga_per_pcs) : '—'}
+                              </td>
+                              <td className="px-4 py-2.5 text-right text-xs font-semibold text-[#e5c17b] whitespace-nowrap">
+                                {rupiah(r.upah)}
+                              </td>
+                              <td className="px-4 py-2.5 text-center">
+                                {r.keadaan === 'sedang_dikerjakan' ? (
+                                  <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-full bg-sky-500/10 text-sky-300 border border-sky-500/20 whitespace-nowrap">
+                                    Sedang dikerjakan
+                                  </span>
+                                ) : (
+                                  <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-full bg-orange-500/10 text-orange-400 border border-orange-500/20 whitespace-nowrap">
+                                    Perlu dibayar
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           )}
         </div>
 

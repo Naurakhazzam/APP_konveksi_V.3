@@ -145,6 +145,8 @@ const TAHAP_LABEL_EXPORT: Record<string, string> = {
   packing: 'Packing',
 };
 
+const TAHAP_URUTAN_EXPORT = ['cutting', 'jahit', 'lubang_kancing', 'buang_benang', 'qc', 'steam', 'packing'];
+
 /** Bersihkan satu nilai supaya aman dipakai di CSV berdelimiter ';'. */
 function selCsv(v: string | number): string {
   return String(v).replace(/[;\n\r]/g, ' ').trim();
@@ -152,8 +154,10 @@ function selCsv(v: string | number): string {
 
 /**
  * Tarik seluruh data Overview Pekerja pada satu periode jadi CSV — susunannya
- * mengikuti tampilan di layar: ringkasan per pekerja diikuti rincian
- * pekerjaannya, pekerja demi pekerja, urut sama seperti kartu di halaman.
+ * mengikuti tampilan di layar: ringkasan per pekerja, lalu rincian
+ * pekerjaannya DIKELOMPOKKAN PER TAHAP (bukan satu tabel tercampur semua
+ * tahap) — supaya rincian upah finishing per-pengiriman yang bisa puluhan
+ * baris per tahap tetap mudah dibaca.
  */
 export async function getOverviewPekerjaExportCSV(
   dari: string,
@@ -181,27 +185,46 @@ export async function getOverviewPekerjaExportCSV(
       `Belum Dibayar;${p.jml_belum_dibayar}`,
       `Sedang Dikerjakan;${p.jml_sedang_dikerjakan}`,
       '',
-      'Tanggal;Artikel;Warna;Size;PO;Klien;Tahap;Qty;Harga/Pcs;Upah;Status',
     );
 
+    const perTahap = new Map<string, DetailPekerjaan[]>();
     for (const r of rincian) {
-      const status = r.keadaan === 'sedang_dikerjakan' ? 'Sedang Dikerjakan' : 'Perlu Dibayar';
-      baris.push([
-        r.tanggal,
-        selCsv(r.model_nama),
-        selCsv(r.warna),
-        selCsv(r.size),
-        selCsv(r.no_po),
-        selCsv(r.klien_nama),
-        selCsv(TAHAP_LABEL_EXPORT[r.tahap] ?? r.tahap),
-        r.qty,
-        r.harga_per_pcs,
-        r.upah,
-        status,
-      ].join(';'));
+      if (!perTahap.has(r.tahap)) perTahap.set(r.tahap, []);
+      perTahap.get(r.tahap)!.push(r);
     }
 
-    baris.push('', '');
+    for (const tahap of TAHAP_URUTAN_EXPORT) {
+      const grup = perTahap.get(tahap);
+      if (!grup || grup.length === 0) continue;
+
+      const qtyTahap = grup.reduce((s, r) => s + r.qty, 0);
+      const upahTahap = grup.reduce((s, r) => s + r.upah, 0);
+
+      baris.push(
+        `${selCsv(TAHAP_LABEL_EXPORT[tahap] ?? tahap)};${grup.length} item;${qtyTahap} pcs;${upahTahap}`,
+        'Tanggal;Artikel;Warna;Size;PO;Klien;Qty;Harga/Pcs;Upah;Status',
+      );
+
+      for (const r of grup) {
+        const status = r.keadaan === 'sedang_dikerjakan' ? 'Sedang Dikerjakan' : 'Perlu Dibayar';
+        baris.push([
+          r.tanggal,
+          selCsv(r.model_nama),
+          selCsv(r.warna),
+          selCsv(r.size),
+          selCsv(r.no_po),
+          selCsv(r.klien_nama),
+          r.qty,
+          r.harga_per_pcs,
+          r.upah,
+          status,
+        ].join(';'));
+      }
+
+      baris.push('');
+    }
+
+    baris.push('');
   }
 
   return baris.join('\n');
