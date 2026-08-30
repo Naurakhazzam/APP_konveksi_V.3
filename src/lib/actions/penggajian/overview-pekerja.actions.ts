@@ -230,6 +230,76 @@ export async function getOverviewPekerjaExportCSV(
   return baris.join('\n');
 }
 
+/**
+ * Tarik data Overview Pekerja jadi CSV untuk kepentingan kantor — sumbernya
+ * SAMA dengan getOverviewPekerjaExportCSV (hanya yang belum lunas atau
+ * sedang dikerjakan, pekerja yang sudah lunas semua tidak ikut), tapi
+ * disusun ulang per TAHAP (bukan per pekerja) dan TANPA kolom nama
+ * karyawan — untuk melihat total ongkos per tahap produksi minggu itu
+ * tanpa perlu menampilkan siapa mengerjakan apa.
+ */
+export async function getExportKantorCSV(
+  dari: string,
+  sampai: string,
+): Promise<string> {
+  const profile = await getCurrentUserProfile();
+  if (!profile) throw new Error('Unauthorized');
+
+  const ringkasan = await getOverviewPekerja(dari, sampai);
+
+  const semuaRincian: DetailPekerjaan[] = [];
+  for (const p of ringkasan) {
+    const rincian = await getDetailPekerja(p.karyawan_id, dari, sampai);
+    semuaRincian.push(...rincian);
+  }
+
+  const perTahap = new Map<string, DetailPekerjaan[]>();
+  for (const r of semuaRincian) {
+    if (!perTahap.has(r.tahap)) perTahap.set(r.tahap, []);
+    perTahap.get(r.tahap)!.push(r);
+  }
+
+  const baris: string[] = [
+    `Export Kantor;${dari} s.d. ${sampai}`,
+    '',
+  ];
+
+  for (const tahap of TAHAP_URUTAN_EXPORT) {
+    const grup = perTahap.get(tahap);
+    if (!grup || grup.length === 0) continue;
+
+    const qtyTahap = grup.reduce((s, r) => s + r.qty, 0);
+    const upahTahap = grup.reduce((s, r) => s + r.upah, 0);
+
+    grup.sort((a, b) => a.tanggal.localeCompare(b.tanggal) || a.no_po.localeCompare(b.no_po));
+
+    baris.push(
+      `${selCsv(TAHAP_LABEL_EXPORT[tahap] ?? tahap)};${grup.length} item;${qtyTahap} pcs;${upahTahap}`,
+      'Tanggal;Artikel;Warna;Size;PO;Klien;Qty;Harga/Pcs;Upah;Status',
+    );
+
+    for (const r of grup) {
+      const status = r.keadaan === 'sedang_dikerjakan' ? 'Sedang Dikerjakan' : 'Perlu Dibayar';
+      baris.push([
+        r.tanggal,
+        selCsv(r.model_nama),
+        selCsv(r.warna),
+        selCsv(r.size),
+        selCsv(r.no_po),
+        selCsv(r.klien_nama),
+        r.qty,
+        r.harga_per_pcs,
+        r.upah,
+        status,
+      ].join(';'));
+    }
+
+    baris.push('');
+  }
+
+  return baris.join('\n');
+}
+
 /** Rincian pekerjaan satu orang — isi jendela yang terbuka saat kartu diklik. */
 export async function getDetailPekerja(
   karyawan_id: string,

@@ -10,6 +10,7 @@ import {
   getDetailPekerja,
   lunaskanUpahPekerja,
   getOverviewPekerjaExportCSV,
+  getExportKantorCSV,
   type RingkasanPekerja,
   type DetailPekerjaan,
 } from '@/lib/actions/penggajian/overview-pekerja.actions';
@@ -56,24 +57,41 @@ export default function OverviewPekerjaClient({
   const [isLoading, setIsLoading] = useState(false);
   const [terpilih, setTerpilih] = useState<RingkasanPekerja | null>(null);
   const [exportLoading, setExportLoading] = useState(false);
+  const [exportKantorLoading, setExportKantorLoading] = useState(false);
 
   const mingguIni = periode.dari === dariAwal;
+
+  const unduhCsv = (csv: string, namaFile: string) => {
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = namaFile;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a); URL.revokeObjectURL(url);
+  };
 
   const handleExport = async () => {
     setExportLoading(true);
     try {
       const csv = await getOverviewPekerjaExportCSV(periode.dari, periode.sampai);
-      const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `overview-pekerja-${periode.dari}_${periode.sampai}.csv`;
-      document.body.appendChild(a); a.click();
-      document.body.removeChild(a); URL.revokeObjectURL(url);
+      unduhCsv(csv, `overview-pekerja-${periode.dari}_${periode.sampai}.csv`);
     } catch (e: any) {
       toast.error(e.message ?? 'Gagal export data');
     } finally {
       setExportLoading(false);
+    }
+  };
+
+  const handleExportKantor = async () => {
+    setExportKantorLoading(true);
+    try {
+      const csv = await getExportKantorCSV(periode.dari, periode.sampai);
+      unduhCsv(csv, `export-kantor-${periode.dari}_${periode.sampai}.csv`);
+    } catch (e: any) {
+      toast.error(e.message ?? 'Gagal export data');
+    } finally {
+      setExportKantorLoading(false);
     }
   };
 
@@ -155,6 +173,17 @@ export default function OverviewPekerjaClient({
               ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
               : <Download className="w-3.5 h-3.5" />}
             {exportLoading ? 'Mengunduh...' : 'Export CSV'}
+          </button>
+          <button
+            onClick={handleExportKantor}
+            disabled={exportKantorLoading || data.length === 0}
+            title="Rincian per tahap produksi, tanpa nama karyawan"
+            className="flex items-center gap-2 h-9 px-3 rounded-lg border border-[#2A2D31] text-[#9aa0a6] text-xs font-medium hover:bg-[#2A2D31] hover:text-[#e8eaed] transition-colors disabled:opacity-40"
+          >
+            {exportKantorLoading
+              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              : <Download className="w-3.5 h-3.5" />}
+            {exportKantorLoading ? 'Mengunduh...' : 'Export Kantor'}
           </button>
         </div>
       </div>
