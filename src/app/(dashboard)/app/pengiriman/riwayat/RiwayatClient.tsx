@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { Loader2, Trash2, AlertTriangle } from 'lucide-react';
 import { batalSuratJalan, type SuratJalanRow } from '@/lib/actions/pengiriman/surat-jalan.actions';
+import { ErrorAlert } from '@/components/ui/ErrorAlert';
 
 export default function RiwayatClient({ initialData }: { initialData: SuratJalanRow[] }) {
   const router = useRouter();
@@ -120,12 +121,14 @@ function ModalBatalSuratJalan({
   const [pin, setPin] = useState('');
   const [alasan, setAlasan] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const bisaKirim = /^\d{4,6}$/.test(pin) && alasan.trim().length > 0;
 
   const handleSubmit = async () => {
     if (!bisaKirim) return;
     setIsSubmitting(true);
+    setErrorMessage(null);
     try {
       const hasil = await batalSuratJalan(sj.id, pin, alasan);
       toast.success(
@@ -133,7 +136,9 @@ function ModalBatalSuratJalan({
       );
       onSuccess();
     } catch (e: any) {
-      toast.error(e.message ?? 'Gagal membatalkan surat jalan');
+      // Ditampilkan di kotak yang TIDAK hilang sendiri (di bawah), bukan
+      // toast yang lewat begitu saja.
+      setErrorMessage(e.message ?? 'Gagal membatalkan surat jalan');
     } finally {
       setIsSubmitting(false);
     }
@@ -162,6 +167,12 @@ function ModalBatalSuratJalan({
               Nomor {sj.nomor_sj} tidak akan dipakai lagi — surat jalan berikutnya tetap lanjut ke nomor baru.
             </p>
           </div>
+
+          {errorMessage && (
+            <div className="mb-4">
+              <ErrorAlert pesan={errorMessage} onClose={() => setErrorMessage(null)} />
+            </div>
+          )}
 
           <div className="mb-3">
             <label className="block text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold mb-2">

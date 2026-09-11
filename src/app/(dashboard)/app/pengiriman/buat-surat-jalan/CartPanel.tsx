@@ -3,6 +3,7 @@
 import React, { useMemo } from 'react';
 import type { BundleReadyToShip } from '@/lib/actions/pengiriman/surat-jalan.actions';
 import { Package, X, AlertTriangle } from 'lucide-react';
+import { ErrorAlert } from '@/components/ui/ErrorAlert';
 
 interface CartPanelProps {
   selectedBundles: BundleReadyToShip[];
@@ -16,6 +17,9 @@ interface CartPanelProps {
   isSubmitting: boolean;
   alasanLebih: Record<string, string>;
   onUpdateAlasanLebih: (id: string, alasan: string) => void;
+  /** Pesan error dari percobaan finalisasi terakhir — tetap tampil sampai ditutup. */
+  errorMessage: string | null;
+  onDismissError: () => void;
 }
 
 interface CartGroup {
@@ -39,6 +43,8 @@ export default function CartPanel({
   isSubmitting,
   alasanLebih,
   onUpdateAlasanLebih,
+  errorMessage,
+  onDismissError,
 }: CartPanelProps) {
   if (selectedBundles.length === 0) return null;
 
@@ -210,6 +216,9 @@ export default function CartPanel({
           </div>
         ))}
       </div>
+
+      {/* Error dari percobaan finalisasi terakhir — tetap tampil sampai ditutup */}
+      {errorMessage && <ErrorAlert pesan={errorMessage} onClose={onDismissError} />}
 
       {/* Footer: total + finalisasi */}
       <div className="bg-[#0D0E10] p-3 rounded-lg border border-[#2A2D31] flex justify-between items-center gap-3">

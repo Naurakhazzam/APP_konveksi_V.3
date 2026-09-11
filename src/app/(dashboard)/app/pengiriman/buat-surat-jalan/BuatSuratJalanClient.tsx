@@ -66,6 +66,7 @@ export default function BuatSuratJalanClient({ initialBundles }: { initialBundle
   const [catatan, setCatatan] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [alasanLebih, setAlasanLebih] = useState<Record<string, string>>({});
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   // Pencarian per-kata (bebas urutan) ke No PO, Klien, Model, Warna, Size,
   // Barcode. Murni di sisi tampilan — semua bundle memang sudah dimuat
   // sekaligus di halaman ini, jadi tidak perlu bolak-balik ke server.
@@ -213,6 +214,7 @@ export default function BuatSuratJalanClient({ initialBundles }: { initialBundle
 
     try {
       setIsSubmitting(true);
+      setErrorMessage(null);
       const items = selectedBundles.map(b => ({
         bundle_id: b.id,
         qty_kirim: b.qty_kirim,
@@ -234,9 +236,10 @@ export default function BuatSuratJalanClient({ initialBundles }: { initialBundle
       router.refresh();
     } catch (error: any) {
       // Pesan error sekarang menyebutkan PO + nama barang + kode singkat di
-      // depan (mis. "[SUDAH TERKIRIM] PO-0083 — ...") — dibuat tahan lama
-      // (10 detik) dan bisa ditutup manual, supaya sempat terbaca lengkap.
-      toast.error(error.message || 'Gagal membuat surat jalan', { duration: 10000 });
+      // depan (mis. "[SUDAH TERKIRIM] PO-0083 — ..."). Ditampilkan di kotak
+      // yang TIDAK hilang sendiri (lihat CartPanel) supaya sempat terbaca
+      // lengkap — bukan toast yang lewat begitu saja.
+      setErrorMessage(error.message || 'Gagal membuat surat jalan');
     } finally {
       setIsSubmitting(false);
     }
@@ -498,6 +501,8 @@ export default function BuatSuratJalanClient({ initialBundles }: { initialBundle
           isSubmitting={isSubmitting}
           alasanLebih={alasanLebih}
           onUpdateAlasanLebih={handleUpdateAlasanLebih}
+          errorMessage={errorMessage}
+          onDismissError={() => setErrorMessage(null)}
         />
       </div>
     </div>

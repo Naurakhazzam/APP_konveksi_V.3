@@ -8,6 +8,7 @@ import {
   editSuratJalan,
   type SuratJalanDetailItem,
 } from '@/lib/actions/pengiriman/surat-jalan.actions';
+import { ErrorAlert } from '@/components/ui/ErrorAlert';
 
 export default function EditItemButton({
   sjId, items,
@@ -51,6 +52,7 @@ function ModalEditItem({
   );
   const [alasan, setAlasan] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Hanya item yang benar-benar berubah yang dikirim ke server.
   const perubahan = useMemo(
@@ -72,6 +74,7 @@ function ModalEditItem({
   const handleSubmit = async () => {
     if (!bisaSimpan) return;
     setIsSubmitting(true);
+    setErrorMessage(null);
     try {
       const hasil = await editSuratJalan(
         sjId,
@@ -94,9 +97,9 @@ function ModalEditItem({
       router.refresh();
     } catch (e: any) {
       // Pesan error sekarang menyebutkan PO + nama barang + kode singkat di
-      // depan (mis. "[QTY MELEBIHI SISA] PO-0077 — ...") — dibuat tahan
-      // lama supaya sempat terbaca lengkap.
-      toast.error(e.message ?? 'Gagal menyimpan perubahan', { duration: 10000 });
+      // depan (mis. "[QTY MELEBIHI SISA] PO-0077 — ..."). Ditampilkan di
+      // kotak yang TIDAK hilang sendiri (di bawah), bukan toast yang lewat.
+      setErrorMessage(e.message ?? 'Gagal menyimpan perubahan');
     } finally {
       setIsSubmitting(false);
     }
@@ -205,6 +208,12 @@ function ModalEditItem({
               Semua barang dikeluarkan — surat jalan harus menyisakan minimal satu barang.
               Kalau memang seluruhnya salah, batalkan saja surat jalannya dari halaman Riwayat.
             </p>
+          )}
+
+          {errorMessage && (
+            <div className="mb-4">
+              <ErrorAlert pesan={errorMessage} onClose={() => setErrorMessage(null)} />
+            </div>
           )}
 
           <div className="mb-5">
