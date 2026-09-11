@@ -10,8 +10,26 @@ const TENANT_ID = 'STX-001';
 async function resolveUserId(): Promise<string> {
   const supabase = await createClient();
   const { data: { user }, error } = await supabase.auth.getUser();
-  if (error || !user) throw new Error('Unauthorized: User session not found.');
+  if (error || !user) throw new Error('Sesi Anda sudah habis, silakan login ulang.');
   return user.id;
+}
+
+/**
+ * RAISE EXCEPTION di RPC surat jalan sudah berbahasa Indonesia dan jelas
+ * (mis. "Bundle ... sudah terkirim seluruhnya"), jadi diteruskan apa adanya
+ * supaya orang yang mengerjakan langsung tahu masalahnya. Tapi kalau yang
+ * bocor adalah error teknis mentah dari Postgres (constraint, cast, dsb —
+ * biasanya karena sesi habis atau bug), gantikan dengan pesan umum yang
+ * masih bisa dipahami, bukan istilah database.
+ */
+function terjemahkanErrorSuratJalan(pesan: string | undefined): string {
+  if (!pesan) return 'Gagal membuat surat jalan';
+  const teknis = /null value|violates|duplicate key|syntax error|does not exist|invalid input syntax|constraint/i;
+  if (teknis.test(pesan)) {
+    console.error('Error teknis surat jalan (pesan asli):', pesan);
+    return 'Terjadi kesalahan sistem saat memproses surat jalan. Coba lagi, atau hubungi admin jika masih gagal.';
+  }
+  return pesan;
 }
 
 export interface BundleReadyToShip {
@@ -145,6 +163,10 @@ export async function createSuratJalan(input: {
   catatan: string;
   bundles: { bundle_id: string; qty_kirim: number; alasan_lebih?: string }[];
 }): Promise<string> {
+  await resolveUserId(); // Pastikan sesi masih aktif dulu — kalau tidak, RPC di
+                          // bawah akan gagal dengan error teknis mentah dari
+                          // database (auth.uid() null), bukan pesan yang jelas.
+
   const supabase = await createClient();
 
   const { data, error } = await supabase.rpc('finalize_surat_jalan', {
@@ -157,7 +179,7 @@ export async function createSuratJalan(input: {
 
   if (error) {
     console.error('Error finalize_surat_jalan:', error);
-    throw new Error(error.message || 'Gagal membuat surat jalan');
+    throw new Error(terjemahkanErrorSuratJalan(error.message) || 'Gagal membuat surat jalan');
   }
 
   revalidatePath('/app/pengiriman/buat-surat-jalan');
@@ -478,7 +500,7 @@ export async function editSuratJalan(
     p_tenant_id: TENANT_ID,
   });
 
-  if (error) throw new Error(error.message || 'Gagal menyimpan perubahan surat jalan');
+  if (error) throw new Error(terjemahkanErrorSuratJalan(error.message) || 'Gagal menyimpan perubahan surat jalan');
 
   revalidatePath('/app/pengiriman/riwayat');
   revalidatePath(`/app/pengiriman/riwayat/${sj_id}`);
@@ -537,7 +559,7 @@ export async function batalSuratJalan(
     p_tenant_id: TENANT_ID,
   });
 
-  if (error) throw new Error(error.message || 'Gagal membatalkan surat jalan');
+  if (error) throw new Error(terjemahkanErrorSuratJalan(error.message) || 'Gagal membatalkan surat jalan');
 
   revalidatePath('/app/pengiriman/riwayat');
   revalidatePath('/app/pengiriman/buat-surat-jalan');

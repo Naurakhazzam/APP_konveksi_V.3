@@ -12,7 +12,7 @@ const REVALIDATE_PATH = '/app/pengiriman/validasi';
 async function resolveUserId(): Promise<string> {
   const supabase = await createClient();
   const { data: { user }, error } = await supabase.auth.getUser();
-  if (error || !user) throw new Error('Unauthorized: User session not found.');
+  if (error || !user) throw new Error('Sesi Anda sudah habis, silakan login ulang.');
   return user.id;
 }
 
