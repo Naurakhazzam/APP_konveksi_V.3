@@ -233,7 +233,10 @@ export default function BuatSuratJalanClient({ initialBundles }: { initialBundle
       setTanggal(new Date().toISOString().split('T')[0]);
       router.refresh();
     } catch (error: any) {
-      toast.error(error.message || 'Gagal membuat surat jalan');
+      // Pesan error sekarang menyebutkan PO + nama barang + kode singkat di
+      // depan (mis. "[SUDAH TERKIRIM] PO-0083 — ...") — dibuat tahan lama
+      // (10 detik) dan bisa ditutup manual, supaya sempat terbaca lengkap.
+      toast.error(error.message || 'Gagal membuat surat jalan', { duration: 10000 });
     } finally {
       setIsSubmitting(false);
     }

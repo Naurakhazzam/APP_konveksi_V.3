@@ -93,7 +93,10 @@ function ModalEditItem({
       onClose();
       router.refresh();
     } catch (e: any) {
-      toast.error(e.message ?? 'Gagal menyimpan perubahan');
+      // Pesan error sekarang menyebutkan PO + nama barang + kode singkat di
+      // depan (mis. "[QTY MELEBIHI SISA] PO-0077 — ...") — dibuat tahan
+      // lama supaya sempat terbaca lengkap.
+      toast.error(e.message ?? 'Gagal menyimpan perubahan', { duration: 10000 });
     } finally {
       setIsSubmitting(false);
     }
