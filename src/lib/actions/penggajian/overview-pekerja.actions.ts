@@ -135,6 +135,75 @@ export async function lunaskanUpahPekerja(
   };
 }
 
+/**
+ * Lunaskan beberapa entri upah spesifik (per artikel/baris), bukan seluruh
+ * upah pekerja. Dipakai untuk memperbaiki kesalahan pembayaran tanpa harus
+ * melunaskan semua pekerjaan pekerja itu sekaligus.
+ *
+ * Baris "sedang dikerjakan" (belum discan selesai) belum punya entri
+ * gaji_ledger, jadi tidak bisa dipilih di sini — id-nya bukan uuid asli.
+ */
+export async function lunaskanEntriUpah(entriIds: string[]): Promise<HasilPelunasan> {
+  const profile = await getCurrentUserProfile();
+  if (!profile) throw new Error('Unauthorized');
+  if (entriIds.length === 0) throw new Error('Tidak ada entri dipilih');
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.rpc('lunaskan_entri_upah', {
+    p_entri_ids: entriIds,
+    p_user_id: profile.id,
+    p_tenant_id: TENANT_ID,
+  });
+
+  if (error) throw new Error(error.message || 'Gagal melunaskan entri upah');
+
+  revalidatePath('/app/penggajian/overview-pekerja');
+  revalidatePath('/app/penggajian/rekap-gaji');
+  revalidatePath('/app/produksi/kroscek-pekerjaan');
+
+  const r = data as any;
+  return {
+    nama: r?.nama ?? '-',
+    jumlah_entri: Number(r?.jumlah_entri) || 0,
+    total: Number(r?.total) || 0,
+  };
+}
+
+/**
+ * Batalkan (bukan hapus fisik — gaji_ledger immutable) beberapa entri upah
+ * spesifik karena salah catat. Entri yang sudah 'lunas' pun boleh dibatalkan,
+ * karena kesalahan pembayaran kadang baru ketahuan setelah ditandai lunas.
+ */
+export async function hapusEntriUpah(entriIds: string[], alasan: string): Promise<HasilPelunasan> {
+  const profile = await getCurrentUserProfile();
+  if (!profile) throw new Error('Unauthorized');
+  if (entriIds.length === 0) throw new Error('Tidak ada entri dipilih');
+  if (!alasan.trim()) throw new Error('Alasan penghapusan wajib diisi');
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.rpc('hapus_entri_upah', {
+    p_entri_ids: entriIds,
+    p_alasan: alasan.trim(),
+    p_user_id: profile.id,
+    p_tenant_id: TENANT_ID,
+  });
+
+  if (error) throw new Error(error.message || 'Gagal menghapus entri upah');
+
+  revalidatePath('/app/penggajian/overview-pekerja');
+  revalidatePath('/app/penggajian/rekap-gaji');
+  revalidatePath('/app/produksi/kroscek-pekerjaan');
+
+  const r = data as any;
+  return {
+    nama: r?.nama ?? '-',
+    jumlah_entri: Number(r?.jumlah_entri) || 0,
+    total: Number(r?.total) || 0,
+  };
+}
+
 const TAHAP_LABEL_EXPORT: Record<string, string> = {
   cutting: 'Cutting',
   jahit: 'Jahit',

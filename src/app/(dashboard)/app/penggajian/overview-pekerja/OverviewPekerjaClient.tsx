@@ -4,11 +4,14 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { toast } from 'sonner';
 import {
   ChevronLeft, ChevronRight, ChevronDown, Loader2, X, Users, Shirt, Wallet, AlertCircle, Scissors, Download,
+  CheckSquare, Trash2,
 } from 'lucide-react';
 import {
   getOverviewPekerja,
   getDetailPekerja,
   lunaskanUpahPekerja,
+  lunaskanEntriUpah,
+  hapusEntriUpah,
   getOverviewPekerjaExportCSV,
   getExportKantorCSV,
   type RingkasanPekerja,
@@ -16,6 +19,12 @@ import {
 } from '@/lib/actions/penggajian/overview-pekerja.actions';
 
 const rupiah = (n: number) => 'Rp' + n.toLocaleString('id-ID');
+
+/** Baris yang id-nya uuid asli gaji_ledger — cuma ini yang bisa dilunaskan
+ *  atau dihapus satu-satu. Baris "sedang dikerjakan" belum punya entri
+ *  ledger (id-nya gabungan bundle_id-tahap), jadi tidak eligible. */
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const bisaDipilih = (r: DetailPekerjaan) => r.keadaan === 'belum_dibayar' && UUID_REGEX.test(r.id);
 
 const TAHAP_LABEL: Record<string, string> = {
   cutting: 'Cutting',
@@ -280,6 +289,7 @@ export default function OverviewPekerjaClient({
           periode={periode}
           onClose={() => setTerpilih(null)}
           onLunas={() => { setTerpilih(null); muat(periode); }}
+          onRefreshLatar={() => muat(periode)}
         />
       )}
     </div>
@@ -309,18 +319,25 @@ function KartuTotal({
 // ─── Jendela rincian ─────────────────────────────────────────────────────────
 
 function ModalDetail({
-  pekerja, periode, onClose, onLunas,
+  pekerja, periode, onClose, onLunas, onRefreshLatar,
 }: {
   pekerja: RingkasanPekerja;
   periode: { dari: string; sampai: string };
   onClose: () => void;
   onLunas: () => void;
+  /** Segarkan kartu ringkasan di belakang modal TANPA menutup modal ini. */
+  onRefreshLatar: () => void;
 }) {
   const [rincian, setRincian] = useState<DetailPekerjaan[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [konfirmasiLunas, setKonfirmasiLunas] = useState(false);
   const [sedangLunas, setSedangLunas] = useState(false);
   const [tahapTerbuka, setTahapTerbuka] = useState<Set<string>>(new Set());
+  const [barisTerpilih, setBarisTerpilih] = useState<Set<string>>(new Set());
+  const [konfirmasiLunasTerpilih, setKonfirmasiLunasTerpilih] = useState(false);
+  const [konfirmasiHapus, setKonfirmasiHapus] = useState(false);
+  const [alasanHapus, setAlasanHapus] = useState('');
+  const [sedangProses, setSedangProses] = useState(false);
 
   // Dikelompokkan per tahap supaya tidak jadi satu tabel panjang campur —
   // terutama untuk upah finishing per-pengiriman yang bisa puluhan baris
@@ -352,6 +369,28 @@ function ModalDetail({
     });
   };
 
+  const toggleBaris = (id: string) => {
+    setBarisTerpilih(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const { totalTerpilih, daftarTerpilih } = useMemo(() => {
+    const daftar = rincian.filter(r => barisTerpilih.has(r.id));
+    return { totalTerpilih: daftar.reduce((s, r) => s + r.upah, 0), daftarTerpilih: daftar };
+  }, [rincian, barisTerpilih]);
+
+  const muatUlang = () => {
+    setIsLoading(true);
+    setBarisTerpilih(new Set());
+    getDetailPekerja(pekerja.karyawan_id, periode.dari, periode.sampai)
+      .then(setRincian)
+      .catch(e => toast.error(e.message ?? 'Gagal memuat rincian'))
+      .finally(() => setIsLoading(false));
+  };
+
   const prosesLunas = async () => {
     setSedangLunas(true);
     try {
@@ -363,6 +402,41 @@ function ModalDetail({
     } catch (e: any) {
       toast.error(e.message ?? 'Gagal melunaskan upah');
       setSedangLunas(false);
+    }
+  };
+
+  const prosesLunasTerpilih = async () => {
+    setSedangProses(true);
+    try {
+      const hasil = await lunaskanEntriUpah(daftarTerpilih.map(r => r.id));
+      toast.success(`${hasil.jumlah_entri} entri dilunaskan — ${rupiah(hasil.total)}`);
+      setKonfirmasiLunasTerpilih(false);
+      muatUlang();
+      onRefreshLatar();
+    } catch (e: any) {
+      toast.error(e.message ?? 'Gagal melunaskan entri terpilih');
+    } finally {
+      setSedangProses(false);
+    }
+  };
+
+  const prosesHapusTerpilih = async () => {
+    if (!alasanHapus.trim()) {
+      toast.error('Alasan penghapusan wajib diisi');
+      return;
+    }
+    setSedangProses(true);
+    try {
+      const hasil = await hapusEntriUpah(daftarTerpilih.map(r => r.id), alasanHapus);
+      toast.success(`${hasil.jumlah_entri} entri dibatalkan — ${rupiah(hasil.total)}`);
+      setKonfirmasiHapus(false);
+      setAlasanHapus('');
+      muatUlang();
+      onRefreshLatar();
+    } catch (e: any) {
+      toast.error(e.message ?? 'Gagal menghapus entri terpilih');
+    } finally {
+      setSedangProses(false);
     }
   };
 
@@ -450,6 +524,7 @@ function ModalDetail({
                       <table className="w-full text-sm">
                         <thead className="bg-[#0D0E10] text-[10px] uppercase tracking-widest text-[#9aa0a6]">
                           <tr>
+                            <th className="px-4 py-2 text-left font-bold w-8"></th>
                             <th className="px-4 py-2 text-left font-bold">Tanggal</th>
                             <th className="px-4 py-2 text-left font-bold">Artikel</th>
                             <th className="px-4 py-2 text-left font-bold">PO</th>
@@ -461,7 +536,21 @@ function ModalDetail({
                         </thead>
                         <tbody className="divide-y divide-[#2A2D31]/60">
                           {g.baris.map(r => (
-                            <tr key={r.id} className="hover:bg-[#1E2124] transition-colors">
+                            <tr
+                              key={r.id}
+                              className={`hover:bg-[#1E2124] transition-colors ${barisTerpilih.has(r.id) ? 'bg-[#e5c17b]/5' : ''}`}
+                            >
+                              <td className="px-4 py-2.5">
+                                {bisaDipilih(r) && (
+                                  <input
+                                    type="checkbox"
+                                    checked={barisTerpilih.has(r.id)}
+                                    onChange={() => toggleBaris(r.id)}
+                                    className="w-3.5 h-3.5 rounded border-[#2A2D31] accent-[#e5c17b] cursor-pointer"
+                                    title="Pilih untuk lunaskan/hapus per baris"
+                                  />
+                                )}
+                              </td>
                               <td className="px-4 py-2.5 text-xs text-[#9aa0a6] whitespace-nowrap">
                                 {tanggalPendek(r.tanggal)}
                               </td>
@@ -508,6 +597,37 @@ function ModalDetail({
             </div>
           )}
         </div>
+
+        {barisTerpilih.size > 0 && (
+          <div className="px-6 py-2.5 border-t border-[#2A2D31] bg-[#16181A] flex items-center justify-between gap-3">
+            <span className="text-xs text-[#e8eaed]">
+              <span className="font-bold text-[#e5c17b]">{barisTerpilih.size}</span> baris dipilih
+              <span className="text-[#9aa0a6]"> · {rupiah(totalTerpilih)}</span>
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setBarisTerpilih(new Set())}
+                className="text-[10px] text-[#9aa0a6] hover:text-[#e8eaed] underline underline-offset-2"
+              >
+                Batal pilih
+              </button>
+              <button
+                onClick={() => setKonfirmasiLunasTerpilih(true)}
+                className="flex items-center gap-1.5 px-3 h-8 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-colors"
+              >
+                <CheckSquare className="w-3.5 h-3.5" />
+                Lunaskan Terpilih
+              </button>
+              <button
+                onClick={() => setKonfirmasiHapus(true)}
+                className="flex items-center gap-1.5 px-3 h-8 rounded-lg bg-red-600/90 hover:bg-red-500 text-white text-xs font-bold transition-colors"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Hapus Terpilih
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="px-6 py-3 border-t border-[#2A2D31] flex items-center justify-between gap-3">
           <span className="text-[10px] text-[#9aa0a6] flex items-center gap-1.5">
@@ -571,6 +691,83 @@ function ModalDetail({
                     ? <Loader2 className="w-4 h-4 animate-spin" />
                     : <Wallet className="w-4 h-4" />}
                   Ya, Lunaskan
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {konfirmasiLunasTerpilih && (
+          <div className="absolute inset-0 bg-black/80 flex items-center justify-center p-4 rounded-xl">
+            <div className="bg-[#1A1D1F] border border-[#2A2D31] rounded-xl w-full max-w-sm p-5">
+              <h4 className="text-base font-bold text-[#e8eaed] mb-2">
+                Lunaskan {barisTerpilih.size} baris terpilih?
+              </h4>
+              <div className="bg-[#16181A] border border-[#2A2D31] rounded-lg px-4 py-3 text-sm text-[#e8eaed] mb-4">
+                <span className="font-bold text-emerald-400">{rupiah(totalTerpilih)}</span>{' '}
+                akan ditandai sudah dibayar untuk baris yang dipilih saja.
+              </div>
+              <div className="flex items-center justify-end gap-3">
+                <button
+                  onClick={() => setKonfirmasiLunasTerpilih(false)}
+                  disabled={sedangProses}
+                  className="px-4 h-9 rounded-lg border border-[#2A2D31] text-[#e8eaed] text-sm hover:bg-[#2A2D31] transition-colors disabled:opacity-50"
+                >
+                  Batal
+                </button>
+                <button
+                  onClick={prosesLunasTerpilih}
+                  disabled={sedangProses}
+                  className="flex items-center gap-2 px-4 h-9 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold transition-colors disabled:opacity-50"
+                >
+                  {sedangProses
+                    ? <Loader2 className="w-4 h-4 animate-spin" />
+                    : <CheckSquare className="w-4 h-4" />}
+                  Ya, Lunaskan
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {konfirmasiHapus && (
+          <div className="absolute inset-0 bg-black/80 flex items-center justify-center p-4 rounded-xl">
+            <div className="bg-[#1A1D1F] border border-[#2A2D31] rounded-xl w-full max-w-sm p-5">
+              <h4 className="text-base font-bold text-[#e8eaed] mb-2">
+                Hapus {barisTerpilih.size} baris terpilih?
+              </h4>
+              <div className="bg-[#16181A] border border-[#2A2D31] rounded-lg px-4 py-3 text-sm text-[#e8eaed] mb-4">
+                <span className="font-bold text-red-400">{rupiah(totalTerpilih)}</span>{' '}
+                akan dibatalkan karena kesalahan pembayaran. Baris ini tidak akan dihitung lagi
+                di manapun, tapi jejaknya tetap tersimpan di log audit.
+              </div>
+              <label className="block text-[10px] uppercase tracking-wider text-[#9aa0a6] mb-1.5">
+                Alasan penghapusan <span className="text-red-400">*</span>
+              </label>
+              <textarea
+                value={alasanHapus}
+                onChange={e => setAlasanHapus(e.target.value)}
+                placeholder="Contoh: salah artikel, double input, salah qty..."
+                rows={2}
+                className="w-full bg-[#16181A] border border-[#2A2D31] rounded-lg px-3 py-2 text-sm text-[#e8eaed] placeholder:text-[#9aa0a6]/50 mb-4 focus:outline-none focus:border-[#e5c17b]/50 resize-none"
+              />
+              <div className="flex items-center justify-end gap-3">
+                <button
+                  onClick={() => { setKonfirmasiHapus(false); setAlasanHapus(''); }}
+                  disabled={sedangProses}
+                  className="px-4 h-9 rounded-lg border border-[#2A2D31] text-[#e8eaed] text-sm hover:bg-[#2A2D31] transition-colors disabled:opacity-50"
+                >
+                  Batal
+                </button>
+                <button
+                  onClick={prosesHapusTerpilih}
+                  disabled={sedangProses || !alasanHapus.trim()}
+                  className="flex items-center gap-2 px-4 h-9 rounded-lg bg-red-600/90 hover:bg-red-500 text-white text-sm font-bold transition-colors disabled:opacity-50"
+                >
+                  {sedangProses
+                    ? <Loader2 className="w-4 h-4 animate-spin" />
+                    : <Trash2 className="w-4 h-4" />}
+                  Ya, Hapus
                 </button>
               </div>
             </div>
