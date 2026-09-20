@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { toast } from 'sonner';
 import {
   ChevronLeft, ChevronRight, ChevronDown, Loader2, X, Users, Shirt, Wallet, AlertCircle, Scissors, Download,
-  CheckSquare, Trash2,
+  CheckSquare, Trash2, History, CalendarCheck,
 } from 'lucide-react';
 import {
   getOverviewPekerja,
@@ -14,8 +14,11 @@ import {
   hapusEntriUpah,
   getOverviewPekerjaExportCSV,
   getExportKantorCSV,
+  getRiwayatPelunasan,
+  getDetailRiwayatPekerja,
   type RingkasanPekerja,
   type DetailPekerjaan,
+  type RingkasanRiwayat,
 } from '@/lib/actions/penggajian/overview-pekerja.actions';
 
 const rupiah = (n: number) => 'Rp' + n.toLocaleString('id-ID');
@@ -68,6 +71,12 @@ export default function OverviewPekerjaClient({
   const [exportLoading, setExportLoading] = useState(false);
   const [exportKantorLoading, setExportKantorLoading] = useState(false);
 
+  const [tab, setTab] = useState<'terbuka' | 'riwayat'>('terbuka');
+  const [riwayat, setRiwayat] = useState<RingkasanRiwayat[]>([]);
+  const [riwayatLoading, setRiwayatLoading] = useState(false);
+  const [riwayatTerpilih, setRiwayatTerpilih] = useState<RingkasanRiwayat | null>(null);
+  const [riwayatDimuat, setRiwayatDimuat] = useState(false);
+
   const mingguIni = periode.dari === dariAwal;
 
   const unduhCsv = (csv: string, namaFile: string) => {
@@ -115,10 +124,27 @@ export default function OverviewPekerjaClient({
     }
   }, []);
 
+  const muatRiwayat = useCallback(async (p: { dari: string; sampai: string }) => {
+    setRiwayatLoading(true);
+    try {
+      setRiwayat(await getRiwayatPelunasan(p.dari, p.sampai));
+      setRiwayatDimuat(true);
+    } catch (e: any) {
+      toast.error(e.message ?? 'Gagal memuat riwayat pelunasan');
+    } finally {
+      setRiwayatLoading(false);
+    }
+  }, []);
+
   const pindah = (n: number) => {
     const p = geserMinggu(periode.dari, periode.sampai, n);
     setPeriode(p);
-    muat(p);
+    if (tab === 'riwayat') muatRiwayat(p); else muat(p);
+  };
+
+  const gantiTab = (t: 'terbuka' | 'riwayat') => {
+    setTab(t);
+    if (t === 'riwayat' && !riwayatDimuat) muatRiwayat(periode);
   };
 
   const total = useMemo(() => ({
@@ -129,14 +155,47 @@ export default function OverviewPekerjaClient({
     sedangDikerjakan: data.reduce((s, d) => s + d.jml_sedang_dikerjakan, 0),
   }), [data]);
 
+  const totalRiwayat = useMemo(() => ({
+    pekerja: riwayat.length,
+    pcs: riwayat.reduce((s, d) => s + d.total_pcs, 0),
+    upah: riwayat.reduce((s, d) => s + d.total_upah, 0),
+    entri: riwayat.reduce((s, d) => s + d.jumlah_entri, 0),
+  }), [riwayat]);
+
   return (
     <div className="space-y-5">
+      {/* Tab: perlu dibayar vs sudah lunas */}
+      <div className="flex items-center gap-1 border-b border-[#2A2D31]">
+        <button
+          onClick={() => gantiTab('terbuka')}
+          className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold border-b-2 -mb-px transition-colors ${
+            tab === 'terbuka'
+              ? 'border-[#e5c17b] text-[#e5c17b]'
+              : 'border-transparent text-[#9aa0a6] hover:text-[#e8eaed]'
+          }`}
+        >
+          <AlertCircle className="w-3.5 h-3.5" />
+          Perlu Dibayar
+        </button>
+        <button
+          onClick={() => gantiTab('riwayat')}
+          className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold border-b-2 -mb-px transition-colors ${
+            tab === 'riwayat'
+              ? 'border-[#e5c17b] text-[#e5c17b]'
+              : 'border-transparent text-[#9aa0a6] hover:text-[#e8eaed]'
+          }`}
+        >
+          <History className="w-3.5 h-3.5" />
+          Riwayat Lunas
+        </button>
+      </div>
+
       {/* Navigasi minggu */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <button
             onClick={() => pindah(-1)}
-            disabled={isLoading}
+            disabled={tab === 'riwayat' ? riwayatLoading : isLoading}
             className="p-2 rounded-lg border border-[#2A2D31] text-[#9aa0a6] hover:text-[#e8eaed] hover:bg-[#2A2D31] transition-colors disabled:opacity-40"
             title="Minggu sebelumnya"
           >
@@ -147,12 +206,14 @@ export default function OverviewPekerjaClient({
               {tanggalPendek(periode.dari)} – {tanggalPanjang(periode.sampai)}
             </div>
             <div className="text-[10px] text-[#9aa0a6] mt-0.5">
-              {mingguIni ? 'Siklus gaji berjalan' : 'Siklus gaji'} · Sabtu – Jumat
+              {tab === 'riwayat'
+                ? 'Yang dibayar minggu ini'
+                : (mingguIni ? 'Siklus gaji berjalan' : 'Siklus gaji')} · Sabtu – Jumat
             </div>
           </div>
           <button
             onClick={() => pindah(1)}
-            disabled={isLoading || mingguIni}
+            disabled={(tab === 'riwayat' ? riwayatLoading : isLoading) || mingguIni}
             className="p-2 rounded-lg border border-[#2A2D31] text-[#9aa0a6] hover:text-[#e8eaed] hover:bg-[#2A2D31] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             title={mingguIni ? 'Sudah di minggu terkini' : 'Minggu berikutnya'}
           >
@@ -160,7 +221,11 @@ export default function OverviewPekerjaClient({
           </button>
           {!mingguIni && (
             <button
-              onClick={() => { setPeriode({ dari: dariAwal, sampai: sampaiAwal }); muat({ dari: dariAwal, sampai: sampaiAwal }); }}
+              onClick={() => {
+                const p = { dari: dariAwal, sampai: sampaiAwal };
+                setPeriode(p);
+                if (tab === 'riwayat') muatRiwayat(p); else muat(p);
+              }}
               className="ml-1 text-[10px] text-[#e5c17b] underline underline-offset-2 hover:text-[#f0d194]"
             >
               Kembali ke minggu ini
@@ -168,11 +233,12 @@ export default function OverviewPekerjaClient({
           )}
         </div>
         <div className="flex items-center gap-3">
-          {isLoading && (
+          {(tab === 'riwayat' ? riwayatLoading : isLoading) && (
             <span className="flex items-center gap-2 text-xs text-[#9aa0a6]">
               <Loader2 className="w-3.5 h-3.5 animate-spin text-[#e5c17b]" /> Memuat...
             </span>
           )}
+          {tab === 'terbuka' && (
           <button
             onClick={handleExport}
             disabled={exportLoading || data.length === 0}
@@ -183,6 +249,8 @@ export default function OverviewPekerjaClient({
               : <Download className="w-3.5 h-3.5" />}
             {exportLoading ? 'Mengunduh...' : 'Export CSV'}
           </button>
+          )}
+          {tab === 'terbuka' && (
           <button
             onClick={handleExportKantor}
             disabled={exportKantorLoading || data.length === 0}
@@ -194,103 +262,189 @@ export default function OverviewPekerjaClient({
               : <Download className="w-3.5 h-3.5" />}
             {exportKantorLoading ? 'Mengunduh...' : 'Export Kantor'}
           </button>
+          )}
         </div>
       </div>
 
-      {/* Ringkasan periode */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <KartuTotal icon={<Users className="w-4 h-4" />} label="Pekerja" nilai={String(total.pekerja)} />
-        <KartuTotal icon={<Shirt className="w-4 h-4" />} label="Total Dikerjakan" nilai={`${total.pcs.toLocaleString('id-ID')} pcs`} />
-        <KartuTotal icon={<Wallet className="w-4 h-4" />} label="Sedang Dikerjakan" nilai={`${total.sedangDikerjakan}×`} />
-        <KartuTotal
-          icon={<AlertCircle className="w-4 h-4" />}
-          label="Perlu Dibayar"
-          nilai={rupiah(total.belumLunas)}
-          waspada={total.belumLunas > 0}
-        />
-      </div>
+      {tab === 'terbuka' ? (
+        <>
+          {/* Ringkasan periode */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <KartuTotal icon={<Users className="w-4 h-4" />} label="Pekerja" nilai={String(total.pekerja)} />
+            <KartuTotal icon={<Shirt className="w-4 h-4" />} label="Total Dikerjakan" nilai={`${total.pcs.toLocaleString('id-ID')} pcs`} />
+            <KartuTotal icon={<Wallet className="w-4 h-4" />} label="Sedang Dikerjakan" nilai={`${total.sedangDikerjakan}×`} />
+            <KartuTotal
+              icon={<AlertCircle className="w-4 h-4" />}
+              label="Perlu Dibayar"
+              nilai={rupiah(total.belumLunas)}
+              waspada={total.belumLunas > 0}
+            />
+          </div>
 
-      {/* Kartu per pekerja */}
-      {data.length === 0 ? (
-        <div className="rounded-xl border border-[#2A2D31] bg-[#1A1D1F] px-4 py-16 text-center">
-          <div className="text-[#9aa0a6] text-sm">Tidak ada upah yang perlu dibayar</div>
-          <p className="text-[10px] text-[#9aa0a6]/50 mt-1">
-            Semua sudah lunas. Coba lihat minggu sebelumnya lewat tombol panah.
-          </p>
-        </div>
+          {/* Kartu per pekerja */}
+          {data.length === 0 ? (
+            <div className="rounded-xl border border-[#2A2D31] bg-[#1A1D1F] px-4 py-16 text-center">
+              <div className="text-[#9aa0a6] text-sm">Tidak ada upah yang perlu dibayar</div>
+              <p className="text-[10px] text-[#9aa0a6]/50 mt-1">
+                Semua sudah lunas. Coba lihat minggu sebelumnya lewat tombol panah.
+              </p>
+            </div>
+          ) : (
+            <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-3">
+              {data.map(p => {
+                return (
+                  <button
+                    key={p.karyawan_id}
+                    onClick={() => setTerpilih(p)}
+                    className="text-left bg-[#1A1D1F] border border-[#2A2D31] rounded-xl p-4 hover:border-[#e5c17b]/50 hover:bg-[#1E2124] transition-colors group"
+                  >
+                    <div className="flex items-start justify-between gap-2 mb-3">
+                      <div className="min-w-0">
+                        <div className="font-bold text-[#e8eaed] truncate group-hover:text-[#e5c17b] transition-colors">
+                          {p.nama}
+                        </div>
+                        <div className="text-[10px] text-[#9aa0a6] mt-0.5">{p.jabatan}</div>
+                      </div>
+                      <div className="flex flex-col items-end gap-1 shrink-0">
+                        {p.jml_belum_dibayar > 0 && (
+                          <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-full bg-orange-500/10 text-orange-400 border border-orange-500/20 whitespace-nowrap">
+                            {p.jml_belum_dibayar} belum dibayar
+                          </span>
+                        )}
+                        {p.jml_sedang_dikerjakan > 0 && (
+                          <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-full bg-sky-500/10 text-sky-300 border border-sky-500/20 whitespace-nowrap">
+                            {p.jml_sedang_dikerjakan} sedang dikerjakan
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3 mb-3">
+                      <div>
+                        <div className="text-[10px] uppercase tracking-wider text-[#9aa0a6]">Dikerjakan</div>
+                        <div className="text-lg font-bold text-[#e8eaed]">
+                          {p.total_pcs.toLocaleString('id-ID')}
+                          <span className="text-[10px] font-normal text-[#9aa0a6] ml-1">pcs</span>
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] uppercase tracking-wider text-[#9aa0a6]">Perlu Dibayar</div>
+                        <div className="text-lg font-bold text-[#e5c17b]">{rupiah(p.total_upah)}</div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-2 pt-3 border-t border-[#2A2D31]">
+                      <div className="flex flex-wrap gap-1">
+                        {p.daftar_tahap.slice(0, 3).map(t => (
+                          <span key={t} className="text-[9px] text-[#9aa0a6] bg-[#2A2D31]/60 px-1.5 py-0.5 rounded">
+                            {TAHAP_LABEL[t] ?? t}
+                          </span>
+                        ))}
+                        {p.daftar_tahap.length > 3 && (
+                          <span className="text-[9px] text-[#9aa0a6]">+{p.daftar_tahap.length - 3}</span>
+                        )}
+                      </div>
+                      <span className="text-[10px] text-[#9aa0a6] group-hover:text-[#e5c17b] transition-colors shrink-0">
+                        {p.jumlah_pekerjaan}× · lihat rincian →
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {terpilih && (
+            <ModalDetail
+              pekerja={terpilih}
+              periode={periode}
+              onClose={() => setTerpilih(null)}
+              onLunas={() => { setTerpilih(null); muat(periode); }}
+              onRefreshLatar={() => muat(periode)}
+            />
+          )}
+        </>
       ) : (
-        <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-3">
-          {data.map(p => {
-            return (
-              <button
-                key={p.karyawan_id}
-                onClick={() => setTerpilih(p)}
-                className="text-left bg-[#1A1D1F] border border-[#2A2D31] rounded-xl p-4 hover:border-[#e5c17b]/50 hover:bg-[#1E2124] transition-colors group"
-              >
-                <div className="flex items-start justify-between gap-2 mb-3">
-                  <div className="min-w-0">
-                    <div className="font-bold text-[#e8eaed] truncate group-hover:text-[#e5c17b] transition-colors">
-                      {p.nama}
+        <>
+          {/* Ringkasan riwayat */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <KartuTotal icon={<Users className="w-4 h-4" />} label="Pekerja Dibayar" nilai={String(totalRiwayat.pekerja)} />
+            <KartuTotal icon={<Shirt className="w-4 h-4" />} label="Total Dikerjakan" nilai={`${totalRiwayat.pcs.toLocaleString('id-ID')} pcs`} />
+            <KartuTotal icon={<Scissors className="w-4 h-4" />} label="Jumlah Entri" nilai={`${totalRiwayat.entri}×`} />
+            <KartuTotal icon={<CalendarCheck className="w-4 h-4" />} label="Sudah Dibayar" nilai={rupiah(totalRiwayat.upah)} />
+          </div>
+
+          {/* Kartu per pekerja — riwayat */}
+          {riwayat.length === 0 ? (
+            <div className="rounded-xl border border-[#2A2D31] bg-[#1A1D1F] px-4 py-16 text-center">
+              <div className="text-[#9aa0a6] text-sm">Belum ada pembayaran pada minggu ini</div>
+              <p className="text-[10px] text-[#9aa0a6]/50 mt-1">
+                Setiap kali "Tandai Lunas" dipencet, hasilnya akan tercatat di sini.
+              </p>
+            </div>
+          ) : (
+            <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-3">
+              {riwayat.map(p => (
+                <button
+                  key={p.karyawan_id}
+                  onClick={() => setRiwayatTerpilih(p)}
+                  className="text-left bg-[#1A1D1F] border border-[#2A2D31] rounded-xl p-4 hover:border-emerald-500/50 hover:bg-[#1E2124] transition-colors group"
+                >
+                  <div className="flex items-start justify-between gap-2 mb-3">
+                    <div className="min-w-0">
+                      <div className="font-bold text-[#e8eaed] truncate group-hover:text-emerald-400 transition-colors">
+                        {p.nama}
+                      </div>
+                      <div className="text-[10px] text-[#9aa0a6] mt-0.5">{p.jabatan}</div>
                     </div>
-                    <div className="text-[10px] text-[#9aa0a6] mt-0.5">{p.jabatan}</div>
+                    <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 whitespace-nowrap shrink-0">
+                      Lunas
+                    </span>
                   </div>
-                  <div className="flex flex-col items-end gap-1 shrink-0">
-                    {p.jml_belum_dibayar > 0 && (
-                      <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-full bg-orange-500/10 text-orange-400 border border-orange-500/20 whitespace-nowrap">
-                        {p.jml_belum_dibayar} belum dibayar
-                      </span>
-                    )}
-                    {p.jml_sedang_dikerjakan > 0 && (
-                      <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-full bg-sky-500/10 text-sky-300 border border-sky-500/20 whitespace-nowrap">
-                        {p.jml_sedang_dikerjakan} sedang dikerjakan
-                      </span>
-                    )}
-                  </div>
-                </div>
 
-                <div className="grid grid-cols-2 gap-3 mb-3">
-                  <div>
-                    <div className="text-[10px] uppercase tracking-wider text-[#9aa0a6]">Dikerjakan</div>
-                    <div className="text-lg font-bold text-[#e8eaed]">
-                      {p.total_pcs.toLocaleString('id-ID')}
-                      <span className="text-[10px] font-normal text-[#9aa0a6] ml-1">pcs</span>
+                  <div className="grid grid-cols-2 gap-3 mb-3">
+                    <div>
+                      <div className="text-[10px] uppercase tracking-wider text-[#9aa0a6]">Dikerjakan</div>
+                      <div className="text-lg font-bold text-[#e8eaed]">
+                        {p.total_pcs.toLocaleString('id-ID')}
+                        <span className="text-[10px] font-normal text-[#9aa0a6] ml-1">pcs</span>
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] uppercase tracking-wider text-[#9aa0a6]">Sudah Dibayar</div>
+                      <div className="text-lg font-bold text-emerald-400">{rupiah(p.total_upah)}</div>
                     </div>
                   </div>
-                  <div>
-                    <div className="text-[10px] uppercase tracking-wider text-[#9aa0a6]">Perlu Dibayar</div>
-                    <div className="text-lg font-bold text-[#e5c17b]">{rupiah(p.total_upah)}</div>
-                  </div>
-                </div>
 
-                <div className="flex items-center justify-between gap-2 pt-3 border-t border-[#2A2D31]">
-                  <div className="flex flex-wrap gap-1">
-                    {p.daftar_tahap.slice(0, 3).map(t => (
-                      <span key={t} className="text-[9px] text-[#9aa0a6] bg-[#2A2D31]/60 px-1.5 py-0.5 rounded">
-                        {TAHAP_LABEL[t] ?? t}
-                      </span>
-                    ))}
-                    {p.daftar_tahap.length > 3 && (
-                      <span className="text-[9px] text-[#9aa0a6]">+{p.daftar_tahap.length - 3}</span>
-                    )}
+                  <div className="flex items-center justify-between gap-2 pt-3 border-t border-[#2A2D31]">
+                    <div className="flex flex-wrap gap-1">
+                      {p.daftar_tahap.slice(0, 3).map(t => (
+                        <span key={t} className="text-[9px] text-[#9aa0a6] bg-[#2A2D31]/60 px-1.5 py-0.5 rounded">
+                          {TAHAP_LABEL[t] ?? t}
+                        </span>
+                      ))}
+                      {p.daftar_tahap.length > 3 && (
+                        <span className="text-[9px] text-[#9aa0a6]">+{p.daftar_tahap.length - 3}</span>
+                      )}
+                    </div>
+                    <span className="text-[10px] text-[#9aa0a6] group-hover:text-emerald-400 transition-colors shrink-0">
+                      dibayar {tanggalPendek(p.tanggal_bayar_terakhir)} →
+                    </span>
                   </div>
-                  <span className="text-[10px] text-[#9aa0a6] group-hover:text-[#e5c17b] transition-colors shrink-0">
-                    {p.jumlah_pekerjaan}× · lihat rincian →
-                  </span>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      )}
+                </button>
+              ))}
+            </div>
+          )}
 
-      {terpilih && (
-        <ModalDetail
-          pekerja={terpilih}
-          periode={periode}
-          onClose={() => setTerpilih(null)}
-          onLunas={() => { setTerpilih(null); muat(periode); }}
-          onRefreshLatar={() => muat(periode)}
-        />
+          {riwayatTerpilih && (
+            <ModalRiwayat
+              pekerja={riwayatTerpilih}
+              periode={periode}
+              onClose={() => setRiwayatTerpilih(null)}
+              onBatal={() => { setRiwayatTerpilih(null); muatRiwayat(periode); muat(periode); }}
+            />
+          )}
+        </>
       )}
     </div>
   );
@@ -768,6 +922,314 @@ function ModalDetail({
                     ? <Loader2 className="w-4 h-4 animate-spin" />
                     : <Trash2 className="w-4 h-4" />}
                   Ya, Hapus
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Jendela riwayat (yang sudah lunas) ─────────────────────────────────────
+
+function ModalRiwayat({
+  pekerja, periode, onClose, onBatal,
+}: {
+  pekerja: RingkasanRiwayat;
+  periode: { dari: string; sampai: string };
+  onClose: () => void;
+  /** Dipanggil setelah pembatalan berhasil — menutup modal & menyegarkan kedua tab. */
+  onBatal: () => void;
+}) {
+  const [rincian, setRincian] = useState<DetailPekerjaan[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [tahapTerbuka, setTahapTerbuka] = useState<Set<string>>(new Set());
+  const [barisTerpilih, setBarisTerpilih] = useState<Set<string>>(new Set());
+  const [konfirmasiHapus, setKonfirmasiHapus] = useState(false);
+  const [alasanHapus, setAlasanHapus] = useState('');
+  const [sedangProses, setSedangProses] = useState(false);
+
+  const kelompok = useMemo(() => {
+    const map = new Map<string, DetailPekerjaan[]>();
+    for (const r of rincian) {
+      if (!map.has(r.tahap)) map.set(r.tahap, []);
+      map.get(r.tahap)!.push(r);
+    }
+    return TAHAP_URUTAN
+      .filter(t => map.has(t))
+      .map(t => {
+        const baris = map.get(t)!;
+        return {
+          tahap: t,
+          baris,
+          qty: baris.reduce((s, r) => s + r.qty, 0),
+          upah: baris.reduce((s, r) => s + r.upah, 0),
+        };
+      });
+  }, [rincian]);
+
+  const toggleTahap = (t: string) => {
+    setTahapTerbuka(prev => {
+      const next = new Set(prev);
+      if (next.has(t)) next.delete(t); else next.add(t);
+      return next;
+    });
+  };
+
+  const toggleBaris = (id: string) => {
+    setBarisTerpilih(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const { totalTerpilih, daftarTerpilih } = useMemo(() => {
+    const daftar = rincian.filter(r => barisTerpilih.has(r.id));
+    return { totalTerpilih: daftar.reduce((s, r) => s + r.upah, 0), daftarTerpilih: daftar };
+  }, [rincian, barisTerpilih]);
+
+  useEffect(() => {
+    let batal = false;
+    getDetailRiwayatPekerja(pekerja.karyawan_id, periode.dari, periode.sampai)
+      .then(d => { if (!batal) setRincian(d); })
+      .catch(e => { if (!batal) toast.error(e.message ?? 'Gagal memuat rincian riwayat'); })
+      .finally(() => { if (!batal) setIsLoading(false); });
+    return () => { batal = true; };
+  }, [pekerja.karyawan_id, periode.dari, periode.sampai]);
+
+  const prosesHapusTerpilih = async () => {
+    if (!alasanHapus.trim()) {
+      toast.error('Alasan penghapusan wajib diisi');
+      return;
+    }
+    setSedangProses(true);
+    try {
+      const hasil = await hapusEntriUpah(daftarTerpilih.map(r => r.id), alasanHapus);
+      toast.success(`${hasil.jumlah_entri} pembayaran dibatalkan — ${rupiah(hasil.total)}`);
+      onBatal();
+    } catch (e: any) {
+      toast.error(e.message ?? 'Gagal membatalkan pembayaran terpilih');
+      setSedangProses(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/75 flex items-center justify-center z-50 p-4">
+      <div className="relative bg-[#1A1D1F] border border-[#2A2D31] rounded-xl w-full max-w-4xl shadow-2xl max-h-[90vh] flex flex-col">
+        {/* Kepala */}
+        <div className="px-6 py-4 border-b border-[#2A2D31] flex items-start justify-between gap-4">
+          <div>
+            <h3 className="text-base font-bold text-[#e8eaed]">{pekerja.nama}</h3>
+            <p className="text-xs text-[#9aa0a6] mt-0.5">
+              {pekerja.jabatan}
+              <span className="mx-1.5 text-[#2A2D31]">|</span>
+              Dibayar {tanggalPendek(periode.dari)} – {tanggalPanjang(periode.sampai)}
+            </p>
+          </div>
+          <button onClick={onClose} className="text-[#9aa0a6] hover:text-[#e8eaed] transition-colors">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Ringkasan */}
+        <div className="px-6 py-3 border-b border-[#2A2D31] grid grid-cols-3 gap-4 bg-[#16181A]">
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-[#9aa0a6]">Dikerjakan</div>
+            <div className="text-sm font-bold text-[#e8eaed]">{pekerja.total_pcs.toLocaleString('id-ID')} pcs</div>
+          </div>
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-[#9aa0a6]">Sudah Dibayar</div>
+            <div className="text-sm font-bold text-emerald-400">{rupiah(pekerja.total_upah)}</div>
+          </div>
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-[#9aa0a6]">Dibayar Terakhir</div>
+            <div className="text-sm font-bold text-[#e8eaed]">{tanggalPanjang(pekerja.tanggal_bayar_terakhir)}</div>
+          </div>
+        </div>
+
+        {/* Daftar pekerjaan, dikelompokkan per tahap */}
+        <div className="overflow-y-auto flex-1">
+          {isLoading ? (
+            <div className="flex items-center justify-center gap-2 py-16 text-[#9aa0a6] text-sm">
+              <Loader2 className="w-5 h-5 animate-spin text-[#e5c17b]" />
+              Memuat rincian pembayaran...
+            </div>
+          ) : rincian.length === 0 ? (
+            <div className="py-16 text-center text-sm text-[#9aa0a6]">
+              Tidak ada rincian pembayaran pada periode ini.
+            </div>
+          ) : (
+            <div className="divide-y divide-[#2A2D31]">
+              {kelompok.map(g => {
+                const terbuka = tahapTerbuka.has(g.tahap);
+                return (
+                  <div key={g.tahap}>
+                    <button
+                      onClick={() => toggleTahap(g.tahap)}
+                      className="w-full flex items-center justify-between gap-3 px-6 py-3 hover:bg-[#1E2124] transition-colors text-left"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <ChevronDown className={`w-4 h-4 text-[#9aa0a6] shrink-0 transition-transform ${terbuka ? 'rotate-180' : ''}`} />
+                        <span className="text-sm font-bold text-[#e8eaed]">
+                          {TAHAP_LABEL[g.tahap] ?? g.tahap}
+                        </span>
+                        <span className="text-[10px] text-[#9aa0a6]">
+                          {g.baris.length} item · {g.qty.toLocaleString('id-ID')} pcs
+                        </span>
+                      </div>
+                      <span className="text-sm font-bold text-emerald-400 shrink-0">
+                        {rupiah(g.upah)}
+                      </span>
+                    </button>
+
+                    {terbuka && (
+                      <table className="w-full text-sm">
+                        <thead className="bg-[#0D0E10] text-[10px] uppercase tracking-widest text-[#9aa0a6]">
+                          <tr>
+                            <th className="px-4 py-2 text-left font-bold w-8"></th>
+                            <th className="px-4 py-2 text-left font-bold">Tgl Kerja</th>
+                            <th className="px-4 py-2 text-left font-bold">Tgl Bayar</th>
+                            <th className="px-4 py-2 text-left font-bold">Artikel</th>
+                            <th className="px-4 py-2 text-left font-bold">PO</th>
+                            <th className="px-4 py-2 text-center font-bold">Qty</th>
+                            <th className="px-4 py-2 text-right font-bold">Harga/Pcs</th>
+                            <th className="px-4 py-2 text-right font-bold">Upah</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[#2A2D31]/60">
+                          {g.baris.map(r => (
+                            <tr
+                              key={r.id}
+                              className={`hover:bg-[#1E2124] transition-colors ${barisTerpilih.has(r.id) ? 'bg-[#e5c17b]/5' : ''}`}
+                            >
+                              <td className="px-4 py-2.5">
+                                {UUID_REGEX.test(r.id) && (
+                                  <input
+                                    type="checkbox"
+                                    checked={barisTerpilih.has(r.id)}
+                                    onChange={() => toggleBaris(r.id)}
+                                    className="w-3.5 h-3.5 rounded border-[#2A2D31] accent-red-500 cursor-pointer"
+                                    title="Pilih untuk batalkan pembayaran"
+                                  />
+                                )}
+                              </td>
+                              <td className="px-4 py-2.5 text-xs text-[#9aa0a6] whitespace-nowrap">
+                                {tanggalPendek(r.tanggal)}
+                              </td>
+                              <td className="px-4 py-2.5 text-xs text-[#9aa0a6] whitespace-nowrap">
+                                {r.tanggal_bayar ? tanggalPendek(r.tanggal_bayar) : '—'}
+                              </td>
+                              <td className="px-4 py-2.5">
+                                <div className="text-xs font-medium text-[#e8eaed]">{r.model_nama}</div>
+                                <div className="text-[10px] text-[#9aa0a6] mt-0.5">
+                                  {r.warna} · {r.size}
+                                  <span className="mx-1.5 text-[#2A2D31]">|</span>
+                                  <span className="font-mono">{r.barcode}</span>
+                                </div>
+                              </td>
+                              <td className="px-4 py-2.5">
+                                <div className="font-mono text-xs text-[#e5c17b]">{r.no_po}</div>
+                                <div className="text-[10px] text-[#9aa0a6] mt-0.5">{r.klien_nama}</div>
+                              </td>
+                              <td className="px-4 py-2.5 text-center text-xs font-semibold text-[#e8eaed]">
+                                {r.qty}
+                              </td>
+                              <td className="px-4 py-2.5 text-right text-xs text-[#9aa0a6] whitespace-nowrap">
+                                {r.harga_per_pcs > 0 ? rupiah(r.harga_per_pcs) : '—'}
+                              </td>
+                              <td className="px-4 py-2.5 text-right text-xs font-semibold text-emerald-400 whitespace-nowrap">
+                                {rupiah(r.upah)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {barisTerpilih.size > 0 && (
+          <div className="px-6 py-2.5 border-t border-[#2A2D31] bg-[#16181A] flex items-center justify-between gap-3">
+            <span className="text-xs text-[#e8eaed]">
+              <span className="font-bold text-[#e5c17b]">{barisTerpilih.size}</span> baris dipilih
+              <span className="text-[#9aa0a6]"> · {rupiah(totalTerpilih)}</span>
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setBarisTerpilih(new Set())}
+                className="text-[10px] text-[#9aa0a6] hover:text-[#e8eaed] underline underline-offset-2"
+              >
+                Batal pilih
+              </button>
+              <button
+                onClick={() => setKonfirmasiHapus(true)}
+                className="flex items-center gap-1.5 px-3 h-8 rounded-lg bg-red-600/90 hover:bg-red-500 text-white text-xs font-bold transition-colors"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Batalkan Pembayaran
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div className="px-6 py-3 border-t border-[#2A2D31] flex items-center justify-between gap-3">
+          <span className="text-[10px] text-[#9aa0a6] flex items-center gap-1.5">
+            <Scissors className="w-3 h-3" />
+            {rincian.length} pekerjaan tercatat lunas
+          </span>
+          <button
+            onClick={onClose}
+            className="px-4 h-9 rounded-lg border border-[#2A2D31] text-[#e8eaed] text-sm hover:bg-[#2A2D31] transition-colors"
+          >
+            Tutup
+          </button>
+        </div>
+
+        {konfirmasiHapus && (
+          <div className="absolute inset-0 bg-black/80 flex items-center justify-center p-4 rounded-xl">
+            <div className="bg-[#1A1D1F] border border-[#2A2D31] rounded-xl w-full max-w-sm p-5">
+              <h4 className="text-base font-bold text-[#e8eaed] mb-2">
+                Batalkan {barisTerpilih.size} pembayaran terpilih?
+              </h4>
+              <div className="bg-[#16181A] border border-[#2A2D31] rounded-lg px-4 py-3 text-sm text-[#e8eaed] mb-4">
+                <span className="font-bold text-red-400">{rupiah(totalTerpilih)}</span>{' '}
+                akan ditandai batal karena kesalahan pembayaran. Baris ini akan hilang dari
+                riwayat, tapi jejaknya tetap tersimpan di log audit.
+              </div>
+              <label className="block text-[10px] uppercase tracking-wider text-[#9aa0a6] mb-1.5">
+                Alasan pembatalan <span className="text-red-400">*</span>
+              </label>
+              <textarea
+                value={alasanHapus}
+                onChange={e => setAlasanHapus(e.target.value)}
+                placeholder="Contoh: salah pencet lunaskan, salah nominal..."
+                rows={2}
+                className="w-full bg-[#16181A] border border-[#2A2D31] rounded-lg px-3 py-2 text-sm text-[#e8eaed] placeholder:text-[#9aa0a6]/50 mb-4 focus:outline-none focus:border-[#e5c17b]/50 resize-none"
+              />
+              <div className="flex items-center justify-end gap-3">
+                <button
+                  onClick={() => { setKonfirmasiHapus(false); setAlasanHapus(''); }}
+                  disabled={sedangProses}
+                  className="px-4 h-9 rounded-lg border border-[#2A2D31] text-[#e8eaed] text-sm hover:bg-[#2A2D31] transition-colors disabled:opacity-50"
+                >
+                  Batal
+                </button>
+                <button
+                  onClick={prosesHapusTerpilih}
+                  disabled={sedangProses || !alasanHapus.trim()}
+                  className="flex items-center gap-2 px-4 h-9 rounded-lg bg-red-600/90 hover:bg-red-500 text-white text-sm font-bold transition-colors disabled:opacity-50"
+                >
+                  {sedangProses
+                    ? <Loader2 className="w-4 h-4 animate-spin" />
+                    : <Trash2 className="w-4 h-4" />}
+                  Ya, Batalkan
                 </button>
               </div>
             </div>

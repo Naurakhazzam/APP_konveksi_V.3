@@ -204,6 +204,89 @@ export async function hapusEntriUpah(entriIds: string[], alasan: string): Promis
   };
 }
 
+/**
+ * Ringkasan upah yang SUDAH lunas — kebalikan dari getOverviewPekerja.
+ * Difilter berdasar tanggal_bayar (bukan tanggal kerja), supaya "minggu ini"
+ * di histori berarti "yang dibayar minggu ini" — dipakai untuk verifikasi
+ * ulang setelah "Tandai Lunas" dipencet (mis. ragu apakah sudah kesimpan).
+ */
+export interface RingkasanRiwayat {
+  karyawan_id: string;
+  nama: string;
+  jabatan: string;
+  jumlah_entri: number;
+  total_pcs: number;
+  total_upah: number;
+  tanggal_bayar_terakhir: string;
+  daftar_tahap: string[];
+}
+
+export async function getRiwayatPelunasan(
+  dari: string,
+  sampai: string,
+): Promise<RingkasanRiwayat[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.rpc('riwayat_pekerja_periode', {
+    p_dari: dari,
+    p_sampai: sampai,
+    p_tenant_id: TENANT_ID,
+  });
+
+  if (error) throw new Error(`Gagal memuat riwayat pelunasan: ${error.message}`);
+
+  return ((data ?? []) as any[]).map(r => ({
+    karyawan_id: r.karyawan_id,
+    nama: r.nama,
+    jabatan: r.jabatan,
+    jumlah_entri: Number(r.jumlah_entri) || 0,
+    total_pcs: Number(r.total_pcs) || 0,
+    total_upah: Number(r.total_upah) || 0,
+    tanggal_bayar_terakhir: r.tanggal_bayar_terakhir,
+    daftar_tahap: r.daftar_tahap ?? [],
+  }));
+}
+
+/** Rincian upah yang sudah lunas satu orang — isi jendela riwayat saat kartu diklik. */
+export async function getDetailRiwayatPekerja(
+  karyawan_id: string,
+  dari: string,
+  sampai: string,
+): Promise<DetailPekerjaan[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.rpc('detail_riwayat_pekerja', {
+    p_karyawan_id: karyawan_id,
+    p_dari: dari,
+    p_sampai: sampai,
+    p_tenant_id: TENANT_ID,
+  });
+
+  if (error) throw new Error(`Gagal memuat rincian riwayat: ${error.message}`);
+
+  return ((data ?? []) as any[]).map(r => ({
+    id: r.id,
+    tanggal: r.tanggal,
+    tahap: r.tahap ?? '-',
+    // Nilai placeholder — semua baris riwayat sudah 'lunas', tipe DetailPekerjaan
+    // cuma punya varian untuk yang belum dibayar. Tidak dipakai di ModalRiwayat.
+    keadaan: 'belum_dibayar' as DetailPekerjaan['keadaan'],
+    tipe: r.tipe,
+    status: r.status,
+    tanggal_bayar: r.tanggal_bayar ?? null,
+    upah: Number(r.upah) || 0,
+    harga_per_pcs: Number(r.harga_per_pcs) || 0,
+    qty: Number(r.qty) || 0,
+    barcode: r.barcode,
+    no_po: r.no_po,
+    model_nama: r.model_nama,
+    produk_nama: r.produk_nama,
+    warna: r.warna,
+    size: r.size,
+    klien_nama: r.klien_nama,
+  }));
+}
+
 const TAHAP_LABEL_EXPORT: Record<string, string> = {
   cutting: 'Cutting',
   jahit: 'Jahit',
