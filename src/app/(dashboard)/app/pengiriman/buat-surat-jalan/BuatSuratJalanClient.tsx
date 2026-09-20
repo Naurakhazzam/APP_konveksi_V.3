@@ -130,7 +130,16 @@ export default function BuatSuratJalanClient({ initialBundles }: { initialBundle
       g.total_qty += b.qty_per_bundle;
     });
 
-    return Array.from(map.values());
+    // Urutan tampil: Klien → No PO → Artikel/Warna/Size — bukan urutan
+    // mentah dari database (yang terasa acak). Klien duluan supaya barang
+    // milik klien yang sama (satu SJ cuma boleh satu klien) berdekatan.
+    return Array.from(map.values()).sort((a, b) =>
+      a.klien_nama.localeCompare(b.klien_nama) ||
+      a.no_po.localeCompare(b.no_po) ||
+      (a.model_nama ?? '').localeCompare(b.model_nama ?? '') ||
+      a.warna.localeCompare(b.warna) ||
+      a.size.localeCompare(b.size)
+    );
   }, [visibleBundles]);
 
   // ─── Handlers ─────────────────────────────────────────────────────────────
