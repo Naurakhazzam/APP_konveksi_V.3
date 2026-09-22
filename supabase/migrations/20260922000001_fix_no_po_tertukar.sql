@@ -1,0 +1,32 @@
+-- ================================================================
+-- MIGRATION: Perbaiki nomor PO yang tertukar (PO-0085/0086 hilang)
+--
+-- Ditemukan lewat pengecekan manual: daftar PO asli dari klien punya
+-- PO-0085 dan PO-0086, tapi di sistem dua nomor itu tidak pernah ada —
+-- langsung lompat dari PO-0084 ke PO-0087. Setelah isi tiap PO
+-- dicocokkan baris-per-baris (artikel, warna, size, qty, kode SKU
+-- klien) dengan daftar asli, ternyata:
+--
+--   - Isi PO-0088 di sistem = persis isi PO-0085 yang asli
+--     (Dravo Black XXL=2 ely353, XXXL=4 ely354)
+--   - Isi PO-0089 di sistem = persis isi PO-0086 yang asli
+--     (Airflow Black XXL/XXXL, Dravo Black XXXL, Noir Black M-XXXL)
+--
+-- Root cause: no_po saat input PO diketik manual (lihat komentar di
+-- InputPoForm.tsx) dan kemungkinan tergeser saat mengetik beruntun
+-- (ketiga PO ini dibuat dalam rentang 16 detik pada 2026-09-11).
+--
+-- PO-0087 di sistem TIDAK cocok dengan PO manapun di daftar asli
+-- (isinya Dravo Black 4XL/5XL/6XL) — dibiarkan apa adanya, di luar
+-- cakupan perbaikan ini.
+--
+-- CATATAN PENTING: bundle.barcode (mis. "PO-0088-00518-bdl01") TIDAK
+-- ikut berubah di migrasi ini — barcode sudah tercetak fisik dan
+-- dipakai di produksi/upah/Surat Jalan yang sudah final (SJ/2026/00077,
+-- SJ/2026/00078), jadi teks barcode akan tetap menyebut PO-0088/0089
+-- walau po.no_po sudah benar. Ini keputusan sadar (risiko sudah
+-- dikonfirmasi ke pengguna), bukan bug baru.
+-- ================================================================
+
+UPDATE po SET no_po = 'PO-0085' WHERE no_po = 'PO-0088' AND tenant_id = 'STX-001';
+UPDATE po SET no_po = 'PO-0086' WHERE no_po = 'PO-0089' AND tenant_id = 'STX-001';
