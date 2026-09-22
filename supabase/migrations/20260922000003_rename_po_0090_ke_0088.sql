@@ -1,0 +1,23 @@
+-- ================================================================
+-- MIGRATION: Rename PO-0090 (sistem) jadi PO-0088
+--
+-- Lanjutan dari perbaikan nomor PO sebelumnya. Isi PO-0090 (Zayyan
+-- Black L/XL/XXL/XXXL + Khalid Black XXXL) dikonfirmasi pengguna
+-- sebagai PO-0088 klien yang asli, cuma nomornya tergeser saat input
+-- manual -- sama seperti kasus PO-0085/0086 sebelumnya.
+--
+-- Dicek dulu: PO-0088 belum dipakai record lain di sistem, jadi rename
+-- langsung tanpa konflik unique constraint.
+--
+-- CATATAN: PO-0090 punya 6 baris po_item, bukan 5 seperti daftar asli
+-- klien -- ada baris duplikat Zayyan Black XXL (qty 5 DAN qty 6,
+-- keduanya sudah selesai produksi penuh sampai packing). Baris
+-- duplikat ini SENGAJA TIDAK disentuh di migrasi ini -- sudah ada
+-- produksi & upah berjalan di baliknya, perlu keputusan terpisah dari
+-- pengguna, bukan bagian dari perbaikan nomor PO.
+--
+-- Barcode fisik (mis. "PO-0090-00530-bdl01") juga TIDAK diubah, sama
+-- seperti migrasi-migrasi sebelumnya.
+-- ================================================================
+
+UPDATE po SET no_po = 'PO-0088' WHERE no_po = 'PO-0090' AND tenant_id = 'STX-001';
