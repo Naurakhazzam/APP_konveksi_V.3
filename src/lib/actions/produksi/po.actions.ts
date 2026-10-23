@@ -389,3 +389,37 @@ export async function deletePoById(id: string): Promise<{ success: boolean; mess
 
   return { success: true, message: 'PO berhasil dihapus' };
 }
+
+// checkPoExists() — cek apakah nomor PO sudah ada (untuk alur tambah artikel)
+export interface PoExistCheck {
+  exists: boolean;
+  status: string | null;
+  klienNama: string | null;
+  canAppend: boolean; // true hanya jika status === 'aktif'
+}
+
+export async function checkPoExists(noPo: string): Promise<PoExistCheck> {
+  const profile = await getCurrentUserProfile();
+  if (!profile) throw new Error('Unauthorized');
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('po')
+    .select('status, klien:klien_id(nama)')
+    .eq('no_po', noPo)
+    .eq('tenant_id', TENANT_ID)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  if (!data) return { exists: false, status: null, klienNama: null, canAppend: false };
+
+  const klien = data.klien as { nama: string } | { nama: string }[] | null;
+  const klienNama = Array.isArray(klien) ? (klien[0]?.nama ?? null) : (klien?.nama ?? null);
+
+  return {
+    exists: true,
+    status: data.status,
+    klienNama,
+    canAppend: data.status === 'aktif',
+  };
+}

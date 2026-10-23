@@ -20,10 +20,16 @@ export const CreatePoSchema = z.object({
   items: z.array(PoItemInputSchema).min(1, 'Minimal satu baris item'),
 });
 
+export const AddItemsToPoSchema = z.object({
+  no_po: z.string().regex(/^PO-\d{4}$/, 'Format PO tidak valid'),
+  items: z.array(PoItemInputSchema).min(1, 'Minimal satu baris item'),
+});
+
 export const CancelPoSchema = z.object({
   id: z.string().uuid(),
 });
 
 export type PoItemInput = z.infer<typeof PoItemInputSchema>;
 export type CreatePoInput = z.infer<typeof CreatePoSchema>;
+export type AddItemsToPoInput = z.infer<typeof AddItemsToPoSchema>;
 export type CancelPoInput = z.infer<typeof CancelPoSchema>;

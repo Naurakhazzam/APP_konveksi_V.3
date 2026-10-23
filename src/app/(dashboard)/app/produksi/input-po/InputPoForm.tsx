@@ -8,8 +8,17 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Plus } from 'lucide-react';
 import { InputPoLineItem, type LineItemState } from './InputPoLineItem';
-import { createPoWithBundles } from '@/lib/actions/produksi/po-mutations.actions';
-import type { CreatePoInput } from '@/lib/validations/po.schemas';
+import { createPoWithBundles, addItemsToExistingPo } from '@/lib/actions/produksi/po-mutations.actions';
+import { checkPoExists } from '@/lib/actions/produksi/po.actions';
+import type { CreatePoInput, AddItemsToPoInput } from '@/lib/validations/po.schemas';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { toast } from 'sonner';
 
 interface Props {
@@ -31,6 +40,12 @@ export function InputPoForm({ defaultPoNumber, klienList, modelList }: Props) {
   const [items, setItems] = useState<LineItemState[]>([
     { id: crypto.randomUUID(), model_id: '', warna_id: '', size_id: '', produk_id: null, warna_nama: '', size_nama: '', qty_order: 100, qty_per_bundle: 12 }
   ]);
+
+  // Konfirmasi tambah artikel ke PO yang sudah ada
+  const [appendConfirm, setAppendConfirm] = useState<{
+    payload: AddItemsToPoInput;
+    klienNama: string | null;
+  } | null>(null);
 
   const handleItemChange = useCallback((index: number, updates: Partial<LineItemState>) => {
     setItems(prev => {
@@ -57,34 +72,59 @@ export function InputPoForm({ defaultPoNumber, klienList, modelList }: Props) {
 
   const isFormValid = noPo.trim() !== '' && klienId !== '' && items.every(i => i.produk_id !== null && (i.qty_order || 0) > 0);
 
+  const buildItems = () => items.map(i => ({
+    model_id: i.model_id,
+    warna_id: i.warna_id,
+    size_id: i.size_id,
+    produk_id: i.produk_id!,
+    warna: i.warna_nama,
+    size: i.size_nama,
+    qty_order: i.qty_order || 0,
+    qty_per_bundle: i.qty_per_bundle || 12,
+  }));
+
+  const goToMonitoring = () => {
+    router.push('/app/produksi/monitoring');
+    router.refresh();
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isFormValid) return;
-    
+
     setIsLoading(true);
     try {
+      // Cek dulu apakah nomor PO sudah ada
+      const check = await checkPoExists(noPo);
+
+      if (check.exists) {
+        if (!check.canAppend) {
+          toast.error(`PO ${noPo} berstatus "${check.status}" — tidak bisa ditambah artikel.`);
+          setIsLoading(false);
+          return;
+        }
+        // PO aktif → minta konfirmasi tambah artikel
+        setAppendConfirm({
+          payload: { no_po: noPo, items: buildItems() },
+          klienNama: check.klienNama,
+        });
+        setIsLoading(false);
+        return;
+      }
+
+      // PO baru → buat seperti biasa
       const payload: CreatePoInput = {
         no_po: noPo,
         klien_id: klienId,
         tanggal_order: new Date(tanggalOrder).toISOString(),
         tanggal_target: tanggalTarget ? new Date(tanggalTarget).toISOString() : null,
         catatan: catatan || null,
-        items: items.map(i => ({
-          model_id: i.model_id,
-          warna_id: i.warna_id,
-          size_id: i.size_id,
-          produk_id: i.produk_id!,
-          warna: i.warna_nama,
-          size: i.size_nama,
-          qty_order: i.qty_order || 0,
-          qty_per_bundle: i.qty_per_bundle || 12,
-        })),
+        items: buildItems(),
       };
-      
+
       await createPoWithBundles(payload);
       toast.success('PO berhasil dibuat dan barcode telah digenerate');
-      router.push('/app/produksi/monitoring');
-      router.refresh();
+      goToMonitoring();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Terjadi kesalahan saat menyimpan PO';
       toast.error(msg);
@@ -92,7 +132,24 @@ export function InputPoForm({ defaultPoNumber, klienList, modelList }: Props) {
     }
   };
 
+  const handleConfirmAppend = async () => {
+    if (!appendConfirm) return;
+    setIsLoading(true);
+    try {
+      await addItemsToExistingPo(appendConfirm.payload);
+      toast.success(`${appendConfirm.payload.items.length} artikel ditambahkan ke ${appendConfirm.payload.no_po}`);
+      setAppendConfirm(null);
+      goToMonitoring();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Gagal menambah artikel ke PO';
+      toast.error(msg);
+      setAppendConfirm(null);
+      setIsLoading(false);
+    }
+  };
+
   return (
+    <>
     <form onSubmit={handleSubmit} className="space-y-6">
       <div className="rounded-xl border border-[#2A2D31] bg-[#1A1D1F] p-5 space-y-4 shadow-sm">
         <h3 className="text-sm font-semibold tracking-wide text-[#e5c17b]">INFO UTAMA PO</h3>
@@ -222,5 +279,39 @@ export function InputPoForm({ defaultPoNumber, klienList, modelList }: Props) {
         </Button>
       </div>
     </form>
+
+    <Dialog open={appendConfirm !== null} onOpenChange={(o) => { if (!o) setAppendConfirm(null); }}>
+      <DialogContent className="bg-[#1A1D1F] border-[#2A2D31] text-[#e8eaed]">
+        <DialogHeader>
+          <DialogTitle className="text-[#e5c17b]">PO sudah ada</DialogTitle>
+          <DialogDescription className="text-[#9aa0a6]">
+            Nomor <span className="font-semibold text-[#e8eaed]">{appendConfirm?.payload.no_po}</span>
+            {appendConfirm?.klienNama ? <> (klien {appendConfirm.klienNama})</> : null} sudah terdaftar dan masih aktif.
+            Tambahkan <span className="font-semibold text-[#e8eaed]">{appendConfirm?.payload.items.length} artikel</span> ke PO ini?
+            Artikel baru beserta barcode bundle-nya akan ditambahkan ke PO tersebut.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setAppendConfirm(null)}
+            disabled={isLoading}
+            className="border-[#2A2D31] text-[#e8eaed] hover:bg-[#2A2D31]"
+          >
+            Batal
+          </Button>
+          <Button
+            type="button"
+            onClick={handleConfirmAppend}
+            disabled={isLoading}
+            className="bg-[color:var(--status-green)] hover:bg-[color:var(--status-green)]/90 text-white font-semibold"
+          >
+            {isLoading ? 'Menambahkan...' : 'Ya, Tambahkan Artikel'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }

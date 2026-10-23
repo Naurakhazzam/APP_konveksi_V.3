@@ -2,7 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server';
 import { getCurrentUserProfile } from '@/lib/auth/permissions';
-import { CreatePoSchema, type CreatePoInput } from '@/lib/validations/po.schemas';
+import { CreatePoSchema, AddItemsToPoSchema, type CreatePoInput, type AddItemsToPoInput } from '@/lib/validations/po.schemas';
 
 const TENANT_ID = 'STX-001';
 
@@ -60,6 +60,57 @@ export async function createPoWithBundles(data: CreatePoInput) {
     p_tenant_id: TENANT_ID,
     p_user_id: profile.id,
     p_items
+  });
+
+  if (rpcErr) throw new Error(rpcErr.message);
+
+  return { success: true, no_po: validated.no_po };
+}
+
+// 8b. addItemsToExistingPo() — tambah artikel ke PO yang sudah ada (status 'aktif')
+export async function addItemsToExistingPo(data: AddItemsToPoInput) {
+  const profile = await getCurrentUserProfile();
+  if (!profile) throw new Error('Unauthorized');
+
+  if (profile.role !== 'owner' && profile.role !== 'admin_produksi') {
+    throw new Error('Hanya owner atau admin produksi yang bisa menambah artikel PO');
+  }
+
+  const validated = AddItemsToPoSchema.parse(data);
+
+  const supabase = await createClient();
+
+  // Validasi produk aktif & milik tenant ini
+  const produkIds = validated.items.map(i => i.produk_id);
+  const { data: exProduk, error: errProduk } = await supabase
+    .from('produk')
+    .select('id')
+    .in('id', produkIds)
+    .eq('tenant_id', TENANT_ID)
+    .eq('aktif', true);
+
+  if (errProduk) throw new Error(errProduk.message);
+
+  const existingIds = new Set((exProduk || []).map(p => p.id));
+  for (let i = 0; i < validated.items.length; i++) {
+    if (!existingIds.has(validated.items[i].produk_id)) {
+      throw new Error(`Produk untuk item baris ${i + 1} tidak valid atau tidak aktif.`);
+    }
+  }
+
+  const p_items = validated.items.map(item => ({
+    produk_id: item.produk_id,
+    warna: item.warna,
+    size: item.size,
+    qty_order: item.qty_order,
+    qty_per_bundle: item.qty_per_bundle,
+  }));
+
+  const { error: rpcErr } = await supabase.rpc('add_items_to_po', {
+    p_no_po: validated.no_po,
+    p_tenant_id: TENANT_ID,
+    p_user_id: profile.id,
+    p_items,
   });
 
   if (rpcErr) throw new Error(rpcErr.message);
