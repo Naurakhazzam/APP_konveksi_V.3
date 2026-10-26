@@ -26,7 +26,11 @@ export interface PoArtikelRow {
 
 /**
  * Daftar artikel per PO untuk tab "Daftar Artikel PO".
- *   scope 'aktif' → hanya PO berstatus aktif (default).
+ *   scope 'aktif' → PO yang benar-benar masih dikerjakan. Yaitu status 'aktif'
+ *     DAN belum semua bundle-nya terkirim. Catatan: po.status di DB tidak
+ *     pernah di-set 'selesai' otomatis (hanya 'dibatalkan' saat batal), jadi
+ *     banyak PO yang sudah tuntas tetap berstatus 'aktif'. Kelengkapan dihitung
+ *     dari bundle — sama seperti halaman Monitoring — bukan dari po.status.
  *   scope 'semua' → semua PO (aktif & selesai), kecuali yang dibatalkan.
  */
 export async function getPoArtikelList(scope: DaftarPoScope): Promise<PoArtikelRow[]> {
@@ -41,7 +45,7 @@ export async function getPoArtikelList(scope: DaftarPoScope): Promise<PoArtikelR
       id, warna, size, qty_order,
       po:po_id!inner(id, no_po, status, klien:klien_id(nama)),
       produk:produk_id(nama, model:model_id(nama)),
-      bundle(id)
+      bundle(id, surat_jalan_id)
     `)
     .eq('tenant_id', TENANT_ID)
     .neq('po.status', 'dibatalkan')
@@ -54,19 +58,39 @@ export async function getPoArtikelList(scope: DaftarPoScope): Promise<PoArtikelR
   const { data, error } = await query;
   if (error) throw new Error(`Gagal ambil daftar artikel PO: ${error.message}`);
 
-  const rows: PoArtikelRow[] = (data as any[])
-    .filter((item) => item.po !== null)
-    .map((item) => ({
-      po_item_id: item.id,
-      no_po: item.po.no_po,
-      klien_nama: item.po.klien?.nama ?? '-',
-      model_nama: item.produk?.model?.nama ?? item.produk?.nama ?? '-',
-      warna: item.warna ?? '-',
-      size: item.size ?? '-',
-      qty_order: Number(item.qty_order ?? 0),
-      total_bundle: item.bundle?.length ?? 0,
-      po_status: item.po.status,
-    }));
+  const items = (data as any[]).filter((item) => item.po !== null);
+
+  // Tab 'aktif': buang PO yang sebenarnya sudah tuntas (punya bundle & SEMUA
+  // bundle sudah terkirim). Agregasi lintas po_item dalam PO yang sama.
+  let visible = items;
+  if (scope === 'aktif') {
+    const poAgg: Record<string, { total: number; shipped: number }> = {};
+    for (const item of items) {
+      const pid = item.po.id;
+      if (!poAgg[pid]) poAgg[pid] = { total: 0, shipped: 0 };
+      for (const b of item.bundle ?? []) {
+        poAgg[pid].total++;
+        if (b.surat_jalan_id) poAgg[pid].shipped++;
+      }
+    }
+    visible = items.filter((item) => {
+      const a = poAgg[item.po.id];
+      const fullyShipped = a && a.total > 0 && a.shipped === a.total;
+      return !fullyShipped;
+    });
+  }
+
+  const rows: PoArtikelRow[] = visible.map((item) => ({
+    po_item_id: item.id,
+    no_po: item.po.no_po,
+    klien_nama: item.po.klien?.nama ?? '-',
+    model_nama: item.produk?.model?.nama ?? item.produk?.nama ?? '-',
+    warna: item.warna ?? '-',
+    size: item.size ?? '-',
+    qty_order: Number(item.qty_order ?? 0),
+    total_bundle: item.bundle?.length ?? 0,
+    po_status: item.po.status,
+  }));
 
   rows.sort(
     (a, b) =>
