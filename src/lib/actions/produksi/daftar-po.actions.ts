@@ -60,22 +60,15 @@ export async function getPoArtikelList(scope: DaftarPoScope): Promise<PoArtikelR
 
   const items = (data as any[]).filter((item) => item.po !== null);
 
-  // Tab 'aktif': buang PO yang sebenarnya sudah tuntas (punya bundle & SEMUA
-  // bundle sudah terkirim). Agregasi lintas po_item dalam PO yang sama.
+  // Tab 'aktif': sembunyikan BARIS (artikel) yang barangnya sudah terkirim
+  // semua — yaitu punya bundle & setiap bundle sudah punya surat_jalan_id.
+  // Dihitung per po_item (bukan per PO), jadi artikel yang masih jalan dalam
+  // PO yang sama tetap muncul. Baris tanpa bundle (belum dipotong) tetap tampil.
   let visible = items;
   if (scope === 'aktif') {
-    const poAgg: Record<string, { total: number; shipped: number }> = {};
-    for (const item of items) {
-      const pid = item.po.id;
-      if (!poAgg[pid]) poAgg[pid] = { total: 0, shipped: 0 };
-      for (const b of item.bundle ?? []) {
-        poAgg[pid].total++;
-        if (b.surat_jalan_id) poAgg[pid].shipped++;
-      }
-    }
     visible = items.filter((item) => {
-      const a = poAgg[item.po.id];
-      const fullyShipped = a && a.total > 0 && a.shipped === a.total;
+      const bundles = item.bundle ?? [];
+      const fullyShipped = bundles.length > 0 && bundles.every((b: any) => b.surat_jalan_id);
       return !fullyShipped;
     });
   }
