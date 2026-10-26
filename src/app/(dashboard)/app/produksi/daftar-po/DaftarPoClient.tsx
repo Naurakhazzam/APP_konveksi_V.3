@@ -1,11 +1,10 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Search, X, Eye, Barcode as BarcodeIcon, Ticket, Loader2, ChevronLeft, ChevronRight, Printer } from 'lucide-react';
+import { Search, X, Eye, Barcode as BarcodeIcon, Ticket, Loader2, ChevronLeft, ChevronRight, Printer, Scissors } from 'lucide-react';
 import { toast } from 'sonner';
-import type { PoArtikelRow, DaftarPoScope } from '@/lib/actions/produksi/daftar-po.actions';
+import type { PoArtikelRow, DaftarPoScope, PrintBundle } from '@/lib/actions/produksi/daftar-po.actions';
 import { getBundlesForPrint } from '@/lib/actions/produksi/daftar-po.actions';
-import type { AntrianBundle } from '@/lib/actions/produksi/antrian.actions';
 import PoItemDetailModal from '@/app/(dashboard)/app/produksi/po/[poNumber]/PoItemDetailModal';
 import PrintLabelLayout from '@/app/(dashboard)/app/produksi/antrian-cutting/PrintLabelLayout';
 import PrintCuttingTicketLayout from './PrintCuttingTicketLayout';
@@ -32,8 +31,14 @@ export default function DaftarPoClient({ aktifData, semuaData }: Props) {
 
   // Status cetak
   const [printMode, setPrintMode] = useState<PrintMode | null>(null);
-  const [printBundles, setPrintBundles] = useState<AntrianBundle[]>([]);
+  const [printBundles, setPrintBundles] = useState<PrintBundle[]>([]);
   const [printingId, setPrintingId] = useState<string | null>(null);
+
+  // Picker tiket cutting — muncul bila satu artikel punya >1 bundle, agar
+  // pengguna memilih bundle mana yang dicetak (tidak semua sekaligus).
+  const [pickerBundles, setPickerBundles] = useState<PrintBundle[] | null>(null);
+  const [pickerSel, setPickerSel] = useState<Set<string>>(new Set());
+  const [pickerRow, setPickerRow] = useState<PoArtikelRow | null>(null);
 
   const source = scope === 'aktif' ? aktifData : semuaData;
 
@@ -63,7 +68,19 @@ export default function DaftarPoClient({ aktifData, semuaData }: Props) {
   const rangeStart = filtered.length === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;
   const rangeEnd = Math.min(currentPage * PAGE_SIZE, filtered.length);
 
-  // Inti cetak: kumpulkan bundle dari satu/banyak po_item lalu panggil print.
+  // Render layout cetak lalu panggil dialog print.
+  const doPrint = (bundles: PrintBundle[], mode: PrintMode) => {
+    setPrintBundles(bundles);
+    setPrintMode(mode);
+    // Beri waktu React me-render layout cetak sebelum dialog print muncul.
+    setTimeout(() => {
+      window.print();
+      setPrintMode(null);
+      setPrintBundles([]);
+    }, 600);
+  };
+
+  // Kumpulkan bundle dari satu/banyak po_item lalu langsung cetak (tanpa picker).
   const runPrint = async (ids: string[], mode: PrintMode, busyKey: string) => {
     if (ids.length === 0) return;
     setPrintingId(busyKey);
@@ -74,14 +91,7 @@ export default function DaftarPoClient({ aktifData, semuaData }: Props) {
         toast.error('Belum ada bundle untuk item terpilih — cutting belum dibuat.');
         return;
       }
-      setPrintBundles(bundles);
-      setPrintMode(mode);
-      // Beri waktu React me-render layout cetak sebelum dialog print muncul.
-      setTimeout(() => {
-        window.print();
-        setPrintMode(null);
-        setPrintBundles([]);
-      }, 600);
+      doPrint(bundles, mode);
     } catch (e: any) {
       toast.error(e?.message ?? 'Gagal menyiapkan data cetak');
     } finally {
@@ -89,8 +99,53 @@ export default function DaftarPoClient({ aktifData, semuaData }: Props) {
     }
   };
 
+  // Tiket cutting untuk 1 artikel: kalau cuma 1 bundle langsung cetak; kalau
+  // >1 (dipotong beberapa kali) buka picker supaya pengguna pilih bundle mana.
+  const openCuttingPicker = async (row: PoArtikelRow) => {
+    const busyKey = `${row.po_item_id}:cutting`;
+    setPrintingId(busyKey);
+    try {
+      const bundles = await getBundlesForPrint(row.po_item_id);
+      if (bundles.length === 0) {
+        toast.error('Belum ada bundle untuk artikel ini — cutting belum dibuat.');
+        return;
+      }
+      if (bundles.length === 1) {
+        doPrint(bundles, 'cutting');
+        return;
+      }
+      // Default tercentang: hanya bundle yang sudah benar-benar dipotong.
+      setPickerBundles(bundles);
+      setPickerSel(new Set(bundles.filter((b) => b.cutting_done).map((b) => b.id)));
+      setPickerRow(row);
+    } catch (e: any) {
+      toast.error(e?.message ?? 'Gagal menyiapkan data cetak');
+    } finally {
+      setPrintingId(null);
+    }
+  };
+
+  const confirmPickerPrint = () => {
+    if (!pickerBundles) return;
+    const chosen = pickerBundles.filter((b) => pickerSel.has(b.id));
+    if (chosen.length === 0) return;
+    setPickerBundles(null);
+    setPickerRow(null);
+    doPrint(chosen, 'cutting');
+  };
+
+  const togglePicker = (id: string) =>
+    setPickerSel((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
   const handlePrint = (row: PoArtikelRow, mode: PrintMode) =>
-    runPrint([row.po_item_id], mode, `${row.po_item_id}:${mode}`);
+    mode === 'cutting'
+      ? openCuttingPicker(row)
+      : runPrint([row.po_item_id], mode, `${row.po_item_id}:barcode`);
 
   const handlePrintSelected = (mode: PrintMode) =>
     runPrint([...selected], mode, `selected:${mode}`);
@@ -352,6 +407,94 @@ export default function DaftarPoClient({ aktifData, semuaData }: Props) {
           onClose={() => setDetailItem(null)}
           actions={<div className="flex items-center gap-1.5"><PrintButtons row={detailItem} /></div>}
         />
+      )}
+
+      {/* Picker tiket cutting — pilih bundle mana yang dicetak */}
+      {pickerBundles && (
+        <div
+          className="fixed inset-0 bg-black/75 z-50 flex items-center justify-center p-4"
+          onClick={() => { setPickerBundles(null); setPickerRow(null); }}
+        >
+          <div
+            className="bg-[#1A1D1F] border border-[#2A2D31] rounded-2xl w-full max-w-lg max-h-[85vh] flex flex-col shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-5 py-4 border-b border-[#2A2D31] flex items-start justify-between shrink-0">
+              <div>
+                <p className="text-[10px] uppercase tracking-widest text-[#9aa0a6] mb-0.5 flex items-center gap-1.5">
+                  <Scissors className="w-3 h-3" /> Pilih Bundle Tiket Cutting
+                </p>
+                <h2 className="text-base font-bold text-[#e8eaed]">
+                  {pickerRow?.model_nama} · {pickerRow?.warna} · {pickerRow?.size}
+                </h2>
+                <p className="text-xs text-[#9aa0a6] mt-0.5">
+                  Artikel ini dipotong beberapa kali. Centang bundle yang mau dicetak tiketnya.
+                </p>
+              </div>
+              <button
+                onClick={() => { setPickerBundles(null); setPickerRow(null); }}
+                className="w-8 h-8 flex items-center justify-center rounded-lg text-[#9aa0a6] hover:text-[#e8eaed] hover:bg-[#2A2D31] transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="overflow-y-auto flex-1 px-5 py-3 space-y-2">
+              {pickerBundles.map((b) => {
+                const noCutting = b.barcode.split('-')[2] ?? String(b.no_urut).padStart(5, '0');
+                const checked = pickerSel.has(b.id);
+                return (
+                  <label
+                    key={b.id}
+                    className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border cursor-pointer transition-colors ${
+                      checked ? 'border-[#e5c17b]/50 bg-[#e5c17b]/5' : 'border-[#2A2D31] hover:bg-[#2A2D31]/40'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => togglePicker(b.id)}
+                      className="w-4 h-4 accent-[#e5c17b] cursor-pointer shrink-0"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-bold font-mono text-[#e8eaed]">
+                        No. Cutting {noCutting}
+                      </p>
+                      <p className="text-[11px] text-[#9aa0a6] font-mono truncate">{b.barcode}</p>
+                    </div>
+                    <span className="text-sm font-bold text-[#e8eaed] font-mono shrink-0">{b.qty_per_bundle} pcs</span>
+                    <span
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
+                        b.cutting_done ? 'bg-[#1D9E75]/15 text-[#1D9E75]' : 'bg-[#2A2D31] text-[#9aa0a6] border border-[#3A3D41]'
+                      }`}
+                    >
+                      {b.cutting_done ? 'Sudah dipotong' : 'Belum dipotong'}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+
+            <div className="px-5 py-3 border-t border-[#2A2D31] bg-[#16181A] rounded-b-2xl shrink-0 flex items-center justify-between gap-3">
+              <span className="text-xs text-[#9aa0a6]">{pickerSel.size} bundle dipilih</span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => { setPickerBundles(null); setPickerRow(null); }}
+                  className="px-4 py-2 rounded-xl border border-[#2A2D31] text-sm font-bold text-[#e8eaed] hover:bg-[#2A2D31] transition-colors"
+                >
+                  Batal
+                </button>
+                <button
+                  onClick={confirmPickerPrint}
+                  disabled={pickerSel.size === 0}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-[#0D0E10] bg-[#e5c17b] hover:bg-[#d9b36a] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  <Printer className="w-4 h-4" /> Cetak Tiket ({pickerSel.size})
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Layout cetak — tersembunyi kecuali saat window.print() */}

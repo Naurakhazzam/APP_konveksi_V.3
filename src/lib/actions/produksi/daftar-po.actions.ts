@@ -97,12 +97,23 @@ export async function getPoArtikelList(scope: DaftarPoScope): Promise<PoArtikelR
 }
 
 /**
- * Ambil seluruh bundle milik satu po_item dalam bentuk {@link AntrianBundle},
+ * Bundle untuk keperluan cetak. Memperluas {@link AntrianBundle} dengan info
+ * apakah bundle ini sudah benar-benar dipotong — dipakai picker tiket cutting
+ * agar pengguna bisa memilih bundle yang mau dicetak (default: yang sudah
+ * dipotong saja). Field tambahan tidak mengganggu layout cetak yang hanya
+ * memakai field AntrianBundle.
+ */
+export interface PrintBundle extends AntrianBundle {
+  cutting_done: boolean;
+}
+
+/**
+ * Ambil seluruh bundle milik satu po_item dalam bentuk {@link PrintBundle},
  * agar bisa langsung dipakai ulang oleh PrintLabelLayout (barcode) maupun
  * PrintCuttingTicketLayout (tiket nomor cutting). Qty per bundle memakai
  * qty_aktual cutting bila sudah ada, jika belum pakai rencana qty_per_bundle.
  */
-export async function getBundlesForPrint(poItemId: string): Promise<AntrianBundle[]> {
+export async function getBundlesForPrint(poItemId: string): Promise<PrintBundle[]> {
   const profile = await getCurrentUserProfile();
   if (!profile) throw new Error('Unauthorized');
 
@@ -123,6 +134,7 @@ export async function getBundlesForPrint(poItemId: string): Promise<AntrianBundl
 
   return (data as any[]).map((b) => {
     const cuttingQty = b.status_tahap?.cutting?.qty_aktual;
+    const cuttingStatus = b.status_tahap?.cutting?.status;
     return {
       id: b.id,
       barcode: b.barcode,
@@ -138,6 +150,7 @@ export async function getBundlesForPrint(poItemId: string): Promise<AntrianBundl
       size: b.po_item?.size ?? '-',
       qty_per_bundle: cuttingQty ?? b.po_item?.qty_per_bundle ?? 0,
       model_nama: b.po_item?.produk?.model?.nama ?? b.po_item?.produk?.nama ?? null,
-    } as AntrianBundle;
+      cutting_done: cuttingStatus === 'selesai' || cuttingStatus === 'partial',
+    } as PrintBundle;
   });
 }
