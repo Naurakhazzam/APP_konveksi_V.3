@@ -19,6 +19,8 @@ interface Props {
   poItemId: string;
   artikelInfo: { model_nama: string; warna: string; size: string; total_bundle: number; qty_order: number };
   onClose: () => void;
+  /** Aksi opsional (mis. tombol cetak) yang ditampilkan di header modal. */
+  actions?: React.ReactNode;
 }
 
 function StageBadge({ tahap, detail }: { tahap: string; detail: BundleStageDetail }) {
@@ -72,7 +74,7 @@ function StatusOverallBadge({ status }: { status: BundleDetailItem['status_overa
   return <span className="text-[10px] bg-[#2A2D31] text-[#9aa0a6] px-2 py-0.5 rounded-full border border-[#3A3D41]">Belum mulai</span>;
 }
 
-export default function PoItemDetailModal({ poItemId, artikelInfo, onClose }: Props) {
+export default function PoItemDetailModal({ poItemId, artikelInfo, onClose, actions }: Props) {
   const [bundles, setBundles] = useState<BundleDetailItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -101,9 +103,12 @@ export default function PoItemDetailModal({ poItemId, artikelInfo, onClose }: Pr
               {artikelInfo.total_bundle} bundle &nbsp;·&nbsp; {artikelInfo.qty_order} pcs order
             </p>
           </div>
-          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg text-[#9aa0a6] hover:text-[#e8eaed] hover:bg-[#2A2D31] transition-colors mt-0.5">
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2 mt-0.5">
+            {actions}
+            <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg text-[#9aa0a6] hover:text-[#e8eaed] hover:bg-[#2A2D31] transition-colors">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Body */}

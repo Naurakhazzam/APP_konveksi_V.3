@@ -44,6 +44,7 @@ const NAV_MENU = [
       { label: 'QC',              path: '/app/produksi/scan/qc' },
       { label: 'Steam',           path: '/app/produksi/scan/steam' },
       { label: 'Packing',         path: '/app/produksi/scan/packing' },
+      { label: 'Daftar Artikel PO', path: '/app/produksi/daftar-po' },
       { label: 'Monitoring',      path: '/app/produksi/monitoring' },
       { label: 'Kroscek Pekerjaan', path: '/app/produksi/kroscek-pekerjaan' },
       { label: 'Approval QTY',    path: '/app/produksi/approval-qty' },

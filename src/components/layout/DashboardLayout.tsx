@@ -19,6 +19,7 @@ const ALL_APP_PATHS = [
   '/app/produksi/scan/qc',
   '/app/produksi/scan/steam',
   '/app/produksi/scan/packing',
+  '/app/produksi/daftar-po',
   '/app/produksi/monitoring',
   '/app/produksi/kroscek-pekerjaan',
   '/app/produksi/po',
