@@ -220,6 +220,8 @@ export interface AntrianJahitBundle {
   warna: string;
   size: string;
   qty_per_bundle: number;
+  /** Qty rencana per bundle dari PO (po_item.qty_per_bundle). */
+  qty_rencana: number;
   po_item_id: string;
   status_tahap: Record<string, { status?: string; karyawan_id?: string; qty_terima?: number }>;
 }
@@ -282,6 +284,7 @@ export async function getAntrianJahit(): Promise<AntrianJahitBundle[]> {
       warna: poItem?.warna ?? '',
       size: poItem?.size ?? '',
       qty_per_bundle: qtyEfektif,
+      qty_rencana: poItem?.qty_per_bundle ?? 0,
       po_item_id: b.po_item_id,
       status_tahap: b.status_tahap ?? {},
     };

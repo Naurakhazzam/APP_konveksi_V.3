@@ -289,37 +289,46 @@ export async function splitBundleAwalJahit(input: {
 
 // 8. koreksiSerahTerimaJahit — ganti penjahit / koreksi qty bundle yang
 // sedang dijahit. Stok aksesori tahap jahit ikut disesuaikan selisihnya;
-// ditolak kalau upah jahit bundle sudah dibayar dimuka.
+// ditolak kalau upah jahit bundle sudah dibayar dimuka. Dengan koreksi_cutting,
+// hasil cutting yang salah input (kekecilan) ikut dibetulkan beserta upahnya.
 export interface KoreksiSerahTerimaJahitResult {
-  qty_lama:      number;
-  qty_baru:      number;
-  stok_warnings: StokWarning[];
+  qty_lama:            number;
+  qty_baru:            number;
+  stok_warnings:       StokWarning[];
+  /** Tambahan upah cutting (0 kalau tidak ada koreksi cutting / tanpa tarif). */
+  upah_cutting_tambah: number;
+  /** 'ditambah' = entri belum lunas dinaikkan; 'entri_baru' = upah lama sudah lunas, dibuat entri selisih. */
+  upah_cutting_aksi:   'ditambah' | 'entri_baru' | null;
 }
 
 export async function koreksiSerahTerimaJahit(input: {
-  bundle_id:   string;
-  karyawan_id: string;
-  qty:         number;
-  alasan:      string;
+  bundle_id:       string;
+  karyawan_id:     string;
+  qty:             number;
+  alasan:          string;
+  koreksi_cutting: boolean;
 }): Promise<KoreksiSerahTerimaJahitResult> {
   const user_id  = await resolveUserId();
   const supabase = await createClient();
 
   const { data, error } = await supabase.rpc('koreksi_serah_terima_jahit', {
-    p_bundle_id:   input.bundle_id,
-    p_karyawan_id: input.karyawan_id,
-    p_qty:         input.qty,
-    p_alasan:      input.alasan,
-    p_user_id:     user_id,
-    p_tenant_id:   TENANT_ID,
+    p_bundle_id:       input.bundle_id,
+    p_karyawan_id:     input.karyawan_id,
+    p_qty:             input.qty,
+    p_alasan:          input.alasan,
+    p_user_id:         user_id,
+    p_tenant_id:       TENANT_ID,
+    p_koreksi_cutting: input.koreksi_cutting,
   });
 
   if (error) throw new Error(error.message);
 
   const result = data as KoreksiSerahTerimaJahitResult;
   return {
-    qty_lama:      Number(result.qty_lama),
-    qty_baru:      Number(result.qty_baru),
-    stok_warnings: result.stok_warnings ?? [],
+    qty_lama:            Number(result.qty_lama),
+    qty_baru:            Number(result.qty_baru),
+    stok_warnings:       result.stok_warnings ?? [],
+    upah_cutting_tambah: Number(result.upah_cutting_tambah ?? 0),
+    upah_cutting_aksi:   result.upah_cutting_aksi ?? null,
   };
 }

@@ -20,16 +20,19 @@ export default function ModalKoreksiSerahTerima({ bundle, karyawanList, onSucces
   // Batas atas = hasil cutting; server tetap memvalidasi ulang.
   const qtyMaks: number | null = (bundle as any).status_tahap?.cutting?.qty_aktual ?? null;
 
-  const [karyawanId, setKaryawanId]     = useState(karyawanLamaId);
-  const [qty, setQty]                   = useState<string>(String(qtyLama));
-  const [alasan, setAlasan]             = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [karyawanId, setKaryawanId]         = useState(karyawanLamaId);
+  const [qty, setQty]                       = useState<string>(String(qtyLama));
+  const [alasan, setAlasan]                 = useState('');
+  const [koreksiCutting, setKoreksiCutting] = useState(false);
+  const [isSubmitting, setIsSubmitting]     = useState(false);
 
-  const qtyNum        = parseInt(qty) || 0;
-  const gantiPenjahit = karyawanId !== karyawanLamaId;
-  const gantiQty      = qtyNum !== qtyLama;
-  const qtyValid      = qtyNum >= 1 && (qtyMaks === null || qtyNum <= qtyMaks);
-  const isValid       = karyawanId !== '' && qtyValid && (gantiPenjahit || gantiQty);
+  const qtyNum         = parseInt(qty) || 0;
+  const gantiPenjahit  = karyawanId !== karyawanLamaId;
+  const gantiQty       = qtyNum !== qtyLama;
+  // Qty melebihi hasil cutting hanya boleh kalau cutting-nya ikut dikoreksi
+  const melebihiCutting = qtyMaks !== null && qtyNum > qtyMaks;
+  const qtyValid       = qtyNum >= 1 && (!melebihiCutting || koreksiCutting);
+  const isValid        = karyawanId !== '' && qtyValid && (gantiPenjahit || gantiQty);
 
   const namaLama = karyawanList.find(k => k.id === karyawanLamaId)?.nama ?? 'Belum ditentukan';
   const namaBaru = karyawanList.find(k => k.id === karyawanId)?.nama ?? '';
@@ -42,8 +45,9 @@ export default function ModalKoreksiSerahTerima({ bundle, karyawanList, onSucces
       const result = await koreksiSerahTerimaJahit({
         bundle_id:   bundle.id,
         karyawan_id: karyawanId,
-        qty:         qtyNum,
+        qty:             qtyNum,
         alasan,
+        koreksi_cutting: melebihiCutting && koreksiCutting,
       });
 
       if (result.stok_warnings.length > 0) {
@@ -55,6 +59,11 @@ export default function ModalKoreksiSerahTerima({ bundle, karyawanList, onSucces
       const perubahan = [
         gantiPenjahit && `penjahit → ${namaBaru}`,
         gantiQty && `qty ${result.qty_lama} → ${result.qty_baru} pcs`,
+        melebihiCutting && koreksiCutting && `cutting ${qtyMaks} → ${qtyNum} pcs`,
+        result.upah_cutting_aksi === 'ditambah' &&
+          `upah cutting +Rp${result.upah_cutting_tambah.toLocaleString('id-ID')}`,
+        result.upah_cutting_aksi === 'entri_baru' &&
+          `upah cutting kekurangan Rp${result.upah_cutting_tambah.toLocaleString('id-ID')} dicatat (belum lunas)`,
       ].filter(Boolean).join(', ');
       toast.success(
         `${bundle.barcode} dikoreksi: ${perubahan}` +
@@ -140,20 +149,49 @@ export default function ModalKoreksiSerahTerima({ bundle, karyawanList, onSucces
               <input
                 type="number"
                 min={1}
-                max={qtyMaks ?? undefined}
                 value={qty}
                 onChange={e => setQty(e.target.value)}
                 disabled={isSubmitting}
                 className="w-32 bg-[#16181A] border border-[#2A2D31] rounded-xl px-4 py-3 text-[#e8eaed] text-center text-lg font-bold focus:ring-1 focus:ring-[#e5c17b] outline-none"
               />
               <span className="text-[#9aa0a6] text-sm">
-                pcs{qtyMaks !== null && <> · maks {qtyMaks} (hasil cutting)</>}
+                pcs{qtyMaks !== null && <> · hasil cutting {qtyMaks}</>}
               </span>
             </div>
-            {!qtyValid && qty !== '' && (
-              <p className="text-xs text-red-400">
-                Qty harus antara 1{qtyMaks !== null ? ` dan ${qtyMaks}` : ''} pcs
-              </p>
+            {qtyNum < 1 && qty !== '' && (
+              <p className="text-xs text-red-400">Qty minimal 1 pcs</p>
+            )}
+
+            {melebihiCutting && (
+              <label className={`flex items-start gap-2.5 rounded-xl p-3 border cursor-pointer transition-colors ${
+                koreksiCutting ? 'bg-orange-500/10 border-orange-500/30' : 'bg-red-500/5 border-red-500/30'
+              }`}>
+                <input
+                  type="checkbox"
+                  checked={koreksiCutting}
+                  onChange={e => setKoreksiCutting(e.target.checked)}
+                  disabled={isSubmitting}
+                  className="accent-[#e5c17b] w-4 h-4 mt-0.5 shrink-0 cursor-pointer"
+                />
+                <span className="text-xs text-[#9aa0a6] leading-relaxed">
+                  <span className="text-[#e8eaed] font-semibold">
+                    Hasil cutting juga salah input — betulkan cutting dari {qtyMaks} → {qtyNum} pcs
+                  </span>
+                  <br />
+                  Upah tukang potong ikut ditambah {qtyNum - qtyMaks!} pcs. Kalau upahnya sudah dibayar,
+                  kekurangannya dicatat sebagai entri baru (belum lunas).
+                  {bundle.qty_rencana > 0 && qtyNum > bundle.qty_rencana && (
+                    <span className="block text-orange-400 mt-1">
+                      Perhatian: {qtyNum} pcs melebihi rencana PO ({bundle.qty_rencana} pcs per bundle). Pastikan memang hasil potongnya lebih.
+                    </span>
+                  )}
+                  {!koreksiCutting && (
+                    <span className="block text-red-400 mt-1">
+                      Centang ini untuk menyimpan qty di atas hasil cutting.
+                    </span>
+                  )}
+                </span>
+              </label>
             )}
           </div>
 

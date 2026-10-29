@@ -483,7 +483,9 @@ export async function getPendingCuttingBundles(): Promise<PendingBundle[]> {
       warna:       poItem?.warna ?? '-',
       size:        poItem?.size ?? '-',
       qty_order:   poItem?.qty_per_bundle ?? 0,
-      qty_aktual:  Number(raw.status_tahap?.cutting?.qty_aktual ?? 0),
+      // qty_dipotong ada kalau bundle pernah di-Split di awal jahit (qty_aktual
+      // induk sudah dikurangi porsi anak) — yang dihitung tetap total potongnya.
+      qty_aktual:  Number(raw.status_tahap?.cutting?.qty_dipotong ?? raw.status_tahap?.cutting?.qty_aktual ?? 0),
       qty_susulan: susulanPerInduk[raw.id] ?? 0,
     });
   }
