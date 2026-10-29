@@ -182,6 +182,12 @@ export async function getSelesaiPerTahap(tahap: TahapKey, page: number, pageSize
     query = query.range(offset, offset + pageSize - 1);
   }
 
+  // Packing: urutkan dari yang paling baru selesai (masuk tab Selesai hari ini
+  // ada di paling atas). Tahap lain tetap urut created_at seperti sebelumnya.
+  if (tahap === 'packing') {
+    query = query.order(`status_tahap->${tahap}->>waktu_selesai`, { ascending: false, nullsFirst: false });
+  }
+
   const { data, count, error } = await query
     .order('created_at', { ascending: false });
 
