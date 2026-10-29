@@ -48,6 +48,18 @@ export interface BundleReadyToShip {
   /** Sudah terkirim di surat jalan sebelumnya (0 kalau belum pernah dikirim). */
   qty_sudah_kirim: number;
   qty_kirim: number;
+  /** Waktu selesai packing (ISO, UTC) — dipakai mengurutkan yang terbaru di atas. */
+  waktu_selesai_packing: string | null;
+}
+
+// waktu_selesai di status_tahap tersimpan dalam dua format: ISO lengkap
+// ("2026-10-29T03:00:00+00:00") dan teks UTC tanpa zona ("2026-10-29 03:00:00"),
+// tergantung RPC yang menulisnya. Disamakan ke ISO UTC supaya bisa dibandingkan.
+function normalisasiWaktuUtc(v: unknown): string | null {
+  if (typeof v !== 'string' || !v) return null;
+  const iso = /[zZ]|[+-]\d{2}:?\d{2}$/.test(v) ? v : v.replace(' ', 'T') + 'Z';
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? null : d.toISOString();
 }
 
 export interface SuratJalanRow {
@@ -154,6 +166,7 @@ export async function getBundlesReadyToShip(): Promise<BundleReadyToShip[]> {
     qty_jadi: qtyJadi,
     qty_sudah_kirim: qtySudahKirim,
     qty_kirim: sisa, // Default: kirim seluruh sisanya
+    waktu_selesai_packing: normalisasiWaktuUtc(b.status_tahap?.packing?.waktu_selesai),
   }));
 }
 

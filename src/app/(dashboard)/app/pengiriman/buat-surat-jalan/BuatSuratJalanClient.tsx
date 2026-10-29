@@ -20,6 +20,8 @@ interface BundleGroup {
   klien_nama: string;
   bundles: BundleReadyToShip[];
   total_qty: number;
+  /** Waktu selesai packing paling baru di antara bundle kelompok ini. */
+  terbaru_packing: string;
 }
 
 // ─── Indeterminate Checkbox ────────────────────────────────────────────────────
@@ -123,17 +125,26 @@ export default function BuatSuratJalanClient({ initialBundles }: { initialBundle
           klien_nama: b.klien_nama,
           bundles: [],
           total_qty: 0,
+          terbaru_packing: '',
         });
       }
       const g = map.get(key)!;
       g.bundles.push(b);
       g.total_qty += b.qty_per_bundle;
+      const w = b.waktu_selesai_packing ?? '';
+      if (w > g.terbaru_packing) g.terbaru_packing = w;
     });
 
-    // Urutan tampil: Klien → No PO → Artikel/Warna/Size — bukan urutan
-    // mentah dari database (yang terasa acak). Klien duluan supaya barang
-    // milik klien yang sama (satu SJ cuma boleh satu klien) berdekatan.
+    // Bundle di dalam kelompok: yang paling baru selesai packing di atas.
+    map.forEach(g => g.bundles.sort((a, b) =>
+      (b.waktu_selesai_packing ?? '').localeCompare(a.waktu_selesai_packing ?? '')
+    ));
+
+    // Urutan tampil: kelompok yang paling baru selesai packing di atas
+    // (barang yang baru masuk siap kirim langsung terlihat). Kalau waktunya
+    // sama, Klien → No PO → Artikel/Warna/Size.
     return Array.from(map.values()).sort((a, b) =>
+      b.terbaru_packing.localeCompare(a.terbaru_packing) ||
       a.klien_nama.localeCompare(b.klien_nama) ||
       a.no_po.localeCompare(b.no_po) ||
       (a.model_nama ?? '').localeCompare(b.model_nama ?? '') ||
