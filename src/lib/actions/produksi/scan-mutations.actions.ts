@@ -332,3 +332,43 @@ export async function koreksiSerahTerimaJahit(input: {
     upah_cutting_aksi:   result.upah_cutting_aksi ?? null,
   };
 }
+
+// 9. koreksiHasilCutting — betulkan qty hasil cutting bundle yang masih di
+// Antrian Jahit (belum diserahterimakan). Status cutting & upah tukang potong
+// ikut disesuaikan; ditolak kalau upah sudah lunas dan qty diturunkan.
+export interface KoreksiHasilCuttingResult {
+  qty_lama:     number;
+  qty_baru:     number;
+  status_baru:  'selesai' | 'partial';
+  /** Selisih upah cutting (negatif kalau dikurangi). */
+  upah_selisih: number;
+  upah_aksi:    'ditambah' | 'dikurangi' | 'entri_baru' | null;
+}
+
+export async function koreksiHasilCutting(input: {
+  bundle_id: string;
+  qty:       number;
+  alasan:    string;
+}): Promise<KoreksiHasilCuttingResult> {
+  const user_id  = await resolveUserId();
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.rpc('koreksi_hasil_cutting', {
+    p_bundle_id: input.bundle_id,
+    p_qty:       input.qty,
+    p_alasan:    input.alasan,
+    p_user_id:   user_id,
+    p_tenant_id: TENANT_ID,
+  });
+
+  if (error) throw new Error(error.message);
+
+  const result = data as KoreksiHasilCuttingResult;
+  return {
+    qty_lama:     Number(result.qty_lama),
+    qty_baru:     Number(result.qty_baru),
+    status_baru:  result.status_baru,
+    upah_selisih: Number(result.upah_selisih ?? 0),
+    upah_aksi:    result.upah_aksi ?? null,
+  };
+}

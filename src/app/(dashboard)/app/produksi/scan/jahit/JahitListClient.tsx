@@ -11,6 +11,7 @@ import ModalSplitBundle from './ModalSplitBundle';
 import ModalSplitAwalJahit from './ModalSplitAwalJahit';
 import ModalBatchSelesaiJahit from './ModalBatchSelesaiJahit';
 import ModalKoreksiSerahTerima from './ModalKoreksiSerahTerima';
+import ModalKoreksiCutting from './ModalKoreksiCutting';
 import { Package, Clock, User, Loader2, Users, Printer, CheckCircle, AlertTriangle, Scissors, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import { getAksesoriForKartuKerja } from '@/lib/actions/produksi/model-aksesori.actions';
@@ -53,6 +54,7 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
   const [splitBundle, setSplitBundle] = useState<AntrianJahitBundle | null>(null);
   const [splitAwalBundle, setSplitAwalBundle] = useState<AntrianJahitBundle | null>(null);
   const [koreksiBundle, setKoreksiBundle] = useState<AntrianJahitBundle | null>(null);
+  const [koreksiCuttingBundle, setKoreksiCuttingBundle] = useState<AntrianJahitBundle | null>(null);
 
   const handleSerahTerimaSuccess = () => {
     setShowModalSerahTerima(false);
@@ -68,6 +70,12 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
 
   const handleKoreksiSuccess = () => {
     setKoreksiBundle(null);
+    router.refresh();
+  };
+
+  const handleKoreksiCuttingSuccess = () => {
+    setKoreksiCuttingBundle(null);
+    setSelectedBundleIds(new Set());
     router.refresh();
   };
 
@@ -330,14 +338,23 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
                             <StageStatusBadge status="menunggu" />
                           </td>
                           <td className="px-4 py-3">
-                            <button
-                              onClick={() => setSplitAwalBundle(item)}
-                              disabled={item.qty_per_bundle <= 1}
-                              title={item.qty_per_bundle <= 1 ? 'Qty cuma 1 pcs, tidak bisa di-split' : undefined}
-                              className="flex items-center gap-1 text-[10px] font-bold text-[#9aa0a6] hover:text-orange-400 border border-[#2A2D31] hover:border-orange-400/40 px-2 py-1 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:text-[#9aa0a6] disabled:hover:border-[#2A2D31]"
-                            >
-                              <Scissors className="w-3 h-3" /> Split
-                            </button>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => setSplitAwalBundle(item)}
+                                disabled={item.qty_per_bundle <= 1}
+                                title={item.qty_per_bundle <= 1 ? 'Qty cuma 1 pcs, tidak bisa di-split' : undefined}
+                                className="flex items-center gap-1 text-[10px] font-bold text-[#9aa0a6] hover:text-orange-400 border border-[#2A2D31] hover:border-orange-400/40 px-2 py-1 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:text-[#9aa0a6] disabled:hover:border-[#2A2D31]"
+                              >
+                                <Scissors className="w-3 h-3" /> Split
+                              </button>
+                              <button
+                                onClick={() => setKoreksiCuttingBundle(item)}
+                                title="Koreksi hasil cutting yang salah input"
+                                className="flex items-center gap-1 text-[10px] font-bold text-[#9aa0a6] hover:text-[#e5c17b] border border-[#2A2D31] hover:border-[#e5c17b]/40 px-2 py-1 rounded-lg transition-colors"
+                              >
+                                <Pencil className="w-3 h-3" /> Edit
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))
@@ -566,6 +583,14 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
           karyawanList={karyawanList}
           onSuccess={handleKoreksiSuccess}
           onClose={() => setKoreksiBundle(null)}
+        />
+      )}
+
+      {koreksiCuttingBundle && (
+        <ModalKoreksiCutting
+          bundle={koreksiCuttingBundle}
+          onSuccess={handleKoreksiCuttingSuccess}
+          onClose={() => setKoreksiCuttingBundle(null)}
         />
       )}
 
