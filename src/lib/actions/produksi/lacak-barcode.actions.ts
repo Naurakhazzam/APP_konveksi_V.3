@@ -45,10 +45,26 @@ export interface LacakBarcodeCandidate {
   status_kirim: 'belum_dikirim' | 'sudah_dikirim';
 }
 
+/**
+ * Ringkasan per nomor PO dari hasil pencarian — dipakai supaya pertanyaan
+ * "model ini ada di PO mana saja" bisa langsung terjawab tanpa harus
+ * menyisir daftar bundle satu-satu. Dihitung dari SELURUH hasil cocok
+ * (tidak dipangkas seperti candidates), karena daftar PO jauh lebih
+ * ringkas daripada daftar bundle.
+ */
+export interface LacakBarcodePoGroup {
+  no_po: string;
+  klien_nama: string;
+  jumlah_bundle: number;
+  belum_dikirim: number;
+  /** Kombinasi model/warna/size yang cocok di PO ini, misal "Zubair / Navy / XL". */
+  varian: string[];
+}
+
 export type LacakBarcodeResponse =
   | { type: 'found'; data: LacakBarcodeResult }
   /** `total` bisa lebih besar dari jumlah candidates kalau hasilnya dipangkas. */
-  | { type: 'multiple'; candidates: LacakBarcodeCandidate[]; total: number }
+  | { type: 'multiple'; candidates: LacakBarcodeCandidate[]; total: number; poGroups: LacakBarcodePoGroup[] }
   | { type: 'not_found' };
 
 /** Batas kandidat yang dikirim ke layar. PO terbesar punya 54 bundle, jadi
@@ -229,7 +245,42 @@ export async function lacakBarcode(query: string): Promise<LacakBarcodeResponse>
     type: 'multiple',
     candidates: cocok.slice(0, MAKS_KANDIDAT),
     total: cocok.length,
+    poGroups: kelompokkanPerPo(cocok),
   };
+}
+
+/**
+ * Kelompokkan seluruh hasil cocok (bukan yang sudah dipangkas ke MAKS_KANDIDAT)
+ * per nomor PO — supaya "model ini ada di PO mana saja" tetap lengkap walau
+ * jumlah bundle-nya ratusan.
+ */
+function kelompokkanPerPo(
+  cocok: {
+    no_po: string;
+    klien_nama: string;
+    model_nama: string | null;
+    warna: string;
+    size: string;
+    status_kirim: 'belum_dikirim' | 'sudah_dikirim';
+  }[],
+): LacakBarcodePoGroup[] {
+  const map = new Map<string, LacakBarcodePoGroup & { varianSet: Set<string> }>();
+
+  for (const c of cocok) {
+    if (!c.no_po) continue;
+    let g = map.get(c.no_po);
+    if (!g) {
+      g = { no_po: c.no_po, klien_nama: c.klien_nama, jumlah_bundle: 0, belum_dikirim: 0, varian: [], varianSet: new Set() };
+      map.set(c.no_po, g);
+    }
+    g.jumlah_bundle += 1;
+    if (c.status_kirim === 'belum_dikirim') g.belum_dikirim += 1;
+    g.varianSet.add(`${c.model_nama ?? '-'} / ${c.warna} / ${c.size}`);
+  }
+
+  return Array.from(map.values())
+    .map(({ varianSet, ...g }) => ({ ...g, varian: Array.from(varianSet).sort() }))
+    .sort((a, b) => a.no_po.localeCompare(b.no_po));
 }
 
 // Resolusi 1 barcode persis — dipakai saat user memilih salah satu dari

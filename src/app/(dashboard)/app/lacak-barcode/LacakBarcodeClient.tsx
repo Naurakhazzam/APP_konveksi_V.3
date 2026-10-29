@@ -1,20 +1,22 @@
 'use client';
 
 import React, { useRef, useState } from 'react';
+import Link from 'next/link';
 import { toast } from 'sonner';
-import { Search, Loader2, Hash, PackageCheck, Truck, Scissors, ChevronRight, Barcode as BarcodeIcon } from 'lucide-react';
+import { Search, Loader2, Hash, PackageCheck, Truck, Scissors, ChevronRight, Barcode as BarcodeIcon, FileText } from 'lucide-react';
 import {
   lacakBarcode,
   lacakBarcodeExact,
   type LacakBarcodeResult,
   type LacakBarcodeCandidate,
+  type LacakBarcodePoGroup,
 } from '@/lib/actions/produksi/lacak-barcode.actions';
 
 type ViewState =
   | { phase: 'idle' }
   | { phase: 'loading' }
   | { phase: 'not_found' }
-  | { phase: 'multiple'; candidates: LacakBarcodeCandidate[]; total: number }
+  | { phase: 'multiple'; candidates: LacakBarcodeCandidate[]; total: number; poGroups: LacakBarcodePoGroup[] }
   | { phase: 'found'; data: LacakBarcodeResult };
 
 function formatTanggal(iso: string | null): string {
@@ -43,7 +45,7 @@ export default function LacakBarcodeClient() {
       if (result.type === 'not_found') {
         setState({ phase: 'not_found' });
       } else if (result.type === 'multiple') {
-        setState({ phase: 'multiple', candidates: result.candidates, total: result.total });
+        setState({ phase: 'multiple', candidates: result.candidates, total: result.total, poGroups: result.poGroups });
       } else {
         setState({ phase: 'found', data: result.data });
       }
@@ -142,6 +144,50 @@ export default function LacakBarcodeClient() {
             </div>
           </div>
 
+          {/* Ringkasan per PO — jawaban langsung untuk "ada di PO mana saja",
+              dihitung dari seluruh hasil (tidak dipangkas seperti daftar bundle
+              di bawah), jadi tetap lengkap walau bundle-nya ratusan. */}
+          <div className="mb-6">
+            <h3 className="text-xs font-bold text-[#9aa0a6] uppercase tracking-wider mb-3">
+              Ditemukan di {state.poGroups.length} PO
+            </h3>
+            <div className="grid gap-2 max-h-[40vh] overflow-y-auto pr-1">
+              {state.poGroups.map((g) => (
+                <Link
+                  key={g.no_po}
+                  href={`/app/produksi/po/${encodeURIComponent(g.no_po)}`}
+                  className="flex items-center justify-between gap-3 p-3 bg-[#0D0E10] border border-[#2A2D31] hover:border-[#e5c17b]/30 rounded-xl transition-all group hover:bg-[#e5c17b]/5"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-8 h-8 rounded-lg bg-[#e5c17b]/10 flex items-center justify-center shrink-0">
+                      <FileText className="w-4 h-4 text-[#e5c17b]" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-sm font-bold text-[#e8eaed] truncate">
+                        {g.no_po} <span className="text-[#9aa0a6] font-normal">· {g.klien_nama || '-'}</span>
+                      </div>
+                      <div className="text-[11px] text-[#9aa0a6] truncate">{g.varian.join(', ')}</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="text-[10px] font-bold text-[#e8eaed] bg-[#2A2D31]/60 px-1.5 py-0.5 rounded">
+                      {g.jumlah_bundle} bundle
+                    </span>
+                    {g.belum_dikirim > 0 && (
+                      <span className="text-[10px] font-bold text-orange-400 bg-orange-500/10 border border-orange-500/20 px-1.5 py-0.5 rounded">
+                        {g.belum_dikirim} belum kirim
+                      </span>
+                    )}
+                    <ChevronRight className="w-4 h-4 text-[#2A2D31] group-hover:text-[#e5c17b]" />
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </div>
+
+          <h3 className="text-xs font-bold text-[#9aa0a6] uppercase tracking-wider mb-3">
+            Rincian per Bundle
+          </h3>
           <div className="grid gap-3 max-h-[60vh] overflow-y-auto pr-1">
             {state.candidates.map((c) => (
               <button
