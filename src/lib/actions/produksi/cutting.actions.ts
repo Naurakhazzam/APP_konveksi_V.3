@@ -86,6 +86,8 @@ export interface PendingBundle {
   barcode: string;
   no_po: string;
   klien_nama: string;
+  /** Nama artikel (model_produk.nama) — null kalau produk belum punya model. */
+  model_nama: string | null;
   warna: string;
   size: string;
   qty_order: number;
@@ -434,7 +436,10 @@ export async function getPendingCuttingBundles(): Promise<PendingBundle[]> {
       po_item:po_item_id (
         warna,
         size,
-        qty_per_bundle
+        qty_per_bundle,
+        produk:produk_id (
+          model_produk:model_id ( nama )
+        )
       )
     `)
     .eq('tenant_id', TENANT_ID)
@@ -465,6 +470,8 @@ export async function getPendingCuttingBundles(): Promise<PendingBundle[]> {
     const po = Array.isArray(raw.po) ? raw.po[0] : raw.po;
     const klien = Array.isArray(po?.klien) ? po.klien[0] : po?.klien;
     const poItem = Array.isArray(raw.po_item) ? raw.po_item[0] : raw.po_item;
+    const produk = Array.isArray(poItem?.produk) ? poItem.produk[0] : poItem?.produk;
+    const modelProduk = Array.isArray(produk?.model_produk) ? produk.model_produk[0] : produk?.model_produk;
 
     result.push({
       id:          raw.id,
@@ -472,6 +479,7 @@ export async function getPendingCuttingBundles(): Promise<PendingBundle[]> {
       tenant_id:   raw.tenant_id,
       no_po:       po?.no_po ?? '-',
       klien_nama:  klien?.nama ?? '-',
+      model_nama:  modelProduk?.nama ?? null,
       warna:       poItem?.warna ?? '-',
       size:        poItem?.size ?? '-',
       qty_order:   poItem?.qty_per_bundle ?? 0,

@@ -109,6 +109,7 @@ export default function PendingCuttingTab() {
               <th className="px-4 py-3 text-left text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold">No PO</th>
               <th className="px-4 py-3 text-left text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold">Barcode</th>
               <th className="px-4 py-3 text-left text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold">Klien</th>
+              <th className="px-4 py-3 text-left text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold">Artikel</th>
               <th className="px-4 py-3 text-left text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold">Warna</th>
               <th className="px-4 py-3 text-left text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold">Size</th>
               <th className="px-4 py-3 text-center text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold">Rencana</th>
@@ -129,6 +130,7 @@ export default function PendingCuttingTab() {
                   <td className="px-4 py-3 font-mono font-bold text-[#e5c17b] whitespace-nowrap">{b.no_po}</td>
                   <td className="px-4 py-3 font-mono text-xs text-[#e8eaed] whitespace-nowrap">{b.barcode}</td>
                   <td className="px-4 py-3 text-[#9aa0a6] text-xs">{b.klien_nama}</td>
+                  <td className="px-4 py-3 text-[#e8eaed]">{b.model_nama ?? '-'}</td>
                   <td className="px-4 py-3 text-[#9aa0a6]">{b.warna}</td>
                   <td className="px-4 py-3 text-[#9aa0a6]">{b.size}</td>
                   <td className="px-4 py-3 text-center text-[#e8eaed] font-semibold">{b.qty_order}</td>
@@ -349,7 +351,10 @@ function ModalLanjutCutting({
 
           {/* Ringkasan bundle */}
           <div className="bg-[#16181A] border border-[#2A2D31] rounded-lg px-4 py-3 mb-4">
-            <div className="font-mono text-xs text-[#e5c17b] font-bold mb-2">{bundle.barcode}</div>
+            <div className="font-mono text-xs text-[#e5c17b] font-bold">{bundle.barcode}</div>
+            <div className="text-xs text-[#e8eaed] mt-0.5 mb-2">
+              {bundle.model_nama ?? '-'} · {bundle.warna} · {bundle.size}
+            </div>
             <div className="grid grid-cols-3 gap-3 text-center">
               <div>
                 <div className="text-[10px] uppercase tracking-wider text-[#9aa0a6]">Rencana</div>
