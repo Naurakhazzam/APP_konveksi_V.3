@@ -10,7 +10,8 @@ import ModalSerahTerimaJahit from './ModalSerahTerimaJahit';
 import ModalSplitBundle from './ModalSplitBundle';
 import ModalSplitAwalJahit from './ModalSplitAwalJahit';
 import ModalBatchSelesaiJahit from './ModalBatchSelesaiJahit';
-import { Package, Clock, User, Loader2, Users, Printer, CheckCircle, AlertTriangle, Scissors } from 'lucide-react';
+import ModalKoreksiSerahTerima from './ModalKoreksiSerahTerima';
+import { Package, Clock, User, Loader2, Users, Printer, CheckCircle, AlertTriangle, Scissors, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import { getAksesoriForKartuKerja } from '@/lib/actions/produksi/model-aksesori.actions';
 import PrintKartuKerjaLayout, { type KartuBundle, type AksesoriItem } from '@/app/(dashboard)/app/produksi/antrian-cutting/PrintKartuKerjaLayout';
@@ -51,6 +52,7 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
   const [showBatchSelesaiModal, setShowBatchSelesaiModal] = useState(false);
   const [splitBundle, setSplitBundle] = useState<AntrianJahitBundle | null>(null);
   const [splitAwalBundle, setSplitAwalBundle] = useState<AntrianJahitBundle | null>(null);
+  const [koreksiBundle, setKoreksiBundle] = useState<AntrianJahitBundle | null>(null);
 
   const handleSerahTerimaSuccess = () => {
     setShowModalSerahTerima(false);
@@ -61,6 +63,11 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
   const handleSplitSuccess = () => {
     setSplitBundle(null);
     setSelectedProsesIds(new Set());
+    router.refresh();
+  };
+
+  const handleKoreksiSuccess = () => {
+    setKoreksiBundle(null);
     router.refresh();
   };
 
@@ -414,12 +421,21 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
                             })()}
                           </td>
                           <td className="px-4 py-3">
-                            <button onClick={() => handlePrintUlang(item, karyawanList.find(
-                              k => k.id === ((item as any).status_tahap?.['jahit'])?.karyawan_id
-                            )?.nama ?? '')}
-                              className="flex items-center gap-1 text-[10px] font-bold text-[#9aa0a6] hover:text-[#e5c17b] border border-[#2A2D31] px-2 py-1 rounded-lg transition-colors">
-                              <Printer className="w-3 h-3" /> Print Ulang
-                            </button>
+                            <div className="flex items-center gap-2">
+                              <button onClick={() => handlePrintUlang(item, karyawanList.find(
+                                k => k.id === ((item as any).status_tahap?.['jahit'])?.karyawan_id
+                              )?.nama ?? '')}
+                                className="flex items-center gap-1 text-[10px] font-bold text-[#9aa0a6] hover:text-[#e5c17b] border border-[#2A2D31] px-2 py-1 rounded-lg transition-colors whitespace-nowrap">
+                                <Printer className="w-3 h-3" /> Print Ulang
+                              </button>
+                              <button
+                                onClick={() => setKoreksiBundle(item)}
+                                title="Ganti penjahit / koreksi qty"
+                                className="flex items-center gap-1 text-[10px] font-bold text-[#9aa0a6] hover:text-[#e5c17b] border border-[#2A2D31] hover:border-[#e5c17b]/40 px-2 py-1 rounded-lg transition-colors"
+                              >
+                                <Pencil className="w-3 h-3" /> Edit
+                              </button>
+                            </div>
                           </td>
                           <td className="px-4 py-3">
                             <button
@@ -541,6 +557,15 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
           karyawanList={karyawanList}
           onSuccess={handleSplitAwalSuccess}
           onClose={() => setSplitAwalBundle(null)}
+        />
+      )}
+
+      {koreksiBundle && (
+        <ModalKoreksiSerahTerima
+          bundle={koreksiBundle}
+          karyawanList={karyawanList}
+          onSuccess={handleKoreksiSuccess}
+          onClose={() => setKoreksiBundle(null)}
         />
       )}
 

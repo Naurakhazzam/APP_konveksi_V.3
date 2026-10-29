@@ -286,3 +286,40 @@ export async function splitBundleAwalJahit(input: {
     stok_warnings:      result.stok_warnings ?? [],
   };
 }
+
+// 8. koreksiSerahTerimaJahit — ganti penjahit / koreksi qty bundle yang
+// sedang dijahit. Stok aksesori tahap jahit ikut disesuaikan selisihnya;
+// ditolak kalau upah jahit bundle sudah dibayar dimuka.
+export interface KoreksiSerahTerimaJahitResult {
+  qty_lama:      number;
+  qty_baru:      number;
+  stok_warnings: StokWarning[];
+}
+
+export async function koreksiSerahTerimaJahit(input: {
+  bundle_id:   string;
+  karyawan_id: string;
+  qty:         number;
+  alasan:      string;
+}): Promise<KoreksiSerahTerimaJahitResult> {
+  const user_id  = await resolveUserId();
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.rpc('koreksi_serah_terima_jahit', {
+    p_bundle_id:   input.bundle_id,
+    p_karyawan_id: input.karyawan_id,
+    p_qty:         input.qty,
+    p_alasan:      input.alasan,
+    p_user_id:     user_id,
+    p_tenant_id:   TENANT_ID,
+  });
+
+  if (error) throw new Error(error.message);
+
+  const result = data as KoreksiSerahTerimaJahitResult;
+  return {
+    qty_lama:      Number(result.qty_lama),
+    qty_baru:      Number(result.qty_baru),
+    stok_warnings: result.stok_warnings ?? [],
+  };
+}
