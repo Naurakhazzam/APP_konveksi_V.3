@@ -14,6 +14,7 @@ import {
   type StokWarning,
   type KaryawanOption,
 } from '@/lib/actions/produksi/cutting.actions';
+import CuttingDitutupSection from './CuttingDitutupSection';
 
 interface BahanRow {
   rowId: string;
@@ -31,6 +32,7 @@ export default function PendingCuttingTab() {
   const [lanjutBundle, setLanjutBundle] = useState<PendingBundle | null>(null);
   const [closingId, setClosingId] = useState<string | null>(null);
   const [alasanTutup, setAlasanTutup] = useState('');
+  const [ditutupKey, setDitutupKey] = useState(0);
 
   const fetchData = useCallback(async () => {
     setIsLoading(true);
@@ -55,6 +57,7 @@ export default function PendingCuttingTab() {
       setAlasanTutup('');
       if (result.success) {
         toast.success(`Bundle ${bundle.barcode} ditutup di ${terpotong(bundle)} pcs`);
+        setDitutupKey(k => k + 1);
         await fetchData();
       } else {
         toast.error(result.error ?? 'Gagal menutup bundle');
@@ -76,15 +79,20 @@ export default function PendingCuttingTab() {
     );
   }
 
+  const sectionDitutup = <CuttingDitutupSection refreshKey={ditutupKey} onDibuka={fetchData} />;
+
   // ─── Empty ────────────────────────────────────────────────────────────────
   if (bundles.length === 0) {
     return (
-      <div className="rounded-xl border border-[#2A2D31] bg-[#1A1D1F] px-4 py-16 text-center">
-        <div className="text-[#9aa0a6] text-sm">Tidak ada sisa potongan yang menggantung</div>
-        <p className="text-[10px] text-[#9aa0a6]/50 mt-1">
-          Sisa muncul di sini ketika qty terpotong kurang dari qty rencana
-        </p>
-      </div>
+      <>
+        <div className="rounded-xl border border-[#2A2D31] bg-[#1A1D1F] px-4 py-16 text-center">
+          <div className="text-[#9aa0a6] text-sm">Tidak ada sisa potongan yang menggantung</div>
+          <p className="text-[10px] text-[#9aa0a6]/50 mt-1">
+            Sisa muncul di sini ketika qty terpotong kurang dari qty rencana
+          </p>
+        </div>
+        {sectionDitutup}
+      </>
     );
   }
 
@@ -179,6 +187,8 @@ export default function PendingCuttingTab() {
           </tbody>
         </table>
       </div>
+
+      {sectionDitutup}
 
       {/* Dialog Konfirmasi Close */}
       {confirmBundle && (

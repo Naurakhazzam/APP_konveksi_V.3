@@ -21,6 +21,7 @@ const TAHAP_LABEL: Record<(typeof TAHAP_ORDER)[number], string> = {
 };
 
 export type TahapKoreksi = Exclude<(typeof TAHAP_ORDER)[number], 'cutting'>;
+export type TahapBundle = (typeof TAHAP_ORDER)[number];
 
 /** Satu kejadian di timeline Riwayat Lengkap. */
 export interface RiwayatEvent {
@@ -76,6 +77,10 @@ export interface LacakBarcodeResult {
   sisa_cutting_ditutup: number;
   cutting_partial: boolean;
   is_pecahan: boolean;
+  /** Hasil cutting bundle ini sendiri (tanpa susulan). */
+  qty_cutting: number | null;
+  /** Pernah di-Split — qty terbagi ke pecahan, koreksi berantai ditolak. */
+  punya_split: boolean;
   pengiriman: { nomor_sj: string; tanggal: string | null; qty_kirim: number; divalidasi: boolean }[];
 }
 
@@ -457,6 +462,23 @@ async function fetchDetail(supabase: SupabaseClient, barcode: string): Promise<L
         }
         break;
       }
+      case 'Koreksi Qty Berantai': {
+        judul = `Qty disamakan jadi ${m.qty_baru} pcs mulai ${labelTahap(m.tahap_mulai)}`;
+        const perubahan = (m.perubahan ?? []) as any[];
+        if (perubahan.length) {
+          detail.push(perubahan.map(p => `${labelTahap(p.tahap)} ${p.lama ?? p.selesai_lama ?? p.terima_lama ?? '-'}→${p.baru}`).join(', '));
+        }
+        for (const sj of ((m.surat_jalan ?? []) as any[]).filter(s => s.nomor_sj)) {
+          detail.push(`${sj.nomor_sj} ${sj.qty_lama}→${sj.qty_baru} pcs`);
+        }
+        const upah = (m.upah ?? []) as any[];
+        if (upah.length) {
+          const lama = upah.reduce((s, u) => s + Number(u.total_lama ?? 0), 0);
+          const baru = upah.reduce((s, u) => s + Number(u.total_baru ?? 0), 0);
+          detail.push(`upah ${rupiah(lama)} → ${rupiah(baru)}`);
+        }
+        break;
+      }
       case 'Koreksi Qty Tahap':
         judul = `Koreksi qty ${labelTahap(m.tahap)}`;
         if (m.qty_terima_lama !== m.qty_terima_baru) detail.push(`terima ${m.qty_terima_lama} → ${m.qty_terima_baru}`);
@@ -533,6 +555,8 @@ async function fetchDetail(supabase: SupabaseClient, barcode: string): Promise<L
     sisa_cutting_ditutup: sisaCuttingDitutup,
     cutting_partial: cutting.status === 'partial',
     is_pecahan: isPecahan,
+    qty_cutting: qtyDipotongSendiri,
+    punya_split: pecahan.length > 0,
     pengiriman: sjItems.map(x => ({
       nomor_sj: x.sj?.nomor_sj ?? '-',
       tanggal: x.sj?.tanggal ?? null,
@@ -697,7 +721,7 @@ export async function bukaKembaliCutting(bundle_id: string, alasan: string): Pro
 /** Mundurkan bundle ke tahap tujuan (sedang dikerjakan), walau sudah terkirim. */
 export async function kembalikanTahapBundle(
   bundle_id: string,
-  tahap_tujuan: TahapKoreksi,
+  tahap_tujuan: TahapBundle,
   alasan: string,
 ): Promise<{ tahap_dihapus: string[]; surat_jalan: { nomor_sj: string; sj_dihapus: boolean }[] }> {
   const supabase = await createClient();
@@ -764,4 +788,36 @@ export async function koreksiQtyTahap(input: {
   });
   if (error) throw new Error(error.message);
   revalidateProduksi();
+}
+
+/**
+ * Samakan qty mulai tahap tertentu (boleh Cutting) sampai tahap terakhir
+ * dan surat jalan — untuk kasus "tercatat 10 sampai kirim, nyatanya 5".
+ * Upah, aksesori, SJ & invoice ikut disesuaikan tanpa scan ulang.
+ */
+export async function koreksiQtyBerantai(input: {
+  bundle_id: string;
+  tahap_mulai: TahapBundle;
+  qty: number;
+  alasan: string;
+}): Promise<{ jumlah_tahap: number; surat_jalan: { nomor_sj: string; qty_lama: number; qty_baru: number }[] }> {
+  const supabase = await createClient();
+  const user_id = await resolveUserId(supabase);
+  const { data, error } = await supabase.rpc('koreksi_qty_berantai', {
+    p_bundle_id:   input.bundle_id,
+    p_tahap_mulai: input.tahap_mulai,
+    p_qty:         input.qty,
+    p_alasan:      input.alasan,
+    p_user_id:     user_id,
+    p_tenant_id:   TENANT_ID,
+  });
+  if (error) throw new Error(error.message);
+  revalidateProduksi();
+  const r = (data ?? {}) as any;
+  return {
+    jumlah_tahap: (r.perubahan ?? []).length,
+    surat_jalan: ((r.surat_jalan ?? []) as any[])
+      .filter(s => s.nomor_sj)
+      .map(s => ({ nomor_sj: s.nomor_sj, qty_lama: Number(s.qty_lama), qty_baru: Number(s.qty_baru) })),
+  };
 }

@@ -256,7 +256,7 @@ export default function LacakBarcodeClient() {
               <div className="text-sm font-bold text-[#e8eaed] font-mono">{state.data.barcode}</div>
             </div>
             <div className="flex items-center gap-3">
-              {(state.data.sisa_cutting_ditutup > 0 || state.data.tahap_detail.length > 0) && (
+              {(state.data.sisa_cutting_ditutup > 0 || state.data.qty_cutting != null || state.data.tahap_detail.length > 0) && (
                 <button
                   onClick={() => setKoreksiOpen(true)}
                   className="flex items-center gap-1.5 text-xs font-bold text-[#e5c17b] bg-[#e5c17b]/10 hover:bg-[#e5c17b]/20 border border-[#e5c17b]/30 px-3 py-1.5 rounded-lg transition-colors"

@@ -1,6 +1,7 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { revalidatePath } from 'next/cache';
 
 const TENANT_ID = 'STX-001';
@@ -494,6 +495,119 @@ export async function getPendingCuttingBundles(): Promise<PendingBundle[]> {
   }
 
   return result;
+}
+
+// ─── FUNGSI 5b: getClosedCuttingBundles ──────────────────────────────────────
+// Bundle yang sisa potongnya sudah di-Close (dianggap batal) tapi masih kurang
+// dari rencana — supaya sisa yang ternyata masih akan dipotong bisa ditemukan
+// lagi dan dibuka kembali tanpa harus mencari barcodenya satu per satu.
+
+export interface ClosedCuttingBundle {
+  id: string;
+  barcode: string;
+  no_po: string;
+  klien_nama: string;
+  model_nama: string | null;
+  warna: string;
+  size: string;
+  qty_order: number;
+  qty_terpotong: number;
+  sisa: number;
+  closed_at: string | null;
+  closed_by_nama: string | null;
+  alasan: string | null;
+  terkirim: boolean;
+}
+
+export async function getClosedCuttingBundles(): Promise<ClosedCuttingBundle[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from('bundle')
+    .select(`
+      id,
+      barcode,
+      parent_bundle_id,
+      surat_jalan_id,
+      status_tahap,
+      po:po_id ( no_po, klien:klien_id ( nama ) ),
+      po_item:po_item_id (
+        warna, size, qty_per_bundle,
+        produk:produk_id ( model_produk:model_id ( nama ) )
+      )
+    `)
+    .eq('tenant_id', TENANT_ID)
+    .eq('status_tahap->cutting->>status', 'selesai')
+    .not('status_tahap->cutting->>closed_at', 'is', null);
+
+  if (error) throw new Error(`Gagal fetch cutting ditutup: ${error.message}`);
+  // Hanya yang hasil potongnya sendiri masih di bawah rencana — sisanya
+  // (termasuk yang ditutup otomatis oleh Lanjut Cutting saat sisa habis)
+  // pasti tidak punya sisa tertutup.
+  const rows = ((data ?? []) as any[]).filter(raw => {
+    const poItem = Array.isArray(raw.po_item) ? raw.po_item[0] : raw.po_item;
+    const cutting = raw.status_tahap?.cutting ?? {};
+    return !raw.parent_bundle_id
+      && Number(cutting.qty_dipotong ?? cutting.qty_aktual ?? 0) < Number(poItem?.qty_per_bundle ?? 0);
+  });
+  if (rows.length === 0) return [];
+
+  // Susulan (…c1) mengurangi sisa yang benar-benar tertutup
+  const { data: susulanRows } = await supabase
+    .from('bundle')
+    .select('parent_bundle_id, status_tahap')
+    .eq('tenant_id', TENANT_ID)
+    .in('parent_bundle_id', rows.map(r => r.id))
+    .not('status_tahap->cutting->>susulan_dari', 'is', null);
+  const susulanPerInduk: Record<string, number> = {};
+  for (const s of (susulanRows ?? []) as any[]) {
+    susulanPerInduk[s.parent_bundle_id] =
+      (susulanPerInduk[s.parent_bundle_id] ?? 0) + Number(s.status_tahap?.cutting?.qty_aktual ?? 0);
+  }
+
+  // Nama penutup: user_profile hanya terbaca owner lewat RLS
+  const closedByIds = [...new Set(rows.map(r => r.status_tahap?.cutting?.closed_by).filter(Boolean))] as string[];
+  const namaUser = new Map<string, string>();
+  if (closedByIds.length) {
+    const { data: users } = await createAdminClient()
+      .from('user_profile').select('id, nama').in('id', closedByIds);
+    for (const u of (users ?? []) as any[]) namaUser.set(u.id, u.nama);
+  }
+
+  const result: ClosedCuttingBundle[] = [];
+  for (const raw of rows) {
+    if (raw.parent_bundle_id) continue;
+    const cutting = raw.status_tahap?.cutting ?? {};
+    const po = Array.isArray(raw.po) ? raw.po[0] : raw.po;
+    const klien = Array.isArray(po?.klien) ? po.klien[0] : po?.klien;
+    const poItem = Array.isArray(raw.po_item) ? raw.po_item[0] : raw.po_item;
+    const produk = Array.isArray(poItem?.produk) ? poItem.produk[0] : poItem?.produk;
+    const modelProduk = Array.isArray(produk?.model_produk) ? produk.model_produk[0] : produk?.model_produk;
+
+    const qtyOrder = Number(poItem?.qty_per_bundle ?? 0);
+    const terpotong = Number(cutting.qty_dipotong ?? cutting.qty_aktual ?? 0) + (susulanPerInduk[raw.id] ?? 0);
+    const sisa = qtyOrder - terpotong;
+    if (sisa <= 0) continue;
+
+    result.push({
+      id:             raw.id,
+      barcode:        raw.barcode,
+      no_po:          po?.no_po ?? '-',
+      klien_nama:     klien?.nama ?? '-',
+      model_nama:     modelProduk?.nama ?? null,
+      warna:          poItem?.warna ?? '-',
+      size:           poItem?.size ?? '-',
+      qty_order:      qtyOrder,
+      qty_terpotong:  terpotong,
+      sisa,
+      closed_at:      cutting.closed_at ?? null,
+      closed_by_nama: cutting.closed_by ? namaUser.get(cutting.closed_by) ?? null : null,
+      alasan:         cutting.closed_alasan ?? null,
+      terkirim:       !!raw.surat_jalan_id,
+    });
+  }
+
+  return result.sort((a, b) => String(b.closed_at).localeCompare(String(a.closed_at)));
 }
 
 // ─── FUNGSI 6: getInventoryItemsForCutting ───────────────────────────────────
