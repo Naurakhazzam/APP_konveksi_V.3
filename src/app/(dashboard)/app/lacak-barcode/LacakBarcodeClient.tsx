@@ -3,7 +3,9 @@
 import React, { useRef, useState } from 'react';
 import Link from 'next/link';
 import { toast } from 'sonner';
-import { Search, Loader2, Hash, PackageCheck, Truck, Scissors, ChevronRight, Barcode as BarcodeIcon, FileText } from 'lucide-react';
+import { Search, Loader2, Hash, PackageCheck, Truck, Scissors, ChevronRight, Barcode as BarcodeIcon, FileText, PencilLine } from 'lucide-react';
+import { AlurQty, TimelineRiwayat } from './RiwayatBundle';
+import ModalKoreksiBundle from './ModalKoreksiBundle';
 import {
   lacakBarcode,
   lacakBarcodeExact,
@@ -34,7 +36,19 @@ function formatWaktu(iso: string | null): string {
 export default function LacakBarcodeClient() {
   const [barcode, setBarcode] = useState('');
   const [state, setState] = useState<ViewState>({ phase: 'idle' });
+  const [koreksiOpen, setKoreksiOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Muat ulang detail setelah koreksi, tanpa kembali ke tampilan loading,
+  // supaya timeline langsung menunjukkan koreksi yang barusan disimpan.
+  const reloadDetail = async (barcodeDetail: string) => {
+    try {
+      const detail = await lacakBarcodeExact(barcodeDetail);
+      if (detail) setState({ phase: 'found', data: detail });
+    } catch (err: any) {
+      toast.error(err.message || 'Gagal memuat ulang detail bundle');
+    }
+  };
 
   const handleSearch = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -241,9 +255,19 @@ export default function LacakBarcodeClient() {
               </div>
               <div className="text-sm font-bold text-[#e8eaed] font-mono">{state.data.barcode}</div>
             </div>
-            <button onClick={resetSearch} className="text-xs text-[#9aa0a6] hover:text-[#e5c17b] underline">
-              Cari Lagi
-            </button>
+            <div className="flex items-center gap-3">
+              {(state.data.sisa_cutting_ditutup > 0 || state.data.tahap_detail.length > 0) && (
+                <button
+                  onClick={() => setKoreksiOpen(true)}
+                  className="flex items-center gap-1.5 text-xs font-bold text-[#e5c17b] bg-[#e5c17b]/10 hover:bg-[#e5c17b]/20 border border-[#e5c17b]/30 px-3 py-1.5 rounded-lg transition-colors"
+                >
+                  <PencilLine className="w-3.5 h-3.5" /> Koreksi
+                </button>
+              )}
+              <button onClick={resetSearch} className="text-xs text-[#9aa0a6] hover:text-[#e5c17b] underline">
+                Cari Lagi
+              </button>
+            </div>
           </div>
 
           <div className="p-6 grid grid-cols-2 md:grid-cols-3 gap-6 border-b border-[#2A2D31]">
@@ -252,7 +276,13 @@ export default function LacakBarcodeClient() {
             <InfoItem label="Model" value={state.data.model_nama ?? '-'} />
             <InfoItem label="Warna" value={state.data.warna} />
             <InfoItem label="Size" value={state.data.size} />
-            <InfoItem label="Qty/Bundle" value={`${state.data.qty_per_bundle} pcs`} />
+            <InfoItem
+              label="Qty/Bundle"
+              value={state.data.qty_per_bundle !== state.data.qty_rencana && !state.data.is_pecahan
+                ? `${state.data.qty_per_bundle} pcs (rencana ${state.data.qty_rencana})`
+                : `${state.data.qty_per_bundle} pcs`}
+              color={state.data.qty_per_bundle < state.data.qty_rencana && !state.data.is_pecahan ? '#f87171' : undefined}
+            />
           </div>
 
           <div className="p-6 space-y-4">
@@ -304,7 +334,21 @@ export default function LacakBarcodeClient() {
               </div>
             </div>
           </div>
+
+          <AlurQty rows={state.data.alur_qty} />
+          <TimelineRiwayat events={state.data.riwayat} />
         </div>
+      )}
+
+      {state.phase === 'found' && koreksiOpen && (
+        <ModalKoreksiBundle
+          data={state.data}
+          onClose={() => setKoreksiOpen(false)}
+          onSuccess={async () => {
+            setKoreksiOpen(false);
+            await reloadDetail(state.data.barcode);
+          }}
+        />
       )}
     </div>
   );

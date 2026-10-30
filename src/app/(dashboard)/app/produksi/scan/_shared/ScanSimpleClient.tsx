@@ -209,9 +209,27 @@ export default function ScanSimpleClient({ tahap, tahapLabel, mode = 'lanjut', k
     }
   };
 
+  // Qty terima lebih kecil dari hasil tahap sebelumnya = ada barang yang
+  // "hilang" di antara tahap tanpa catatan apa pun. Dulu ini lolos diam-diam
+  // dan baru ketahuan saat kirim; sekarang minta konfirmasi dulu.
+  const konfirmasiQtyKurang = (bundle: BundleForScan): boolean => {
+    const prevTahap = getPrevTahap(tahap);
+    const prev = prevTahap ? (bundle.status_tahap as any)?.[prevTahap] : null;
+    const qtySebelum: number | null =
+      prevTahap === 'cutting'
+        ? prev?.qty_aktual ?? null
+        : prev?.qty_selesai ?? prev?.qty_terima ?? null;
+    if (qtySebelum == null || qty >= qtySebelum) return true;
+    return confirm(
+      `Hasil tahap sebelumnya ${qtySebelum} pcs, tapi yang diterima di ${tahapLabel} cuma ${qty} pcs ` +
+      `(kurang ${qtySebelum - qty} pcs).\n\nYakin qty-nya benar?`
+    );
+  };
+
   const handleTerima = async () => {
     if (state.phase !== 'LOADED') return;
     const bundle = state.bundle;
+    if (!konfirmasiQtyKurang(bundle)) return;
     setState({ phase: 'SUBMITTING', bundle });
     try {
       // Packing standard mode: terima via scanLanjutTahap (auto-tutup Steam)
@@ -251,6 +269,7 @@ export default function ScanSimpleClient({ tahap, tahapLabel, mode = 'lanjut', k
   const handleLanjut = async () => {
     if (state.phase !== 'LOADED') return;
     const bundle = state.bundle;
+    if (!konfirmasiQtyKurang(bundle)) return;
     setState({ phase: 'SUBMITTING', bundle });
     try {
       const result = await scanLanjutTahap({

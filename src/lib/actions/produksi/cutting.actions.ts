@@ -344,7 +344,9 @@ export async function selesaiCuttingBatch(
 // ─── FUNGSI 4: closeBundleCutting ────────────────────────────────────────────
 
 export async function closeBundleCutting(
-  bundle_id: string
+  bundle_id: string,
+  /** Wajib dari UI — tercatat di audit_log & timeline Lacak Barcode. */
+  alasan?: string,
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const user_id = await resolveUserId();
@@ -354,6 +356,7 @@ export async function closeBundleCutting(
       p_bundle_id:  bundle_id,
       p_user_id:    user_id,
       p_tenant_id:  TENANT_ID,
+      p_alasan:     alasan ?? null,
     });
 
     if (error) return { success: false, error: error.message };

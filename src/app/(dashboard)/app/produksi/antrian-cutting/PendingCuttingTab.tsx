@@ -30,6 +30,7 @@ export default function PendingCuttingTab() {
   const [confirmBundle, setConfirmBundle] = useState<PendingBundle | null>(null);
   const [lanjutBundle, setLanjutBundle] = useState<PendingBundle | null>(null);
   const [closingId, setClosingId] = useState<string | null>(null);
+  const [alasanTutup, setAlasanTutup] = useState('');
 
   const fetchData = useCallback(async () => {
     setIsLoading(true);
@@ -46,10 +47,12 @@ export default function PendingCuttingTab() {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const handleClose = async (bundle: PendingBundle) => {
+    if (!alasanTutup.trim()) return;
     setConfirmBundle(null);
     setClosingId(bundle.id);
     try {
-      const result = await closeBundleCutting(bundle.id);
+      const result = await closeBundleCutting(bundle.id, alasanTutup.trim());
+      setAlasanTutup('');
       if (result.success) {
         toast.success(`Bundle ${bundle.barcode} ditutup di ${terpotong(bundle)} pcs`);
         await fetchData();
@@ -199,16 +202,34 @@ export default function PendingCuttingTab() {
                 batal dan tidak akan dipotong lagi. Lanjutkan?
               </div>
 
+              {/* Alasan wajib — sebelumnya "Tutup" tidak meninggalkan jejak,
+                  sehingga sisa yang ternyata masih akan dipotong tidak bisa
+                  ditelusuri. Tercatat di timeline Lacak Barcode. */}
+              <label className="block text-[11px] font-bold text-[#9aa0a6] uppercase tracking-wider mt-4 mb-1.5">
+                Alasan ditutup <span className="text-red-400">*</span>
+              </label>
+              <textarea
+                value={alasanTutup}
+                onChange={(e) => setAlasanTutup(e.target.value)}
+                rows={2}
+                placeholder="Misal: kain habis, order dikurangi klien..."
+                className="w-full bg-[#16181A] border border-[#2A2D31] rounded-lg px-3 py-2 text-sm text-[#e8eaed] placeholder:text-[#5f6368] focus:border-[#e5c17b] outline-none resize-none"
+              />
+              <p className="text-[11px] text-[#9aa0a6] mt-1.5">
+                Kalau ternyata masih akan dipotong, bisa dibuka lagi dari Lacak Barcode.
+              </p>
+
               <div className="flex items-center justify-end gap-3 mt-5">
                 <button
-                  onClick={() => setConfirmBundle(null)}
+                  onClick={() => { setConfirmBundle(null); setAlasanTutup(''); }}
                   className="px-4 h-9 rounded-lg border border-[#2A2D31] text-[#e8eaed] text-sm hover:bg-[#2A2D31] transition-colors"
                 >
                   Batal
                 </button>
                 <button
                   onClick={() => handleClose(confirmBundle)}
-                  className="flex items-center gap-2 px-4 h-9 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-sm font-bold transition-colors"
+                  disabled={!alasanTutup.trim()}
+                  className="flex items-center gap-2 px-4 h-9 rounded-lg bg-orange-500 hover:bg-orange-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-bold transition-colors"
                 >
                   <XCircle className="w-4 h-4" />
                   Ya, Tutup
