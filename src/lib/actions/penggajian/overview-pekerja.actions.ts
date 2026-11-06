@@ -340,7 +340,9 @@ export async function getOverviewPekerjaExportCSV(
     baris.push(
       `Nama;${selCsv(p.nama)}`,
       `Jabatan;${selCsv(p.jabatan)}`,
-      `Total Dikerjakan (pcs);${p.total_pcs}`,
+      ...TAHAP_URUTAN_EXPORT
+        .filter(t => (p.pcs_per_tahap[t] ?? 0) > 0)
+        .map(t => `Dikerjakan ${TAHAP_LABEL_EXPORT[t] ?? t} (pcs);${p.pcs_per_tahap[t]}`),
       `Perlu Dibayar;${p.total_upah}`,
       `Jumlah Pekerjaan;${p.jumlah_pekerjaan}`,
       `Belum Dibayar;${p.jml_belum_dibayar}`,

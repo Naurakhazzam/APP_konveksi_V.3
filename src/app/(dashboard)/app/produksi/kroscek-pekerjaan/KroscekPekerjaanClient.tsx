@@ -2,10 +2,11 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { toast } from 'sonner';
-import { ChevronLeft, ChevronRight, Loader2, X, Users, Shirt, ClipboardList, Printer } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Loader2, X, Users, Shirt, ClipboardList, Printer, Download } from 'lucide-react';
 import {
   getHasilKerjaPekerja,
   getRincianHasilKerja,
+  getKroscekExportCSV,
   type HasilKerjaPekerja,
   type RincianHasilKerja,
 } from '@/lib/actions/produksi/kroscek-pekerjaan.actions';
@@ -23,6 +24,16 @@ const TAHAP_LABEL: Record<string, string> = {
   steam: 'Steam',
   packing: 'Packing',
 };
+
+const TAHAP_URUTAN = ['cutting', 'jahit', 'lubang_kancing', 'buang_benang', 'qc', 'steam', 'packing'];
+
+const urutkanTahap = (perTahap: Record<string, number>) =>
+  Object.entries(perTahap)
+    .filter(([, n]) => n > 0)
+    .sort(([a], [b]) => {
+      const ia = TAHAP_URUTAN.indexOf(a), ib = TAHAP_URUTAN.indexOf(b);
+      return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+    });
 
 const tanggalPanjang = (iso: string) =>
   new Date(iso).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
@@ -125,11 +136,38 @@ export default function KroscekPekerjaanClient({
     muat(p);
   };
 
-  const total = useMemo(() => ({
-    pekerja: data.length,
-    pcs: data.reduce((s, d) => s + d.total_pcs, 0),
-    pekerjaan: data.reduce((s, d) => s + d.jumlah_pekerjaan, 0),
-  }), [data]);
+  const total = useMemo(() => {
+    // pcs dijumlah PER TAHAP — satu baju terhitung di tiap tahap, jadi
+    // menjumlah lintas tahap menghasilkan angka yang tidak masuk akal.
+    const perTahap: Record<string, number> = {};
+    for (const d of data) {
+      for (const [t, n] of Object.entries(d.pcs_per_tahap)) perTahap[t] = (perTahap[t] ?? 0) + n;
+    }
+    return {
+      pekerja: data.length,
+      perTahap,
+      pekerjaan: data.reduce((s, d) => s + d.jumlah_pekerjaan, 0),
+    };
+  }, [data]);
+
+  const [exportLoading, setExportLoading] = useState(false);
+  const handleExport = async () => {
+    setExportLoading(true);
+    try {
+      const csv = await getKroscekExportCSV(periode.dari, periode.sampai);
+      const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `kroscek-pekerjaan-${periode.dari}_${periode.sampai}.csv`;
+      document.body.appendChild(a); a.click();
+      document.body.removeChild(a); URL.revokeObjectURL(url);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Gagal export data');
+    } finally {
+      setExportLoading(false);
+    }
+  };
 
   return (
     <div className="space-y-5">
@@ -169,18 +207,51 @@ export default function KroscekPekerjaanClient({
             </button>
           )}
         </div>
-        {isLoading && (
-          <span className="flex items-center gap-2 text-xs text-[#9aa0a6]">
-            <Loader2 className="w-3.5 h-3.5 animate-spin text-[#e5c17b]" /> Memuat...
-          </span>
-        )}
+        <div className="flex items-center gap-3">
+          {isLoading && (
+            <span className="flex items-center gap-2 text-xs text-[#9aa0a6]">
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-[#e5c17b]" /> Memuat...
+            </span>
+          )}
+          <button
+            onClick={handleExport}
+            disabled={exportLoading || data.length === 0}
+            title="Nama pekerja, artikel yang dikerjakan, dan qty-nya — untuk dicocokkan"
+            className="flex items-center gap-2 h-9 px-3 rounded-lg border border-[#2A2D31] text-[#9aa0a6] text-xs font-medium hover:bg-[#2A2D31] hover:text-[#e8eaed] transition-colors disabled:opacity-40"
+          >
+            {exportLoading
+              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              : <Download className="w-3.5 h-3.5" />}
+            {exportLoading ? 'Mengunduh...' : 'Export CSV'}
+          </button>
+        </div>
       </div>
 
       {/* Ringkasan periode */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 gap-3">
         <KartuTotal icon={<Users className="w-4 h-4" />} label="Pekerja Aktif" nilai={String(total.pekerja)} />
-        <KartuTotal icon={<Shirt className="w-4 h-4" />} label="Total Dikerjakan" nilai={`${total.pcs.toLocaleString('id-ID')} pcs`} />
         <KartuTotal icon={<ClipboardList className="w-4 h-4" />} label="Jumlah Pekerjaan" nilai={`${total.pekerjaan}×`} />
+      </div>
+      <div className="bg-[#1A1D1F] border border-[#2A2D31] rounded-xl p-4">
+        <div className="flex items-center gap-2 text-[10px] uppercase tracking-widest font-bold text-[#9aa0a6]">
+          <Shirt className="w-4 h-4" />
+          Dikerjakan per Tahap
+        </div>
+        {urutkanTahap(total.perTahap).length === 0 ? (
+          <div className="text-sm text-[#9aa0a6] mt-2">Belum ada</div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 mt-3">
+            {urutkanTahap(total.perTahap).map(([t, n]) => (
+              <div key={t} className="min-w-0">
+                <div className="text-[10px] text-[#9aa0a6] truncate">{TAHAP_LABEL[t] ?? t}</div>
+                <div className="text-lg font-bold text-[#e8eaed]">
+                  {n.toLocaleString('id-ID')}
+                  <span className="text-[10px] font-normal text-[#9aa0a6] ml-1">pcs</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {data.length === 0 ? (
@@ -207,11 +278,22 @@ export default function KroscekPekerjaanClient({
 
               <div className="flex items-end gap-4 mb-3">
                 <div>
-                  <div className="text-[10px] uppercase tracking-wider text-[#9aa0a6]">Dikerjakan</div>
-                  <div className="text-2xl font-bold text-[#e5c17b] leading-tight">
-                    {p.total_pcs.toLocaleString('id-ID')}
-                    <span className="text-[10px] font-normal text-[#9aa0a6] ml-1">pcs</span>
-                  </div>
+                  {(() => {
+                    const baris = urutkanTahap(p.pcs_per_tahap);
+                    return (
+                      <>
+                        <div className="text-[10px] uppercase tracking-wider text-[#9aa0a6]">
+                          Dikerjakan{baris.length === 1 ? ` · ${TAHAP_LABEL[baris[0][0]] ?? baris[0][0]}` : ''}
+                        </div>
+                        <div className="text-2xl font-bold text-[#e5c17b] leading-tight">
+                          {baris.length === 1 ? baris[0][1].toLocaleString('id-ID') : baris.length === 0 ? '-' : baris.length}
+                          <span className="text-[10px] font-normal text-[#9aa0a6] ml-1">
+                            {baris.length === 1 ? 'pcs' : baris.length === 0 ? '' : 'tahap'}
+                          </span>
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
                 <div className="pb-1">
                   <div className="text-[10px] uppercase tracking-wider text-[#9aa0a6]">Pekerjaan</div>
@@ -234,14 +316,11 @@ export default function KroscekPekerjaanClient({
 
               <div className="flex items-center justify-between gap-2 pt-3 border-t border-[#2A2D31]">
                 <div className="flex flex-wrap gap-1">
-                  {p.daftar_tahap.slice(0, 3).map(t => (
-                    <span key={t} className="text-[9px] text-[#9aa0a6] bg-[#2A2D31]/60 px-1.5 py-0.5 rounded">
-                      {TAHAP_LABEL[t] ?? t}
+                  {urutkanTahap(p.pcs_per_tahap).map(([t, n]) => (
+                    <span key={t} className="text-[9px] text-[#9aa0a6] bg-[#2A2D31]/60 px-1.5 py-0.5 rounded whitespace-nowrap">
+                      {TAHAP_LABEL[t] ?? t} <b className="text-[#e8eaed]">{n.toLocaleString('id-ID')}</b>
                     </span>
                   ))}
-                  {p.daftar_tahap.length > 3 && (
-                    <span className="text-[9px] text-[#9aa0a6]">+{p.daftar_tahap.length - 3}</span>
-                  )}
                 </div>
                 <span className="text-[10px] text-[#9aa0a6] group-hover:text-[#e5c17b] transition-colors shrink-0">
                   lihat rincian →
@@ -320,7 +399,11 @@ function ModalRincian({
               <span className="mx-1.5 text-[#2A2D31]">|</span>
               {tanggalPendek(periode.dari)} – {tanggalPanjang(periode.sampai)}
               <span className="mx-1.5 text-[#2A2D31]">|</span>
-              <span className="text-[#e5c17b] font-semibold">{pekerja.total_pcs.toLocaleString('id-ID')} pcs</span>
+              <span className="text-[#e5c17b] font-semibold">
+                {urutkanTahap(pekerja.pcs_per_tahap)
+                  .map(([t, n]) => `${TAHAP_LABEL[t] ?? t} ${n.toLocaleString('id-ID')} pcs`)
+                  .join(' · ') || '-'}
+              </span>
             </p>
           </div>
           <button onClick={onClose} className="text-[#9aa0a6] hover:text-[#e8eaed] transition-colors">

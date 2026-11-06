@@ -1,8 +1,12 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
+import { getCurrentUserProfile } from '@/lib/auth/permissions';
 
 const TENANT_ID = 'STX-001';
+
+const angkaPerTahap = (v: unknown): Record<string, number> =>
+  Object.fromEntries(Object.entries((v ?? {}) as Record<string, unknown>).map(([k, n]) => [k, Number(n) || 0]));
 
 /**
  * Ringkasan hasil kerja tanpa angka rupiah — untuk kroscek lapangan vs sistem
@@ -29,6 +33,8 @@ export interface HasilKerjaPekerja {
   jml_belum_dibayar: number;
   jml_sedang_dikerjakan: number;
   daftar_tahap: string[];
+  /** Jumlah pcs per tahap — jangan dijumlah lintas tahap (satu baju dihitung di tiap tahap). */
+  pcs_per_tahap: Record<string, number>;
 }
 
 export interface RincianHasilKerja {
@@ -71,6 +77,7 @@ export async function getHasilKerjaPekerja(
     jml_belum_dibayar: Number(r.jml_belum_dibayar) || 0,
     jml_sedang_dikerjakan: Number(r.jml_sedang_dikerjakan) || 0,
     daftar_tahap: r.daftar_tahap ?? [],
+    pcs_per_tahap: angkaPerTahap(r.pcs_per_tahap),
   }));
 }
 
@@ -105,4 +112,88 @@ export async function getRincianHasilKerja(
     size: r.size,
     klien_nama: r.klien_nama,
   }));
+}
+
+const TAHAP_LABEL_EXPORT: Record<string, string> = {
+  cutting: 'Cutting',
+  jahit: 'Jahit',
+  lubang_kancing: 'Lubang Kancing',
+  buang_benang: 'Buang Benang',
+  qc: 'QC',
+  steam: 'Steam',
+  packing: 'Packing',
+};
+
+const TAHAP_URUTAN_EXPORT = ['cutting', 'jahit', 'lubang_kancing', 'buang_benang', 'qc', 'steam', 'packing'];
+
+/** Bersihkan satu nilai supaya aman dipakai di CSV berdelimiter ';'. */
+function selCsv(v: string | number): string {
+  return String(v ?? '').replace(/[;\n\r]/g, ' ').trim();
+}
+
+/**
+ * Export Kroscek Pekerjaan untuk dicocokkan dengan lapangan: satu baris per
+ * pekerja + tahap + artikel (PO, model, warna, size), dengan qty-nya.
+ * Sumbernya sama persis dengan layar (rincian per pekerja) dan — seperti
+ * layarnya — TIDAK memuat angka rupiah.
+ */
+export async function getKroscekExportCSV(dari: string, sampai: string): Promise<string> {
+  const profile = await getCurrentUserProfile();
+  if (!profile) throw new Error('Unauthorized');
+
+  const pekerja = await getHasilKerjaPekerja(dari, sampai);
+
+  type Baris = {
+    nama: string; jabatan: string; tahap: string; no_po: string;
+    model: string; warna: string; size: string;
+    bundle: Set<string>; qty_selesai: number; qty_sedang: number;
+  };
+  const kelompok = new Map<string, Baris>();
+
+  for (const p of pekerja) {
+    const rincian = await getRincianHasilKerja(p.karyawan_id, dari, sampai);
+    for (const r of rincian) {
+      const kunci = [p.karyawan_id, r.tahap, r.no_po, r.model_nama, r.warna, r.size].join('|');
+      let b = kelompok.get(kunci);
+      if (!b) {
+        b = {
+          nama: p.nama, jabatan: p.jabatan, tahap: r.tahap, no_po: r.no_po,
+          model: r.model_nama, warna: r.warna, size: r.size,
+          bundle: new Set(), qty_selesai: 0, qty_sedang: 0,
+        };
+        kelompok.set(kunci, b);
+      }
+      b.bundle.add(r.bundle_id || r.barcode);
+      if (r.keadaan === 'sedang_dikerjakan') b.qty_sedang += r.qty; else b.qty_selesai += r.qty;
+    }
+  }
+
+  const urutTahap = (t: string) => {
+    const i = TAHAP_URUTAN_EXPORT.indexOf(t);
+    return i < 0 ? 99 : i;
+  };
+  const daftar = [...kelompok.values()].sort((a, b) =>
+    a.nama.localeCompare(b.nama, 'id')
+    || urutTahap(a.tahap) - urutTahap(b.tahap)
+    || a.no_po.localeCompare(b.no_po)
+    || a.model.localeCompare(b.model, 'id')
+    || a.warna.localeCompare(b.warna, 'id')
+    || a.size.localeCompare(b.size, 'id'));
+
+  const baris: string[] = [
+    `Kroscek Pekerjaan;${dari} s.d. ${sampai}`,
+    '',
+    ['Nama', 'Jabatan', 'Tahap', 'No PO', 'Model', 'Warna', 'Size',
+     'Jumlah Bundle', 'Qty Selesai', 'Qty Sedang Dikerjakan', 'Qty Total'].join(';'),
+  ];
+
+  for (const b of daftar) {
+    baris.push([
+      selCsv(b.nama), selCsv(b.jabatan), selCsv(TAHAP_LABEL_EXPORT[b.tahap] ?? b.tahap),
+      selCsv(b.no_po), selCsv(b.model), selCsv(b.warna), selCsv(b.size),
+      b.bundle.size, b.qty_selesai, b.qty_sedang, b.qty_selesai + b.qty_sedang,
+    ].join(';'));
+  }
+
+  return baris.join('\n');
 }
