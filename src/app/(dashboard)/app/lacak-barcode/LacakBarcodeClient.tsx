@@ -3,7 +3,8 @@
 import React, { useRef, useState } from 'react';
 import Link from 'next/link';
 import { toast } from 'sonner';
-import { Search, Loader2, Hash, PackageCheck, Truck, Scissors, ChevronRight, Barcode as BarcodeIcon, FileText, PencilLine } from 'lucide-react';
+import { Search, Loader2, Hash, PackageCheck, Truck, Scissors, ChevronRight, Barcode as BarcodeIcon, FileText, PencilLine, Archive, RotateCcw } from 'lucide-react';
+import { bukaBundleDitutup } from '@/lib/actions/produksi/bundle-ditutup.actions';
 import { AlurQty, TimelineRiwayat } from './RiwayatBundle';
 import ModalKoreksiBundle from './ModalKoreksiBundle';
 import {
@@ -37,7 +38,24 @@ export default function LacakBarcodeClient() {
   const [barcode, setBarcode] = useState('');
   const [state, setState] = useState<ViewState>({ phase: 'idle' });
   const [koreksiOpen, setKoreksiOpen] = useState(false);
+  const [sedangBuka, setSedangBuka] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Bundle yang ditutup sebagai data lama dikunci — buka dulu di sini supaya
+  // bisa langsung dikoreksi / dikembalikan tahapnya seperti biasa.
+  const handleBukaLagi = async (data: LacakBarcodeResult) => {
+    if (!window.confirm(`Buka lagi ${data.barcode}? Bundle akan kembali muncul di antrian dan bisa dikoreksi.`)) return;
+    setSedangBuka(true);
+    try {
+      await bukaBundleDitutup(data.bundle_id);
+      toast.success(`${data.barcode} dibuka lagi`);
+      await reloadDetail(data.barcode);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Gagal membuka bundle');
+    } finally {
+      setSedangBuka(false);
+    }
+  };
 
   // Muat ulang detail setelah koreksi, tanpa kembali ke tampilan loading,
   // supaya timeline langsung menunjukkan koreksi yang barusan disimpan.
@@ -221,7 +239,11 @@ export default function LacakBarcodeClient() {
                     <span className="text-[10px] text-[#9aa0a6] bg-[#2A2D31]/60 px-1.5 py-0.5 rounded">
                       {c.tahap_sekarang}
                     </span>
-                    {c.status_kirim === 'sudah_dikirim' ? (
+                    {c.ditutup ? (
+                      <span className="text-[10px] font-bold text-red-300 bg-red-500/10 border border-red-500/20 px-1.5 py-0.5 rounded">
+                        Ditutup (data lama)
+                      </span>
+                    ) : c.status_kirim === 'sudah_dikirim' ? (
                       <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded">
                         Terkirim
                       </span>
@@ -256,7 +278,7 @@ export default function LacakBarcodeClient() {
               <div className="text-sm font-bold text-[#e8eaed] font-mono">{state.data.barcode}</div>
             </div>
             <div className="flex items-center gap-3">
-              {(state.data.sisa_cutting_ditutup > 0 || state.data.qty_cutting != null || state.data.tahap_detail.length > 0) && (
+              {!state.data.ditutup && (state.data.sisa_cutting_ditutup > 0 || state.data.qty_cutting != null || state.data.tahap_detail.length > 0) && (
                 <button
                   onClick={() => setKoreksiOpen(true)}
                   className="flex items-center gap-1.5 text-xs font-bold text-[#e5c17b] bg-[#e5c17b]/10 hover:bg-[#e5c17b]/20 border border-[#e5c17b]/30 px-3 py-1.5 rounded-lg transition-colors"
@@ -286,6 +308,31 @@ export default function LacakBarcodeClient() {
           </div>
 
           <div className="p-6 space-y-4">
+            {state.data.ditutup && (
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3 p-4 bg-red-500/5 border border-red-500/30 rounded-2xl">
+                <div className="w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center shrink-0">
+                  <Archive className="w-5 h-5 text-red-300" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[10px] text-red-300 uppercase font-bold tracking-wider">
+                    Ditutup sebagai data lama · {formatWaktu(state.data.ditutup.waktu)}
+                  </div>
+                  <div className="text-sm text-[#e8eaed]">Alasan: {state.data.ditutup.alasan}</div>
+                  <div className="text-[11px] text-[#9aa0a6] mt-0.5">
+                    Dikunci — tidak bisa dikoreksi atau dikembalikan tahapnya sebelum dibuka lagi.
+                  </div>
+                </div>
+                <button
+                  onClick={() => handleBukaLagi(state.data)}
+                  disabled={sedangBuka}
+                  className="flex items-center justify-center gap-1.5 text-xs font-bold text-[#e5c17b] bg-[#e5c17b]/10 hover:bg-[#e5c17b]/20 border border-[#e5c17b]/30 px-3 py-2 rounded-lg transition-colors disabled:opacity-50 shrink-0"
+                >
+                  {sedangBuka ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
+                  Buka Lagi
+                </button>
+              </div>
+            )}
+
             {/* Tahap sekarang */}
             <div className="flex items-center gap-3 p-4 bg-[#0D0E10] border border-[#2A2D31] rounded-2xl">
               <div className="w-10 h-10 rounded-full bg-[#e5c17b]/10 flex items-center justify-center shrink-0">

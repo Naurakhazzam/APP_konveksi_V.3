@@ -525,6 +525,54 @@ export async function editSuratJalan(
   return data as EditSuratJalanResult;
 }
 
+export interface TambahItemSuratJalanResult {
+  nomor_sj: string;
+  jumlah_bundle: number;
+  total_qty: number;
+  total_invoice: number | null;
+}
+
+/**
+ * Susulkan barang yang tertinggal ke surat jalan yang SUDAH dibuat. Aturan
+ * (klien sama, sudah packing, sisa belum terkirim, belum divalidasi, invoice
+ * belum dibayar, bundle tidak ditutup) dijaga di RPC; total invoice ikut
+ * dihitung ulang. Tidak membuat upah.
+ */
+export async function tambahItemSuratJalan(
+  sj_id: string,
+  items: { bundle_id: string; qty_kirim: number; alasan_lebih?: string }[],
+  alasan: string,
+): Promise<TambahItemSuratJalanResult> {
+  const userId = await resolveUserId();
+  const supabase = await createClient();
+
+  if (!alasan?.trim()) throw new Error('Alasan menambah barang wajib diisi');
+  if (items.length === 0) throw new Error('Pilih minimal satu barang');
+
+  const { data, error } = await supabase.rpc('tambah_item_surat_jalan', {
+    p_sj_id: sj_id,
+    p_bundles: items,
+    p_alasan: alasan.trim(),
+    p_user_id: userId,
+    p_tenant_id: TENANT_ID,
+  });
+
+  if (error) throw new Error(terjemahkanErrorSuratJalan(error.message) || 'Gagal menambah barang ke surat jalan');
+
+  revalidatePath('/app/pengiriman/riwayat');
+  revalidatePath(`/app/pengiriman/riwayat/${sj_id}`);
+  revalidatePath('/app/pengiriman/buat-surat-jalan');
+  revalidatePath('/app/keuangan/invoice');
+
+  const r = data as Partial<TambahItemSuratJalanResult> | null;
+  return {
+    nomor_sj: r?.nomor_sj ?? '',
+    jumlah_bundle: Number(r?.jumlah_bundle) || 0,
+    total_qty: Number(r?.total_qty) || 0,
+    total_invoice: r?.total_invoice == null ? null : Number(r.total_invoice),
+  };
+}
+
 export interface BatalSuratJalanResult {
   success: boolean;
   nomor_sj: string;

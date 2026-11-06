@@ -82,6 +82,8 @@ export interface LacakBarcodeResult {
   /** Pernah di-Split — qty terbagi ke pecahan, koreksi berantai ditolak. */
   punya_split: boolean;
   pengiriman: { nomor_sj: string; tanggal: string | null; qty_kirim: number; divalidasi: boolean }[];
+  /** Diisi kalau bundle ditutup manual sebagai data lama (lihat Antrian Jahit / Buat Surat Jalan). */
+  ditutup: { waktu: string; alasan: string } | null;
 }
 
 export interface LacakBarcodeCandidate {
@@ -94,6 +96,7 @@ export interface LacakBarcodeCandidate {
   qty: number;
   tahap_sekarang: string;
   status_kirim: 'belum_dikirim' | 'sudah_dikirim';
+  ditutup: boolean;
 }
 
 /**
@@ -171,6 +174,8 @@ async function fetchDetail(supabase: SupabaseClient, barcode: string): Promise<L
       created_at,
       parent_bundle_id,
       status_tahap,
+      ditutup_at,
+      ditutup_alasan,
       po:po_id(no_po, klien:klien_id(nama)),
       po_item:po_item_id(warna, size, qty_per_bundle, produk:produk_id(model_produk:model_id(nama))),
       surat_jalan_item(id, qty_kirim, qty_diterima, created_at, sj:sj_id(nomor_sj, tanggal))
@@ -491,11 +496,18 @@ async function fetchDetail(supabase: SupabaseClient, barcode: string): Promise<L
       case 'Koreksi Hasil Cutting':
         detail.push(`qty ${m.qty_lama} → ${m.qty_baru}`);
         break;
+      case 'Tutup Bundle Data Lama':
+        judul = 'DITUTUP sebagai data lama — dikunci, tidak masuk antrian & tidak membuat upah';
+        break;
+      case 'Buka Bundle Ditutup':
+        judul = 'Dibuka lagi dari data ditutup — bisa diproses kembali';
+        if (m.alasan_tutup_sebelumnya) detail.push(`alasan tutup sebelumnya: ${m.alasan_tutup_sebelumnya}`);
+        break;
     }
     if (m.alasan) detail.push(`alasan: ${m.alasan}`);
     ev.push({
       waktu: a.created_at, jenis: 'koreksi',
-      nada: a.aksi === 'Tutup Sisa Cutting' ? 'merah' : 'kuning',
+      nada: a.aksi === 'Tutup Sisa Cutting' || a.aksi === 'Tutup Bundle Data Lama' ? 'merah' : 'kuning',
       judul, detail: detail.join(' · ') || null, oleh: usr(a.user_id),
     });
   }
@@ -542,7 +554,9 @@ async function fetchDetail(supabase: SupabaseClient, barcode: string): Promise<L
     size: poItem?.size ?? '',
     qty_per_bundle: qtyEfektifBundle(statusTahap, qtyRencana),
     qty_rencana: qtyRencana,
-    tahap_sekarang: tahapBerjalan(statusTahap),
+    tahap_sekarang: row.ditutup_at
+      ? `Ditutup (data lama) — terakhir di ${tahapBerjalan(statusTahap)}`
+      : tahapBerjalan(statusTahap),
     status_kirim: sjItems.length ? 'sudah_dikirim' : 'belum_dikirim',
     nomor_sj: sjTerakhir?.nomor_sj ?? null,
     tanggal_kirim: sjTerakhir?.tanggal ?? null,
@@ -563,6 +577,7 @@ async function fetchDetail(supabase: SupabaseClient, barcode: string): Promise<L
       qty_kirim: Number(x.qty_kirim ?? 0),
       divalidasi: x.qty_diterima != null,
     })),
+    ditutup: row.ditutup_at ? { waktu: row.ditutup_at, alasan: row.ditutup_alasan ?? '-' } : null,
   };
 }
 
@@ -594,6 +609,7 @@ export async function lacakBarcode(query: string): Promise<LacakBarcodeResponse>
     .select(`
       barcode,
       status_tahap,
+      ditutup_at,
       po:po_id(no_po, klien:klien_id(nama)),
       po_item:po_item_id(warna, size, qty_per_bundle, produk:produk_id(model_produk:model_id(nama))),
       surat_jalan_item(id)
@@ -624,6 +640,7 @@ export async function lacakBarcode(query: string): Promise<LacakBarcodeResponse>
         tahap_sekarang: tahapBerjalan(m.status_tahap),
         status_kirim: ((m.surat_jalan_item ?? []).length > 0
           ? 'sudah_dikirim' : 'belum_dikirim') as 'sudah_dikirim' | 'belum_dikirim',
+        ditutup: !!m.ditutup_at,
       };
     })
     .filter(c => matchesBundleSearch(c, tokens));
