@@ -122,7 +122,9 @@ export async function getBundlesReadyToShip(): Promise<BundleReadyToShip[]> {
         )
       )
     `)
-    .eq('tenant_id', TENANT_ID);
+    .eq('tenant_id', TENANT_ID)
+    // Bundle "data lama" yang ditutup manual tidak perlu dikirim lagi.
+    .is('ditutup_at', null);
 
   if (error) {
     console.error('Error fetching ready bundles:', error);

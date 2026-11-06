@@ -6,7 +6,9 @@ import { toast } from 'sonner';
 import { BundleReadyToShip, createSuratJalan } from '@/lib/actions/pengiriman/surat-jalan.actions';
 import { matchesBundleSearch, tokenizeSearch } from '@/lib/search/bundle-search';
 import CartPanel from './CartPanel';
-import { ChevronRight, ChevronDown, Search, X } from 'lucide-react';
+import ModalTutupDataLama from '@/components/produksi/ModalTutupDataLama';
+import TombolDataDitutup from '@/components/produksi/TombolDataDitutup';
+import { ChevronRight, ChevronDown, Search, X, Archive } from 'lucide-react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -75,6 +77,20 @@ export default function BuatSuratJalanClient({ initialBundles }: { initialBundle
   // Centang tetap tersimpan saat kata kunci berubah, karena selectedIds
   // menyimpan id-nya sendiri, terpisah dari daftar yang sedang tampil.
   const [searchQuery, setSearchQuery] = useState('');
+  const [showTutupDataLama, setShowTutupDataLama] = useState(false);
+
+  // Ikuti data terbaru dari server setelah router.refresh() (mis. sesudah
+  // bundle ditutup / dibuka lagi), dengan tetap mempertahankan qty kirim
+  // yang sudah diketik untuk bundle yang masih ada. Disesuaikan saat
+  // render (bukan di useEffect) supaya tidak ada render berantai.
+  const [initialSebelumnya, setInitialSebelumnya] = useState(initialBundles);
+  if (initialSebelumnya !== initialBundles) {
+    setInitialSebelumnya(initialBundles);
+    const qtyLama = new Map(bundles.map(b => [b.id, b.qty_kirim]));
+    setBundles(initialBundles.map(b => (qtyLama.has(b.id) ? { ...b, qty_kirim: qtyLama.get(b.id)! } : b)));
+    const ada = new Set(initialBundles.map(b => b.id));
+    setSelectedIds(new Set([...selectedIds].filter(id => ada.has(id))));
+  }
 
   // ─── Derived state ─────────────────────────────────────────────────────────
 
@@ -269,6 +285,19 @@ export default function BuatSuratJalanClient({ initialBundles }: { initialBundle
 
   return (
     <div className="grid lg:grid-cols-3 gap-6">
+      {showTutupDataLama && (
+        <ModalTutupDataLama
+          bundles={selectedBundles}
+          onClose={() => setShowTutupDataLama(false)}
+          onSelesai={() => {
+            const ditutup = new Set(selectedBundles.map(b => b.id));
+            setShowTutupDataLama(false);
+            setBundles(prev => prev.filter(b => !ditutup.has(b.id)));
+            setSelectedIds(new Set());
+            router.refresh();
+          }}
+        />
+      )}
       <div className="lg:col-span-2 space-y-4">
         <div className="bg-[#1A1D1F] border border-[#2A2D31] rounded-lg overflow-hidden">
           <div className="p-4 border-b border-[#2A2D31] flex flex-col md:flex-row md:justify-between md:items-center gap-3 bg-[#0D0E10]">
@@ -303,6 +332,17 @@ export default function BuatSuratJalanClient({ initialBundles }: { initialBundle
                   {selectedIds.size} bundle dipilih
                 </span>
               )}
+              {selectedIds.size > 0 && (
+                <button
+                  onClick={() => setShowTutupDataLama(true)}
+                  title="Barang sudah dikirim / beres tapi lupa dibuatkan surat jalan — tutup tanpa membuat surat jalan"
+                  className="flex items-center gap-1.5 text-xs font-semibold text-[#9aa0a6] hover:text-[#e5c17b] transition-colors"
+                >
+                  <Archive className="w-3.5 h-3.5" />
+                  Tutup Data Lama
+                </button>
+              )}
+              <TombolDataDitutup onBerubah={() => router.refresh()} />
               <button
                 onClick={handleSelectAll}
                 disabled={eligibleBundles.length === 0}

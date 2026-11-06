@@ -239,7 +239,9 @@ export async function getAntrianJahit(): Promise<AntrianJahitBundle[]> {
       po:po_id(no_po, klien:klien_id(nama)),
       po_item:po_item_id(warna, size, qty_per_bundle, produk:produk_id(model_produk:model_id(nama)))
     `)
-    .eq('tenant_id', TENANT_ID);
+    .eq('tenant_id', TENANT_ID)
+    // Bundle "data lama" yang ditutup manual tidak ikut antrian.
+    .is('ditutup_at', null);
 
   if (error) throw new Error(error.message);
 

@@ -12,7 +12,9 @@ import ModalSplitAwalJahit from './ModalSplitAwalJahit';
 import ModalBatchSelesaiJahit from './ModalBatchSelesaiJahit';
 import ModalKoreksiSerahTerima from './ModalKoreksiSerahTerima';
 import ModalKoreksiCutting from './ModalKoreksiCutting';
-import { Package, Clock, User, Loader2, Users, Printer, CheckCircle, AlertTriangle, Scissors, Pencil } from 'lucide-react';
+import ModalTutupDataLama from '@/components/produksi/ModalTutupDataLama';
+import TombolDataDitutup from '@/components/produksi/TombolDataDitutup';
+import { Package, Clock, User, Loader2, Users, Printer, CheckCircle, AlertTriangle, Scissors, Pencil, Archive } from 'lucide-react';
 import { toast } from 'sonner';
 import { getAksesoriForKartuKerja } from '@/lib/actions/produksi/model-aksesori.actions';
 import PrintKartuKerjaLayout, { type KartuBundle, type AksesoriItem } from '@/app/(dashboard)/app/produksi/antrian-cutting/PrintKartuKerjaLayout';
@@ -55,6 +57,13 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
   const [splitAwalBundle, setSplitAwalBundle] = useState<AntrianJahitBundle | null>(null);
   const [koreksiBundle, setKoreksiBundle] = useState<AntrianJahitBundle | null>(null);
   const [koreksiCuttingBundle, setKoreksiCuttingBundle] = useState<AntrianJahitBundle | null>(null);
+  const [showTutupDataLama, setShowTutupDataLama] = useState(false);
+
+  const handleTutupDataLamaSuccess = () => {
+    setShowTutupDataLama(false);
+    setSelectedBundleIds(new Set());
+    router.refresh();
+  };
 
   const handleSerahTerimaSuccess = () => {
     setShowModalSerahTerima(false);
@@ -211,14 +220,29 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
         </div>
         
         {/* Toolbar Serah Terima */}
-        {activeTab === 'antrian' && selectedBundleIds.size > 0 && (
-          <button 
-            onClick={() => setShowModalSerahTerima(true)}
-            className="flex items-center gap-2 bg-[#e5c17b] hover:bg-[#d4b06a] text-[#0D0E10] px-4 py-2 rounded-lg font-bold transition-colors shadow-lg"
-          >
-            <Users className="w-4 h-4" />
-            Serah Terima ({selectedBundleIds.size} Bundle)
-          </button>
+        {activeTab === 'antrian' && (
+          <div className="flex flex-wrap items-center gap-3">
+            <TombolDataDitutup onBerubah={() => router.refresh()} />
+            {selectedBundleIds.size > 0 && (
+              <>
+                <button
+                  onClick={() => setShowTutupDataLama(true)}
+                  title="Bundle sudah beres di lapangan tapi tertinggal di sistem — tutup tanpa upah"
+                  className="flex items-center gap-2 h-9 px-3 rounded-lg border border-[#2A2D31] text-[#9aa0a6] text-xs font-bold hover:bg-[#2A2D31] hover:text-[#e8eaed] transition-colors"
+                >
+                  <Archive className="w-4 h-4" />
+                  Tutup Data Lama ({selectedBundleIds.size})
+                </button>
+                <button
+                  onClick={() => setShowModalSerahTerima(true)}
+                  className="flex items-center gap-2 bg-[#e5c17b] hover:bg-[#d4b06a] text-[#0D0E10] px-4 py-2 rounded-lg font-bold transition-colors shadow-lg"
+                >
+                  <Users className="w-4 h-4" />
+                  Serah Terima ({selectedBundleIds.size} Bundle)
+                </button>
+              </>
+            )}
+          </div>
         )}
         {activeTab === 'sedang_proses' && selectedProsesIds.size > 0 && (
           <div className="flex items-center gap-3">
@@ -549,6 +573,14 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
           )}
         </div>
       </div>
+
+      {showTutupDataLama && (
+        <ModalTutupDataLama
+          bundles={antrianBelum.filter(b => selectedBundleIds.has(b.id))}
+          onClose={() => setShowTutupDataLama(false)}
+          onSelesai={handleTutupDataLamaSuccess}
+        />
+      )}
 
       {showModalSerahTerima && (
         <ModalSerahTerimaJahit
