@@ -6,6 +6,9 @@ import { getCurrentUserProfile } from '@/lib/auth/permissions';
 
 const TENANT_ID = 'STX-001';
 
+const angkaPerTahap = (v: unknown): Record<string, number> =>
+  Object.fromEntries(Object.entries((v ?? {}) as Record<string, unknown>).map(([k, n]) => [k, Number(n) || 0]));
+
 /**
  * Ringkasan upah yang MASIH TERBUKA — belum dibayar atau sedang dikerjakan.
  * Pekerja yang seluruh upahnya sudah lunas tidak muncul, karena halaman ini
@@ -32,6 +35,8 @@ export interface RingkasanPekerja {
   jml_belum_dibayar: number;
   jml_sedang_dikerjakan: number;
   daftar_tahap: string[];
+  /** Jumlah pcs per tahap — jangan dijumlah lintas tahap (satu baju dihitung di tiap tahap). */
+  pcs_per_tahap: Record<string, number>;
 }
 
 export interface DetailPekerjaan {
@@ -87,6 +92,7 @@ export async function getOverviewPekerja(
     jml_belum_dibayar: Number(r.jml_belum_dibayar) || 0,
     jml_sedang_dikerjakan: Number(r.jml_sedang_dikerjakan) || 0,
     daftar_tahap: r.daftar_tahap ?? [],
+    pcs_per_tahap: angkaPerTahap(r.pcs_per_tahap),
   }));
 }
 
@@ -219,6 +225,8 @@ export interface RingkasanRiwayat {
   total_upah: number;
   tanggal_bayar_terakhir: string;
   daftar_tahap: string[];
+  /** Jumlah pcs per tahap — jangan dijumlah lintas tahap. */
+  pcs_per_tahap: Record<string, number>;
 }
 
 export async function getRiwayatPelunasan(
@@ -244,6 +252,7 @@ export async function getRiwayatPelunasan(
     total_upah: Number(r.total_upah) || 0,
     tanggal_bayar_terakhir: r.tanggal_bayar_terakhir,
     daftar_tahap: r.daftar_tahap ?? [],
+    pcs_per_tahap: angkaPerTahap(r.pcs_per_tahap),
   }));
 }
 

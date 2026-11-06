@@ -149,7 +149,7 @@ export default function OverviewPekerjaClient({
 
   const total = useMemo(() => ({
     pekerja: data.length,
-    pcs: data.reduce((s, d) => s + d.total_pcs, 0),
+    perTahap: gabungPerTahap(data),
     upah: data.reduce((s, d) => s + d.total_upah, 0),
     belumLunas: data.reduce((s, d) => s + d.upah_belum_lunas, 0),
     sedangDikerjakan: data.reduce((s, d) => s + d.jml_sedang_dikerjakan, 0),
@@ -157,7 +157,7 @@ export default function OverviewPekerjaClient({
 
   const totalRiwayat = useMemo(() => ({
     pekerja: riwayat.length,
-    pcs: riwayat.reduce((s, d) => s + d.total_pcs, 0),
+    perTahap: gabungPerTahap(riwayat),
     upah: riwayat.reduce((s, d) => s + d.total_upah, 0),
     entri: riwayat.reduce((s, d) => s + d.jumlah_entri, 0),
   }), [riwayat]);
@@ -269,9 +269,8 @@ export default function OverviewPekerjaClient({
       {tab === 'terbuka' ? (
         <>
           {/* Ringkasan periode */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <KartuTotal icon={<Users className="w-4 h-4" />} label="Pekerja" nilai={String(total.pekerja)} />
-            <KartuTotal icon={<Shirt className="w-4 h-4" />} label="Total Dikerjakan" nilai={`${total.pcs.toLocaleString('id-ID')} pcs`} />
             <KartuTotal icon={<Wallet className="w-4 h-4" />} label="Sedang Dikerjakan" nilai={`${total.sedangDikerjakan}×`} />
             <KartuTotal
               icon={<AlertCircle className="w-4 h-4" />}
@@ -280,6 +279,7 @@ export default function OverviewPekerjaClient({
               waspada={total.belumLunas > 0}
             />
           </div>
+          <KartuPerTahap perTahap={total.perTahap} />
 
           {/* Kartu per pekerja */}
           {data.length === 0 ? (
@@ -320,13 +320,7 @@ export default function OverviewPekerjaClient({
                     </div>
 
                     <div className="grid grid-cols-2 gap-3 mb-3">
-                      <div>
-                        <div className="text-[10px] uppercase tracking-wider text-[#9aa0a6]">Dikerjakan</div>
-                        <div className="text-lg font-bold text-[#e8eaed]">
-                          {p.total_pcs.toLocaleString('id-ID')}
-                          <span className="text-[10px] font-normal text-[#9aa0a6] ml-1">pcs</span>
-                        </div>
-                      </div>
+                      <NilaiDikerjakan perTahap={p.pcs_per_tahap} />
                       <div>
                         <div className="text-[10px] uppercase tracking-wider text-[#9aa0a6]">Perlu Dibayar</div>
                         <div className="text-lg font-bold text-[#e5c17b]">{rupiah(p.total_upah)}</div>
@@ -334,16 +328,7 @@ export default function OverviewPekerjaClient({
                     </div>
 
                     <div className="flex items-center justify-between gap-2 pt-3 border-t border-[#2A2D31]">
-                      <div className="flex flex-wrap gap-1">
-                        {p.daftar_tahap.slice(0, 3).map(t => (
-                          <span key={t} className="text-[9px] text-[#9aa0a6] bg-[#2A2D31]/60 px-1.5 py-0.5 rounded">
-                            {TAHAP_LABEL[t] ?? t}
-                          </span>
-                        ))}
-                        {p.daftar_tahap.length > 3 && (
-                          <span className="text-[9px] text-[#9aa0a6]">+{p.daftar_tahap.length - 3}</span>
-                        )}
-                      </div>
+                      <ChipTahap perTahap={p.pcs_per_tahap} daftar={p.daftar_tahap} />
                       <span className="text-[10px] text-[#9aa0a6] group-hover:text-[#e5c17b] transition-colors shrink-0">
                         {p.jumlah_pekerjaan}× · lihat rincian →
                       </span>
@@ -367,12 +352,12 @@ export default function OverviewPekerjaClient({
       ) : (
         <>
           {/* Ringkasan riwayat */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <KartuTotal icon={<Users className="w-4 h-4" />} label="Pekerja Dibayar" nilai={String(totalRiwayat.pekerja)} />
-            <KartuTotal icon={<Shirt className="w-4 h-4" />} label="Total Dikerjakan" nilai={`${totalRiwayat.pcs.toLocaleString('id-ID')} pcs`} />
             <KartuTotal icon={<Scissors className="w-4 h-4" />} label="Jumlah Entri" nilai={`${totalRiwayat.entri}×`} />
             <KartuTotal icon={<CalendarCheck className="w-4 h-4" />} label="Sudah Dibayar" nilai={rupiah(totalRiwayat.upah)} />
           </div>
+          <KartuPerTahap perTahap={totalRiwayat.perTahap} />
 
           {/* Kartu per pekerja — riwayat */}
           {riwayat.length === 0 ? (
@@ -403,13 +388,7 @@ export default function OverviewPekerjaClient({
                   </div>
 
                   <div className="grid grid-cols-2 gap-3 mb-3">
-                    <div>
-                      <div className="text-[10px] uppercase tracking-wider text-[#9aa0a6]">Dikerjakan</div>
-                      <div className="text-lg font-bold text-[#e8eaed]">
-                        {p.total_pcs.toLocaleString('id-ID')}
-                        <span className="text-[10px] font-normal text-[#9aa0a6] ml-1">pcs</span>
-                      </div>
-                    </div>
+                    <NilaiDikerjakan perTahap={p.pcs_per_tahap} />
                     <div>
                       <div className="text-[10px] uppercase tracking-wider text-[#9aa0a6]">Sudah Dibayar</div>
                       <div className="text-lg font-bold text-emerald-400">{rupiah(p.total_upah)}</div>
@@ -417,16 +396,7 @@ export default function OverviewPekerjaClient({
                   </div>
 
                   <div className="flex items-center justify-between gap-2 pt-3 border-t border-[#2A2D31]">
-                    <div className="flex flex-wrap gap-1">
-                      {p.daftar_tahap.slice(0, 3).map(t => (
-                        <span key={t} className="text-[9px] text-[#9aa0a6] bg-[#2A2D31]/60 px-1.5 py-0.5 rounded">
-                          {TAHAP_LABEL[t] ?? t}
-                        </span>
-                      ))}
-                      {p.daftar_tahap.length > 3 && (
-                        <span className="text-[9px] text-[#9aa0a6]">+{p.daftar_tahap.length - 3}</span>
-                      )}
-                    </div>
+                    <ChipTahap perTahap={p.pcs_per_tahap} daftar={p.daftar_tahap} />
                     <span className="text-[10px] text-[#9aa0a6] group-hover:text-emerald-400 transition-colors shrink-0">
                       dibayar {tanggalPendek(p.tanggal_bayar_terakhir)} →
                     </span>
@@ -446,6 +416,96 @@ export default function OverviewPekerjaClient({
           )}
         </>
       )}
+    </div>
+  );
+}
+
+/** Jumlahkan pcs per tahap dari semua pekerja — TIDAK dijumlah lintas tahap. */
+function gabungPerTahap(list: { pcs_per_tahap: Record<string, number> }[]): Record<string, number> {
+  const hasil: Record<string, number> = {};
+  for (const p of list) {
+    for (const [t, n] of Object.entries(p.pcs_per_tahap)) hasil[t] = (hasil[t] ?? 0) + n;
+  }
+  return hasil;
+}
+
+const urutkanTahap = (perTahap: Record<string, number>) =>
+  Object.entries(perTahap)
+    .filter(([, n]) => n > 0)
+    .sort(([a], [b]) => {
+      const ia = TAHAP_URUTAN.indexOf(a), ib = TAHAP_URUTAN.indexOf(b);
+      return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+    });
+
+/** Kartu ringkasan: pcs yang dikerjakan, dipisah per tahap. */
+function KartuPerTahap({ perTahap }: { perTahap: Record<string, number> }) {
+  const baris = urutkanTahap(perTahap);
+  return (
+    <div className="bg-[#1A1D1F] border border-[#2A2D31] rounded-xl p-4">
+      <div className="flex items-center gap-2 text-[10px] uppercase tracking-widest font-bold text-[#9aa0a6]">
+        <Shirt className="w-4 h-4" />
+        Dikerjakan per Tahap
+      </div>
+      {baris.length === 0 ? (
+        <div className="text-sm text-[#9aa0a6] mt-2">Belum ada</div>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 mt-3">
+          {baris.map(([t, n]) => (
+            <div key={t} className="min-w-0">
+              <div className="text-[10px] text-[#9aa0a6] truncate">{TAHAP_LABEL[t] ?? t}</div>
+              <div className="text-lg font-bold text-[#e8eaed]">
+                {n.toLocaleString('id-ID')}
+                <span className="text-[10px] font-normal text-[#9aa0a6] ml-1">pcs</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Angka "Dikerjakan" di kartu pekerja: pcs kalau satu tahap, jumlah tahap kalau lebih. */
+function NilaiDikerjakan({ perTahap }: { perTahap: Record<string, number> }) {
+  const baris = urutkanTahap(perTahap);
+  return (
+    <div>
+      <div className="text-[10px] uppercase tracking-wider text-[#9aa0a6]">
+        Dikerjakan{baris.length === 1 ? ` · ${TAHAP_LABEL[baris[0][0]] ?? baris[0][0]}` : ''}
+      </div>
+      <div className="text-lg font-bold text-[#e8eaed]">
+        {baris.length === 1 ? (
+          <>
+            {baris[0][1].toLocaleString('id-ID')}
+            <span className="text-[10px] font-normal text-[#9aa0a6] ml-1">pcs</span>
+          </>
+        ) : baris.length === 0 ? '-' : (
+          <>
+            {baris.length}
+            <span className="text-[10px] font-normal text-[#9aa0a6] ml-1">tahap</span>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Label tahap di kartu pekerja, lengkap dengan pcs-nya masing-masing. */
+function ChipTahap({ perTahap, daftar }: { perTahap: Record<string, number>; daftar: string[] }) {
+  const baris = urutkanTahap(perTahap);
+  const tanpaPcs = daftar.filter(t => !(perTahap[t] > 0));
+  return (
+    <div className="flex flex-wrap gap-1">
+      {baris.map(([t, n]) => (
+        <span key={t} className="text-[9px] text-[#9aa0a6] bg-[#2A2D31]/60 px-1.5 py-0.5 rounded whitespace-nowrap">
+          {TAHAP_LABEL[t] ?? t} <b className="text-[#e8eaed]">{n.toLocaleString('id-ID')}</b>
+        </span>
+      ))}
+      {tanpaPcs.map(t => (
+        <span key={t} className="text-[9px] text-[#9aa0a6] bg-[#2A2D31]/60 px-1.5 py-0.5 rounded">
+          {TAHAP_LABEL[t] ?? t}
+        </span>
+      ))}
     </div>
   );
 }
@@ -625,7 +685,15 @@ function ModalDetail({
         <div className="px-6 py-3 border-b border-[#2A2D31] grid grid-cols-3 gap-4 bg-[#16181A]">
           <div>
             <div className="text-[10px] uppercase tracking-wider text-[#9aa0a6]">Dikerjakan</div>
-            <div className="text-sm font-bold text-[#e8eaed]">{pekerja.total_pcs.toLocaleString('id-ID')} pcs</div>
+            <div className="text-sm font-bold text-[#e8eaed] space-y-0.5">
+              {urutkanTahap(pekerja.pcs_per_tahap).map(([t, n]) => (
+                <div key={t} className="whitespace-nowrap">
+                  <span className="text-[11px] font-normal text-[#9aa0a6]">{TAHAP_LABEL[t] ?? t}</span>{' '}
+                  {n.toLocaleString('id-ID')} pcs
+                </div>
+              ))}
+              {urutkanTahap(pekerja.pcs_per_tahap).length === 0 && '-'}
+            </div>
           </div>
           <div>
             <div className="text-[10px] uppercase tracking-wider text-[#9aa0a6]">Perlu Dibayar</div>
@@ -1038,7 +1106,15 @@ function ModalRiwayat({
         <div className="px-6 py-3 border-b border-[#2A2D31] grid grid-cols-3 gap-4 bg-[#16181A]">
           <div>
             <div className="text-[10px] uppercase tracking-wider text-[#9aa0a6]">Dikerjakan</div>
-            <div className="text-sm font-bold text-[#e8eaed]">{pekerja.total_pcs.toLocaleString('id-ID')} pcs</div>
+            <div className="text-sm font-bold text-[#e8eaed] space-y-0.5">
+              {urutkanTahap(pekerja.pcs_per_tahap).map(([t, n]) => (
+                <div key={t} className="whitespace-nowrap">
+                  <span className="text-[11px] font-normal text-[#9aa0a6]">{TAHAP_LABEL[t] ?? t}</span>{' '}
+                  {n.toLocaleString('id-ID')} pcs
+                </div>
+              ))}
+              {urutkanTahap(pekerja.pcs_per_tahap).length === 0 && '-'}
+            </div>
           </div>
           <div>
             <div className="text-[10px] uppercase tracking-wider text-[#9aa0a6]">Sudah Dibayar</div>
