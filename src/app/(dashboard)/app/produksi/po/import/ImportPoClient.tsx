@@ -22,6 +22,18 @@ interface ExcelRow {
   Catatan_PO?: string;
 }
 
+/** Rincian isi bundle: 25 per 10 → [10, 10, 5] */
+function splitBundles(total: number, perBundle: number): number[] {
+  if (total <= 0 || perBundle <= 0) return [];
+  const out: number[] = [];
+  let sisa = total;
+  while (sisa > 0) {
+    out.push(Math.min(perBundle, sisa));
+    sisa -= perBundle;
+  }
+  return out;
+}
+
 type ImportStep = 'config' | 'upload' | 'preview' | 'importing' | 'done';
 
 interface Props {
@@ -60,11 +72,13 @@ export default function ImportPoClient({ klienList }: Props) {
   const handleDownloadTemplate = async () => {
     const XLSX = await import('xlsx');
     const ws = XLSX.utils.aoa_to_sheet([
-      ['Nomor_PO', 'SKU_Klien', 'Nama_Produk', 'Total_QTY', 'QTY_Per_Bundle', 'Catatan_PO'],
-      ['PO-0020', 'ELY289', 'Contoh Produk - S', 20, 10, ''],
-      ['PO-0020', 'ELY290', 'Contoh Produk - M', 30, 10, ''],
-      ['PO-0021', 'ELY340', 'Contoh Produk Lain', 40, 10, 'Rush order'],
+      ['NO PO', 'PRODUK', 'QTY PO', 'SKU', 'QTY / BUNDLE', 'CATATAN'],
+      ['PO-0096', 'Airflow Black - L', 8, 'ELY291', 10, ''],
+      ['PO-0096', 'Airflow Black - XL', 8, 'ELY292', 10, ''],
+      ['PO-0096', 'Airflow Black - XXL', 10, 'ELY293', 10, ''],
+      ['PO-0096', 'Jaket Neck Black - M', 25, 'ELY325', 10, 'Rush order'],
     ]);
+    ws['!cols'] = [{ wch: 10 }, { wch: 28 }, { wch: 8 }, { wch: 10 }, { wch: 13 }, { wch: 20 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Data PO');
     XLSX.writeFile(wb, 'template_import_po.xlsx');
@@ -96,61 +110,63 @@ export default function ImportPoClient({ klienList }: Props) {
         return;
       }
 
+      // Normalisasi nama kolom: abaikan huruf besar/kecil, spasi, '_', '/', '.'
+      // → "QTY / BUNDLE", "qty_per_bundle", "Qty Bundle" dianggap kolom yang sama.
+      const norm = (k: string) => k.toLowerCase().replace(/[^a-z0-9]/g, '');
       function findCol(row: Record<string, unknown>, ...candidates: string[]): unknown {
+        const wanted = candidates.map(norm);
         for (const key of Object.keys(row)) {
-          const normalized = key.replace(/\s+/g, '_').toLowerCase();
-          if (candidates.some(c => c.toLowerCase() === normalized)) {
-            return row[key];
-          }
+          if (wanted.includes(norm(key))) return row[key];
         }
         return undefined;
       }
 
-      // ── Fill-down: sub-baris (tanpa Nomor_PO/SKU) mewarisi baris di atasnya ──
-      // Setiap baris = 1 bundle: Total_QTY di-set sama dengan QTY_Per_Bundle-nya.
-      let lastPO    = '';
-      let lastSKU   = '';
-      let lastNama  = '';
-      let lastCatat = '';
-
-      const rows: ExcelRow[] = rawRows
-        .map(row => {
-          const nomor   = String(findCol(row, 'Nomor_PO', 'nomor_po', 'No_PO')     ?? '').trim();
-          const sku     = String(findCol(row, 'SKU_Klien', 'sku_klien', 'SKU')      ?? '').trim();
-          const nama    = String(findCol(row, 'Nama_Produk', 'nama_produk', 'Nama') ?? '').trim();
-          const catatan = String(findCol(row, 'Catatan_PO', 'catatan_po', 'Catatan') ?? '').trim();
-          const totalQty = Number(findCol(row, 'Total_QTY', 'total_qty', 'Total_Qty', 'QTY') ?? 0);
-          const qpb      = Number(findCol(row, 'QTY_Per_Bundle', 'qty_per_bundle', 'Per_Bundle') ?? 0);
-
-          // Fill-down: pakai nilai dari baris sebelumnya jika kosong
-          if (nomor)   lastPO    = nomor;
-          if (sku)     lastSKU   = sku;
-          if (nama)    lastNama  = nama;
-          if (catatan) lastCatat = catatan;
-
-          return {
-            Nomor_PO:       lastPO,
-            SKU_Klien:      lastSKU,
-            Nama_Produk:    lastNama,
-            Total_QTY:      totalQty,
-            QTY_Per_Bundle: qpb,
-            Catatan_PO:     lastCatat,
-          };
-        })
-        // Buang baris yang tidak punya QTY (baris kosong/header sisa)
-        .filter(row => row.Total_QTY > 0 && row.QTY_Per_Bundle > 0);
-
-      // Basic client-side validation
+      // Format: NO PO | PRODUK | QTY PO | SKU | QTY / BUNDLE | CATATAN
+      // 1 baris = 1 artikel (SKU). Bundle dibagi otomatis dari QTY PO ÷ QTY / BUNDLE.
       const errors: string[] = [];
-      rows.forEach((row, i) => {
-        const line = i + 2;
-        if (!row.Nomor_PO?.match(/^PO-\d{4}$/)) errors.push(`Baris ${line}: Format PO invalid (PO-XXXX)`);
-        if (!row.SKU_Klien) errors.push(`Baris ${line}: SKU Klien kosong`);
-        if (!row.Total_QTY || row.Total_QTY <= 0) errors.push(`Baris ${line}: QTY invalid`);
+      const rows: ExcelRow[] = [];
+
+      rawRows.forEach((row, i) => {
+        const line     = i + 2; // +1 header, +1 karena Excel mulai dari 1
+        const nomor    = String(findCol(row, 'NO PO', 'Nomor_PO', 'No_PO') ?? '').trim().toUpperCase();
+        const nama     = String(findCol(row, 'PRODUK', 'Nama_Produk', 'Nama') ?? '').trim();
+        const sku      = String(findCol(row, 'SKU', 'SKU_Klien') ?? '').trim();
+        const catatan  = String(findCol(row, 'CATATAN', 'Catatan_PO') ?? '').trim();
+        const qtyRaw   = findCol(row, 'QTY PO', 'Total_QTY', 'QTY');
+        const qpbRaw   = findCol(row, 'QTY / BUNDLE', 'QTY_Per_Bundle', 'QTY Bundle', 'Per_Bundle');
+        const totalQty = Number(qtyRaw || 0);
+        const qpb      = Number(qpbRaw || 0);
+
+        // Baris kosong total → lewati diam-diam
+        if (!nomor && !sku && !nama && !qtyRaw) return;
+        // QTY PO = 0 → artikel tidak dipesan, lewati
+        if (totalQty === 0) return;
+
+        if (!/^PO-\d{4}$/.test(nomor))         errors.push(`Baris ${line}: Format NO PO invalid (PO-XXXX)`);
+        if (!sku)                               errors.push(`Baris ${line}: SKU kosong`);
+        if (!Number.isInteger(totalQty) || totalQty < 0)
+                                                errors.push(`Baris ${line}: QTY PO harus bilangan bulat positif`);
+        if (!Number.isInteger(qpb) || qpb <= 0) errors.push(`Baris ${line}: QTY / BUNDLE wajib diisi (bilangan bulat > 0)`);
+
+        rows.push({
+          Nomor_PO: nomor,
+          SKU_Klien: sku,
+          Nama_Produk: nama,
+          Total_QTY: totalQty,
+          QTY_Per_Bundle: qpb,
+          Catatan_PO: catatan,
+        });
       });
 
       if (errors.length > 0) {
-        toast.error('Terdapat kesalahan format data', { description: errors[0] });
+        toast.error('Terdapat kesalahan format data', {
+          description: errors.slice(0, 3).join(' • ') + (errors.length > 3 ? ` (+${errors.length - 3} error lain)` : ''),
+        });
+        return;
+      }
+
+      if (rows.length === 0) {
+        toast.error('Tidak ada baris dengan QTY PO > 0');
         return;
       }
 
@@ -179,7 +195,7 @@ export default function ImportPoClient({ klienList }: Props) {
       klien_id: config.klienId,
       tanggal_order: config.tanggalOrder,
       tanggal_target: config.tanggalTarget || null,
-      catatan: rows[0]?.Catatan_PO || null,
+      catatan: rows.find(r => r.Catatan_PO)?.Catatan_PO || null,
       items: rows.map(r => {
         const v = validationMap[r.SKU_Klien];
         return {
@@ -275,6 +291,8 @@ export default function ImportPoClient({ klienList }: Props) {
         <div className="flex gap-8">
           <div><p className="text-xs text-[#9aa0a6]">TOTAL PO</p><p className="text-xl font-bold">{Object.keys(groupedPOs).length}</p></div>
           <div><p className="text-xs text-[#9aa0a6]">TOTAL ARTIKEL</p><p className="text-xl font-bold">{parsedRows.length}</p></div>
+          <div><p className="text-xs text-[#9aa0a6]">TOTAL QTY</p><p className="text-xl font-bold">{parsedRows.reduce((a, r) => a + r.Total_QTY, 0)}</p></div>
+          <div><p className="text-xs text-[#9aa0a6]">TOTAL BUNDLE</p><p className="text-xl font-bold">{parsedRows.reduce((a, r) => a + splitBundles(r.Total_QTY, r.QTY_Per_Bundle).length, 0)}</p></div>
         </div>
         <div className="flex gap-3">
           <Button variant="outline" onClick={() => setStep('upload')} disabled={isProcessing}>Ganti File</Button>
@@ -292,10 +310,12 @@ export default function ImportPoClient({ klienList }: Props) {
         <table className="w-full text-sm">
           <thead className="bg-[#16181A] text-[#9aa0a6]">
             <tr>
-              <th className="p-4 text-left">NO. PO</th>
-              <th className="p-4 text-left">SKU KLIEN</th>
+              <th className="p-4 text-left">NO PO</th>
               <th className="p-4 text-left">PRODUK</th>
-              <th className="p-4 text-center">QTY</th>
+              <th className="p-4 text-center">QTY PO</th>
+              <th className="p-4 text-left">SKU</th>
+              <th className="p-4 text-center">QTY / BUNDLE</th>
+              <th className="p-4 text-left">RINCIAN BUNDLE</th>
               <th className="p-4 text-center">STATUS</th>
             </tr>
           </thead>
@@ -305,13 +325,18 @@ export default function ImportPoClient({ klienList }: Props) {
               return (
                 <tr key={i} className="border-t border-[#2A2D31]">
                   <td className="p-4 font-mono text-[#e5c17b]">{row.Nomor_PO}</td>
-                  <td className="p-4 font-mono text-[#e8eaed]">{row.SKU_Klien}</td>
                   <td className="p-4">
                     {v?.found ? (
                       <div><p className="font-medium text-[#e8eaed]">{row.Nama_Produk || '-'}</p><p className="text-xs text-[#9aa0a6]">{v.warna} / {v.size}</p></div>
                     ) : <span className="text-red-400">SKU tidak ditemukan</span>}
                   </td>
                   <td className="p-4 text-center text-[#e8eaed]">{row.Total_QTY}</td>
+                  <td className="p-4 font-mono text-[#e8eaed]">{row.SKU_Klien}</td>
+                  <td className="p-4 text-center text-[#e8eaed]">{row.QTY_Per_Bundle}</td>
+                  <td className="p-4 text-[#9aa0a6]">
+                    <span className="text-[#e8eaed] font-medium">{splitBundles(row.Total_QTY, row.QTY_Per_Bundle).length} bundle</span>
+                    {' · '}{splitBundles(row.Total_QTY, row.QTY_Per_Bundle).join(', ')}
+                  </td>
                   <td className="p-4 text-center">
                     {v?.found ? <CheckCircle2 className="w-5 h-5 text-green-500 mx-auto" /> : <XCircle className="w-5 h-5 text-red-500 mx-auto" />}
                   </td>
