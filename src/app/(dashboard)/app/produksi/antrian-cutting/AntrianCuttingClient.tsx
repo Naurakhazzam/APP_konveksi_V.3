@@ -4,12 +4,12 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   FileText, Barcode as BarcodeIcon, ClipboardList, Scissors, CheckCircle2,
-  Loader2, Clock, ChevronDown, ChevronRight, Trash2, AlertTriangle, Ticket,
+  Loader2, Clock, ChevronDown, ChevronRight, Trash2, AlertTriangle, Ticket, Undo2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { deleteBundleMenunggu } from '@/lib/actions/produksi/cutting.actions';
 import {
-  getCuttingBundles, mulaiCuttingV2, getPrintBundlesByIds,
+  getCuttingBundles, mulaiCuttingV2, getPrintBundlesByIds, batalMulaiCutting,
   type CuttingRow, type CuttingBundle, type CuttingStatus,
 } from '@/lib/actions/produksi/cutting-v2.actions';
 import type { AntrianBundle } from '@/lib/actions/produksi/antrian.actions';
@@ -56,7 +56,8 @@ export default function AntrianCuttingClient({ poList, role }: Props) {
   const [showMulai, setShowMulai] = useState(false);
   const [showSelesai, setShowSelesai] = useState(false);
   const [showHapus, setShowHapus] = useState(false);
-  const [busy, setBusy] = useState<null | 'mulai' | 'hapus' | 'print'>(null);
+  const [showBatal, setShowBatal] = useState(false);
+  const [busy, setBusy] = useState<null | 'mulai' | 'hapus' | 'print' | 'batal'>(null);
 
   const [printMode, setPrintMode] = useState<PrintMode | null>(null);
   const [printBundles, setPrintBundles] = useState<AntrianBundle[]>([]);
@@ -199,6 +200,18 @@ export default function AntrianCuttingClient({ poList, role }: Props) {
     router.refresh();
   };
 
+  const batal = async () => {
+    setShowBatal(false);
+    setBusy('batal');
+    const res = await batalMulaiCutting(terpilihIds);
+    setBusy(null);
+    if (!res.success) { toast.error(res.error ?? 'Gagal membatalkan'); return; }
+    toast.success(`${res.jumlah_bundle} bundle dikembalikan ke Menunggu` +
+      (res.sisa_digabung ? ` · ${res.sisa_digabung} pcs sisa digabung kembali` : ''));
+    resetPilihan();
+    router.refresh();
+  };
+
   // ─── Render ──────────────────────────────────────────────────────────────
   const btnSecondary = 'flex items-center gap-2 px-3 h-10 rounded-md border border-[#2A2D31] text-[#e8eaed] text-sm font-medium hover:bg-[#2A2D31] disabled:opacity-30 disabled:cursor-not-allowed';
   const btnPrimary = 'flex items-center gap-2 px-4 h-10 rounded-md bg-[#e5c17b] text-[#0D0E10] text-sm font-semibold hover:bg-[#d4b06a] disabled:opacity-30 disabled:cursor-not-allowed';
@@ -241,6 +254,12 @@ export default function AntrianCuttingClient({ poList, role }: Props) {
             {tab === 'progress' && (
               <button disabled={!ada || !!busy} onClick={() => setShowSelesai(true)} className={btnPrimary}>
                 <CheckCircle2 className="w-4 h-4" /> Selesai Cutting{ada ? ` (${terpilihIds.length})` : ''}
+              </button>
+            )}
+            {tab === 'progress' && (
+              <button disabled={!ada || !!busy} onClick={() => setShowBatal(true)}
+                className="flex items-center gap-2 px-3 h-10 rounded-md border border-orange-500/40 text-orange-400 text-sm font-semibold hover:bg-orange-500/10 disabled:opacity-30 disabled:cursor-not-allowed">
+                {busy === 'batal' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Undo2 className="w-4 h-4" />} Batalkan
               </button>
             )}
             {tab !== 'menunggu' && (
@@ -391,6 +410,29 @@ export default function AntrianCuttingClient({ poList, role }: Props) {
             <div className="flex gap-3">
               <button onClick={() => setShowHapus(false)} className="flex-1 h-10 rounded-xl border border-[#2A2D31] text-[#9aa0a6] text-sm hover:bg-[#2A2D31]">Batal</button>
               <button onClick={hapus} className="flex-1 h-10 rounded-xl bg-red-500/20 border border-red-500/40 text-red-400 text-sm font-bold hover:bg-red-500/30">Ya, Hapus</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Konfirmasi batalkan */}
+      {showBatal && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 print:hidden">
+          <div className="bg-[#1A1D1F] border border-orange-500/30 rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-orange-500/10 flex items-center justify-center"><Undo2 className="w-5 h-5 text-orange-400" /></div>
+              <div>
+                <h3 className="font-bold text-[#e8eaed]">Batalkan Cutting?</h3>
+                <p className="text-xs text-[#9aa0a6] mt-0.5">Bundle kembali ke tab Menunggu</p>
+              </div>
+            </div>
+            <p className="text-sm text-[#9aa0a6] mb-6">
+              <span className="text-orange-400 font-bold">{terpilihIds.length} bundle</span> dikembalikan ke Menunggu.
+              Kalau dulu dimulai sebagian, sisanya yang masih di Menunggu digabung kembali. Tiket cutting yang sudah tercetak tidak berlaku lagi.
+            </p>
+            <div className="flex gap-3">
+              <button onClick={() => setShowBatal(false)} className="flex-1 h-10 rounded-xl border border-[#2A2D31] text-[#9aa0a6] text-sm hover:bg-[#2A2D31]">Tidak</button>
+              <button onClick={batal} className="flex-1 h-10 rounded-xl bg-orange-500/20 border border-orange-500/40 text-orange-400 text-sm font-bold hover:bg-orange-500/30">Ya, Batalkan</button>
             </div>
           </div>
         </div>

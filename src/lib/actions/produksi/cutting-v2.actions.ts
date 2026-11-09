@@ -438,3 +438,27 @@ export async function getPrintBundlesByIds(ids: string[]): Promise<AntrianBundle
     } satisfies AntrianBundle;
   }).sort((a, b) => a.barcode.localeCompare(b.barcode));
 }
+
+// ─── Batalkan (Sedang Dipotong → Menunggu) ─────────────────────────────────
+
+/**
+ * Kembalikan bundle yang sedang dipotong ke Menunggu. Bundle sisa yang dibuat
+ * saat Mulai (masih Menunggu) digabung kembali ke bundle asalnya.
+ */
+export async function batalMulaiCutting(
+  bundleIds: string[],
+): Promise<{ success: boolean; jumlah_bundle: number; sisa_digabung: number; error?: string }> {
+  try {
+    const user_id = await resolveUserId();
+    const supabase = await createClient();
+    const { data, error } = await supabase.rpc('batal_mulai_cutting', {
+      p_bundle_ids: bundleIds, p_user_id: user_id, p_tenant_id: TENANT_ID,
+    });
+    if (error) return { success: false, jumlah_bundle: 0, sisa_digabung: 0, error: error.message };
+    revalidatePath(PATH);
+    const r = data as { jumlah_bundle?: number; sisa_digabung?: number } | null;
+    return { success: true, jumlah_bundle: r?.jumlah_bundle ?? 0, sisa_digabung: r?.sisa_digabung ?? 0 };
+  } catch (e: any) {
+    return { success: false, jumlah_bundle: 0, sisa_digabung: 0, error: e?.message ?? 'Terjadi kesalahan' };
+  }
+}
