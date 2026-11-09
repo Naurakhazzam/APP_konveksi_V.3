@@ -40,7 +40,9 @@ export async function createKategoriProduk(data: KategoriProdukInput) {
   await requireOwner();
   const validated = KategoriProdukSchema.parse(data);
   const supabase = await createClient();
-  const { error } = await supabase.from('kategori_produk').insert({ ...validated, tenant_id: 'STX-001' });
+  const { error } = await supabase.from('kategori_produk').insert({
+    ...validated, jenis_bahan: validated.jenis_bahan?.trim() || null, tenant_id: 'STX-001',
+  });
   if (error) throw new Error(error.message);
   return { success: true };
 }
@@ -48,7 +50,11 @@ export async function createKategoriProduk(data: KategoriProdukInput) {
 export async function updateKategoriProduk(id: string, data: Partial<KategoriProdukInput>) {
   await requireOwner();
   const supabase = await createClient();
-  const { error } = await supabase.from('kategori_produk').update(data).match({ id, tenant_id: 'STX-001' });
+  const payload = {
+    ...data,
+    ...(data.jenis_bahan !== undefined ? { jenis_bahan: data.jenis_bahan?.trim() || null } : {}),
+  };
+  const { error } = await supabase.from('kategori_produk').update(payload).match({ id, tenant_id: 'STX-001' });
   if (error) throw new Error(error.message);
   return { success: true };
 }

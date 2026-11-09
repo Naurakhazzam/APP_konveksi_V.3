@@ -1,11 +1,11 @@
-import { getPOCuttingList } from '@/lib/actions/produksi/cutting.actions';
+import { getCuttingRows } from "@/lib/actions/produksi/cutting-v2.actions";
 import { getCurrentUserProfile } from '@/lib/auth/permissions';
 import { PageWrapper } from '@/components/ui/PageWrapper';
 import AntrianCuttingClient from './AntrianCuttingClient';
 
 export default async function AntrianCuttingPage() {
   const [poList, profile] = await Promise.all([
-    getPOCuttingList(),
+    getCuttingRows(),
     getCurrentUserProfile(),
   ]);
 

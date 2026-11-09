@@ -50,6 +50,8 @@ export type KategoriTrxInput = z.infer<typeof KategoriTrxSchema>;
 
 export const KategoriProdukSchema = z.object({
   nama: z.string().min(1, 'Nama kategori tidak boleh kosong'),
+  /** Awalan nama bahan utama di inventory, mis. "Bahan JN" — dipakai isi otomatis bahan cutting */
+  jenis_bahan: z.string().optional(),
 });
 export type KategoriProdukInput = z.infer<typeof KategoriProdukSchema>;
 

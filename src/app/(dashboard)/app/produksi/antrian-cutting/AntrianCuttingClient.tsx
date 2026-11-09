@@ -1,643 +1,422 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  FileText,
-  Barcode as BarcodeIcon,
-  ClipboardList,
-  Scissors,
-  CheckCircle2,
-  Loader2,
-  Clock,
-  ChevronDown,
-  ChevronRight,
-  Trash2,
-  AlertTriangle,
+  FileText, Barcode as BarcodeIcon, ClipboardList, Scissors, CheckCircle2,
+  Loader2, Clock, ChevronDown, ChevronRight, Trash2, AlertTriangle, Ticket,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import type { POCuttingItem, BundleDetailItem } from '@/lib/actions/produksi/cutting.actions';
-import { mulaiCuttingBatch, getBundlesForPO, deleteBundleMenunggu } from '@/lib/actions/produksi/cutting.actions';
-import { getAntrianData } from '@/lib/actions/produksi/antrian.actions';
+import { deleteBundleMenunggu } from '@/lib/actions/produksi/cutting.actions';
+import {
+  getCuttingBundles, mulaiCuttingV2, getPrintBundlesByIds,
+  type CuttingRow, type CuttingBundle, type CuttingStatus,
+} from '@/lib/actions/produksi/cutting-v2.actions';
 import type { AntrianBundle } from '@/lib/actions/produksi/antrian.actions';
 import { getAksesoriForKartuKerja } from '@/lib/actions/produksi/model-aksesori.actions';
+import PrintCuttingTicketLayout from '../daftar-po/PrintCuttingTicketLayout';
 import PrintSPKLayout from './PrintSPKLayout';
 import PrintLabelLayout from './PrintLabelLayout';
 import PrintKartuKerjaLayout from './PrintKartuKerjaLayout';
 import type { AksesoriItem, KartuBundle } from './PrintKartuKerjaLayout';
+import ModalMulaiCutting from './ModalMulaiCutting';
 import ModalSelesaiCutting from './ModalSelesaiCutting';
-import PendingCuttingTab from './PendingCuttingTab';
 
 interface Props {
-  poList: POCuttingItem[];
+  poList: CuttingRow[];
   role: string;
 }
 
-type TabKey = 'menunggu' | 'progress' | 'pending' | 'selesai';
+type PrintMode = 'tiket' | 'spk' | 'label' | 'kartu';
 
-const TAB_LABELS: Record<TabKey, string> = {
-  menunggu: 'Menunggu',
-  progress: 'Sedang Dipotong',
-  pending:  'Pending Cutting',
-  selesai:  'Selesai',
-};
-
-// Kunci gabungan po_id + model — harus identik dengan makeRowId di cutting.actions.ts
-function makeRowId(po_id: string, model_nama: string | null): string {
-  return `${po_id}::${model_nama ?? ''}`;
-}
+const TABS: { key: CuttingStatus; label: string }[] = [
+  { key: 'menunggu', label: 'Menunggu' },
+  { key: 'progress', label: 'Sedang Dipotong' },
+  { key: 'selesai',  label: 'Selesai' },
+];
 
 function formatTime(iso: string | null): string {
   if (!iso) return '-';
   return new Date(iso).toLocaleString('id-ID', {
-    day: '2-digit', month: 'short', year: 'numeric',
-    hour: '2-digit', minute: '2-digit',
+    day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
   });
 }
-
-const StatusBadge = ({ status }: { status: POCuttingItem['status'] }) => {
-  const cfg = {
-    menunggu: 'bg-[#2A2D31] text-[#9aa0a6]',
-    progress: 'bg-[#e5c17b]/10 text-[#e5c17b] border border-[#e5c17b]/30',
-    selesai:  'bg-green-500/10 text-green-400 border border-green-500/20',
-  }[status];
-  const labels = { menunggu: 'Menunggu', progress: 'Dipotong', selesai: 'Selesai' };
-  return (
-    <span className={'inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-widest ' + cfg}>
-      {labels[status]}
-    </span>
-  );
-};
 
 export default function AntrianCuttingClient({ poList, role }: Props) {
   const router = useRouter();
   const isOwner = role === 'owner';
 
-  const [activeTab, setActiveTab]           = useState<TabKey>('menunggu');
-  const [selectedPoIds, setSelectedPoIds]   = useState<Set<string>>(new Set());
-  const [isLoadingMulai, setIsLoadingMulai] = useState(false);
-  const [isLoadingPrint, setIsLoadingPrint] = useState(false);
-  const [isLoadingHapus, setIsLoadingHapus] = useState(false);
-  const [showConfirmHapus, setShowConfirmHapus] = useState(false);
-  const [showModalSelesai, setShowModalSelesai] = useState(false);
-  const [printMode, setPrintMode]           = useState<'spk' | 'label' | 'kartu' | null>(null);
-  const [spkBundles, setSpkBundles]         = useState<AntrianBundle[]>([]);
-  const [kartuBundles, setKartuBundles]     = useState<KartuBundle[]>([]);
+  const [tab, setTab] = useState<CuttingStatus>('menunggu');
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [cache, setCache] = useState<Record<string, CuttingBundle[]>>({});
+  const [loadingRow, setLoadingRow] = useState<string | null>(null);
+  /** row_id → bundle id terpilih. Satu-satunya sumber pilihan untuk semua tombol. */
+  const [pilih, setPilih] = useState<Record<string, Set<string>>>({});
 
-  const [expandedPoId, setExpandedPoId] = useState<string | null>(null);
-  const [bundleCache, setBundleCache] = useState<Record<string, BundleDetailItem[]>>({});
-  const [loadingDetail, setLoadingDetail] = useState<string | null>(null);
+  const [showMulai, setShowMulai] = useState(false);
+  const [showSelesai, setShowSelesai] = useState(false);
+  const [showHapus, setShowHapus] = useState(false);
+  const [busy, setBusy] = useState<null | 'mulai' | 'hapus' | 'print'>(null);
 
-  // Bundle-level selection: map po_id → Set<bundle_id>
-  const [selectedBundleIds, setSelectedBundleIds] = useState<Record<string, Set<string>>>({});
+  const [printMode, setPrintMode] = useState<PrintMode | null>(null);
+  const [printBundles, setPrintBundles] = useState<AntrianBundle[]>([]);
+  const [kartuBundles, setKartuBundles] = useState<KartuBundle[]>([]);
 
-  const tabData = poList.filter(p => p.status === (activeTab === 'pending' ? 'progress' : activeTab));
+  const rows = useMemo(() => poList.filter(r => r.status === tab), [poList, tab]);
+  const counts = useMemo(() => Object.fromEntries(
+    TABS.map(t => [t.key, poList.filter(r => r.status === t.key).length])) as Record<CuttingStatus, number>, [poList]);
 
+  // Data server berubah (router.refresh) → buang cache & pilihan
+  const [listSebelumnya, setListSebelumnya] = useState(poList);
+  if (poList !== listSebelumnya) {
+    setListSebelumnya(poList);
+    setCache({}); setPilih({}); setExpanded(null);
+  }
+
+  const gantiTab = (t: CuttingStatus) => { setTab(t); setPilih({}); setExpanded(null); };
+
+  // Cetak: buka dialog print setelah layout ter-render
   useEffect(() => {
-    setSelectedPoIds(new Set());
-    setSelectedBundleIds({});
-  }, [activeTab]);
-
-  useEffect(() => {
-    if (printMode !== null) {
-      const t = setTimeout(() => window.print(), 200);
-      return () => clearTimeout(t);
-    }
+    if (!printMode) return;
+    const t = setTimeout(() => window.print(), 200);
+    return () => clearTimeout(t);
   }, [printMode]);
-
   useEffect(() => {
-    const fn = () => { setPrintMode(null); setSpkBundles([]); setKartuBundles([]); };
+    const fn = () => { setPrintMode(null); setPrintBundles([]); setKartuBundles([]); };
     window.addEventListener('afterprint', fn);
     return () => window.removeEventListener('afterprint', fn);
   }, []);
 
-  const handleExpandPO = async (po: POCuttingItem) => {
-    const { row_id, po_id, model_nama } = po;
-    if (expandedPoId === row_id) { setExpandedPoId(null); return; }
-    setExpandedPoId(row_id);
-    if (bundleCache[row_id]) return;
-    setLoadingDetail(row_id);
+  // ─── Bundle & pilihan ────────────────────────────────────────────────────
+  const muatBundle = async (row: CuttingRow): Promise<CuttingBundle[]> => {
+    if (cache[row.row_id]) return cache[row.row_id];
+    setLoadingRow(row.row_id);
     try {
-      const bundles = await getBundlesForPO(po_id, model_nama);
-      setBundleCache(prev => ({ ...prev, [row_id]: bundles }));
+      const b = await getCuttingBundles(row.po_id, row.model_nama, row.status);
+      setCache(p => ({ ...p, [row.row_id]: b }));
+      return b;
+    } catch (e) {
+      toast.error('Gagal memuat bundle: ' + (e instanceof Error ? e.message : String(e)));
+      return [];
     } finally {
-      setLoadingDetail(null);
+      setLoadingRow(null);
     }
   };
 
-  // Bundle-level checkbox helpers (dikunci per row_id: po_id + model)
-  const toggleBundle = (row_id: string, bundle_id: string) => {
-    setSelectedBundleIds(prev => {
-      const set = new Set(prev[row_id] ?? []);
-      set.has(bundle_id) ? set.delete(bundle_id) : set.add(bundle_id);
-      return { ...prev, [row_id]: set };
+  const toggleExpand = async (row: CuttingRow) => {
+    if (expanded === row.row_id) { setExpanded(null); return; }
+    setExpanded(row.row_id);
+    await muatBundle(row);
+  };
+
+  /** Centang baris = pilih semua bundle di baris itu. */
+  const toggleRow = async (row: CuttingRow) => {
+    const sel = pilih[row.row_id];
+    const bundles = await muatBundle(row);
+    const penuh = sel && sel.size === bundles.length && bundles.length > 0;
+    setPilih(p => ({ ...p, [row.row_id]: penuh ? new Set() : new Set(bundles.map(b => b.id)) }));
+  };
+
+  const toggleSemua = async () => {
+    const semuaPenuh = rows.length > 0 && rows.every(r => {
+      const s = pilih[r.row_id]; return s && s.size > 0 && s.size === (cache[r.row_id]?.length ?? -1);
     });
+    if (semuaPenuh) { setPilih({}); return; }
+    const next: Record<string, Set<string>> = {};
+    for (const r of rows) next[r.row_id] = new Set((await muatBundle(r)).map(b => b.id));
+    setPilih(next);
   };
 
-  // Bundle yang cutting-nya sudah diselesaikan tidak boleh dipilih lagi — kalau
-  // diproses ulang lewat Selesai Cutting, pemakaian bahan bisa terpotong dua
-  // kali untuk bundle yang sama (RPC di-database juga sudah menolaknya).
-  //
-  // 'partial' ikut dikunci: bundle itu SUDAH memotong stok bahan sekali, dan
-  // Selesai Cutting menimpa qty_aktual (bukan menambah) — memprosesnya lagi
-  // dari sini akan memotong stok dua kali sekaligus menghapus qty yang sudah
-  // tercatat. Potongan susulannya dicatat lewat tab Pending.
-  const getPilihableBundles = (row_id: string) =>
-    (bundleCache[row_id] ?? []).filter(
-      b => b.cutting_status !== 'selesai' && b.cutting_status !== 'partial'
-    );
-
-  const toggleAllBundlesForPO = (row_id: string) => {
-    const all = getPilihableBundles(row_id);
-    setSelectedBundleIds(prev => {
-      const set = prev[row_id] ?? new Set();
-      const next = set.size === all.length ? new Set<string>() : new Set(all.map(b => b.id));
-      return { ...prev, [row_id]: next };
+  const toggleBundle = (rowIdKey: string, id: string) =>
+    setPilih(p => {
+      const s = new Set(p[rowIdKey] ?? []);
+      if (s.has(id)) s.delete(id); else s.add(id);
+      return { ...p, [rowIdKey]: s };
     });
-  };
 
-  // Flat list of all selected bundle ids across all POs
-  const allSelectedBundleIds = Object.values(selectedBundleIds).flatMap(s => Array.from(s));
+  const terpilihIds = useMemo(() => Object.values(pilih).flatMap(s => [...s]), [pilih]);
+  const terpilihBundles = useMemo(() => {
+    const all = Object.values(cache).flat();
+    const set = new Set(terpilihIds);
+    return all.filter(b => set.has(b.id));
+  }, [cache, terpilihIds]);
+  const ada = terpilihIds.length > 0;
 
-  const togglePO = (id: string) => {
-    setSelectedPoIds(prev => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
-  };
+  const resetPilihan = () => { setPilih({}); };
 
-  const toggleAll = () => {
-    if (selectedPoIds.size === tabData.length && tabData.length > 0) {
-      setSelectedPoIds(new Set());
-    } else {
-      setSelectedPoIds(new Set(tabData.map(p => p.row_id)));
-    }
-  };
-
-  const allSelected = tabData.length > 0 && selectedPoIds.size === tabData.length;
-
-  const handleMulaiCutting = async () => {
-    if (allSelectedBundleIds.length === 0) return;
-    setIsLoadingMulai(true);
-    const result = await mulaiCuttingBatch(allSelectedBundleIds);
-    setIsLoadingMulai(false);
-    if (result.error) {
-      toast.error(result.error);
-    } else {
-      toast.success(`${result.jumlah_bundle} bundle mulai dipotong`);
-      setSelectedPoIds(new Set());
-      setSelectedBundleIds({});
-      router.refresh();
-    }
-  };
-
-  const handleHapusBundle = async () => {
-    if (!allSelectedBundleIds.length) return;
-    setIsLoadingHapus(true);
-    setShowConfirmHapus(false);
-    const result = await deleteBundleMenunggu(allSelectedBundleIds);
-    setIsLoadingHapus(false);
-    if (result.error) {
-      toast.error(result.error);
-    } else {
-      toast.success(`${result.deleted} bundle berhasil dihapus`);
-      setSelectedPoIds(new Set());
-      setSelectedBundleIds({});
-      setBundleCache({});
-      router.refresh();
-    }
-  };
-
-  const handleCetakSPK = async () => {
-    setIsLoadingPrint(true);
+  // ─── Aksi ────────────────────────────────────────────────────────────────
+  const cetak = async (mode: PrintMode, ids: string[] = terpilihIds) => {
+    if (!ids.length) return;
+    setBusy('print');
     try {
-      const { antrian, dipotong, selesai } = await getAntrianData();
-      const allBundles = [...antrian, ...dipotong, ...selesai];
-      // Gabungkan bundle dari checkbox baris utama (selectedPoIds) DAN checkbox
-      // per-bundle di panel detail (allSelectedBundleIds) — sebelumnya cetak
-      // hanya baca selectedPoIds, jadi bundle yang dicentang di detail terlewat.
-      const selectedBundleIdSet = new Set(allSelectedBundleIds);
-      const filtered = allBundles.filter(b =>
-        selectedPoIds.has(makeRowId(b.po_id, b.model_nama)) || selectedBundleIdSet.has(b.id)
-      );
-      if (!filtered.length) { toast.error('Tidak ada bundle ditemukan untuk PO terpilih'); return; }
-      setSpkBundles(filtered);
-      setPrintMode('spk');
-    } catch {
-      toast.error('Gagal memuat data SPK');
+      const data = await getPrintBundlesByIds(ids);
+      if (!data.length) { toast.error('Bundle tidak ditemukan'); return; }
+      if (mode === 'kartu') {
+        const aks = await getAksesoriForKartuKerja([...new Set(data.map(b => b.po_item_id))]);
+        setKartuBundles(data.map(b => ({
+          ...b,
+          aksesori: (aks[b.po_item_id] ?? []).map((i): AksesoriItem => ({
+            nama: i.inventory_item_nama, qty_per_pcs: i.qty_per_pcs, satuan: i.satuan, tahap_pakai: i.tahap_pakai,
+          })),
+        })));
+      } else {
+        setPrintBundles(data);
+      }
+      setPrintMode(mode);
+    } catch (e) {
+      toast.error('Gagal menyiapkan cetak: ' + (e instanceof Error ? e.message : String(e)));
     } finally {
-      setIsLoadingPrint(false);
+      setBusy(null);
     }
   };
 
-  const handleCetakLabel = async () => {
-    setIsLoadingPrint(true);
-    try {
-      const { antrian, dipotong, selesai } = await getAntrianData();
-      const allBundles = [...antrian, ...dipotong, ...selesai];
-      const selectedBundleIdSet = new Set(allSelectedBundleIds);
-      const filtered = allBundles.filter(b =>
-        selectedPoIds.has(makeRowId(b.po_id, b.model_nama)) || selectedBundleIdSet.has(b.id)
-      );
-      if (!filtered.length) { toast.error('Tidak ada bundle ditemukan untuk PO terpilih'); return; }
-      setSpkBundles(filtered);
-      setPrintMode('label');
-    } catch {
-      toast.error('Gagal memuat data Label');
-    } finally {
-      setIsLoadingPrint(false);
+  const mulai = async (items: { bundle_id: string; qty: number }[]) => {
+    setBusy('mulai');
+    const res = await mulaiCuttingV2(items);
+    if (!res.success) {
+      setBusy(null);
+      toast.error(res.error ?? 'Gagal memulai cutting');
+      return;
     }
+    const sisa = res.sisa.reduce((s, x) => s + x.qty, 0);
+    toast.success(`${res.jumlah_bundle} bundle mulai dipotong${sisa ? ` · sisa ${sisa} pcs tetap di Menunggu` : ''}`);
+    setShowMulai(false);
+    resetPilihan();
+    setBusy(null);
+    // Tiket Nomor Cutting otomatis untuk bundle yang baru dimulai
+    await cetak('tiket', items.map(i => i.bundle_id));
+    router.refresh();
   };
 
-  const handleCetakKartu = async () => {
-    setIsLoadingPrint(true);
-    try {
-      const { antrian, dipotong, selesai } = await getAntrianData();
-      const allBundles = [...antrian, ...dipotong, ...selesai];
-      const selectedBundleIdSet = new Set(allSelectedBundleIds);
-      const filtered = allBundles.filter(b =>
-        selectedPoIds.has(makeRowId(b.po_id, b.model_nama)) || selectedBundleIdSet.has(b.id)
-      );
-      if (!filtered.length) { toast.error('Tidak ada bundle ditemukan untuk PO terpilih'); return; }
-
-      // 1 call saja untuk semua po_item_id — drastis lebih cepat
-      const poItemIds = [...new Set(filtered.map(b => b.po_item_id))];
-      const aksesoriMap = await getAksesoriForKartuKerja(poItemIds);
-
-      const kartuData: KartuBundle[] = filtered.map(bundle => {
-        const aksesori: AksesoriItem[] = (aksesoriMap[bundle.po_item_id] ?? []).map(item => ({
-          nama:        item.inventory_item_nama,
-          qty_per_pcs: item.qty_per_pcs,
-          satuan:      item.satuan,
-          tahap_pakai: item.tahap_pakai,
-        }));
-        return { ...bundle, aksesori };
-      });
-
-      setKartuBundles(kartuData);
-      setPrintMode('kartu');
-    } catch {
-      toast.error('Gagal menyiapkan data kartu kerja');
-    } finally {
-      setIsLoadingPrint(false);
-    }
+  const hapus = async () => {
+    setShowHapus(false);
+    setBusy('hapus');
+    const res = await deleteBundleMenunggu(terpilihIds);
+    setBusy(null);
+    if (res.error) { toast.error(res.error); return; }
+    toast.success(`${res.deleted} bundle dihapus`);
+    resetPilihan();
+    router.refresh();
   };
 
-  const hasSelection    = selectedPoIds.size > 0 || allSelectedBundleIds.length > 0;
-  const hasBundleSel    = allSelectedBundleIds.length > 0;
-  const isProgressTab   = activeTab === 'progress';
-  const isMenungguTab   = activeTab === 'menunggu';
-  const isSelesaiTab    = activeTab === 'selesai';
-  const isPendingTab    = activeTab === 'pending';
+  // ─── Render ──────────────────────────────────────────────────────────────
+  const btnSecondary = 'flex items-center gap-2 px-3 h-10 rounded-md border border-[#2A2D31] text-[#e8eaed] text-sm font-medium hover:bg-[#2A2D31] disabled:opacity-30 disabled:cursor-not-allowed';
+  const btnPrimary = 'flex items-center gap-2 px-4 h-10 rounded-md bg-[#e5c17b] text-[#0D0E10] text-sm font-semibold hover:bg-[#d4b06a] disabled:opacity-30 disabled:cursor-not-allowed';
+  const th = 'sticky top-0 z-10 px-4 py-3 text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold bg-[#16181A] border-b border-[#2A2D31]';
+  const colCount = tab === 'menunggu' ? 7 : 8;
 
   return (
     <div className="space-y-6">
-
-      {/* Toolbar + info seleksi — freeze di atas saat scroll */}
-      <div className="print:hidden sticky top-0 z-20 bg-[#16181A] space-y-3 pb-3">
-
       {/* Toolbar */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 bg-[#1A1D1F] p-4 rounded-xl border border-[#2A2D31]">
-
-        {/* Tabs */}
-        <div className="flex p-1 bg-[#16181A] rounded-lg w-fit border border-[#2A2D31]">
-          {(['menunggu', 'progress', 'pending', 'selesai'] as TabKey[]).map(tab => {
-            const count = tab === 'pending'
-              ? '?' // self-fetching; count shown inside PendingCuttingTab
-              : poList.filter(p => p.status === tab).length;
-            const isActive = activeTab === tab;
-            const isPendingWithData = false; // badge handled inside PendingCuttingTab
-            return (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
+      <div className="print:hidden sticky top-0 z-20 bg-[#16181A] space-y-3 pb-3">
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 bg-[#1A1D1F] p-4 rounded-xl border border-[#2A2D31]">
+          <div className="flex p-1 bg-[#16181A] rounded-lg w-fit border border-[#2A2D31]">
+            {TABS.map(t => (
+              <button key={t.key} onClick={() => gantiTab(t.key)}
                 className={'flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium transition-all ' +
-                  (isActive ? 'bg-[#e5c17b] text-[#0D0E10]' : 'text-[#9aa0a6] hover:text-[#e8eaed]')}
-              >
-                <span>{TAB_LABELS[tab]}</span>
-                <span className={'px-1.5 py-0.5 rounded-full text-[10px] ' +
-                  (isActive ? 'bg-[#0D0E10]/10' : isPendingWithData ? 'bg-red-500/20 text-red-400' : 'bg-[#2A2D31]')}>
-                  {count}
+                  (tab === t.key ? 'bg-[#e5c17b] text-[#0D0E10]' : 'text-[#9aa0a6] hover:text-[#e8eaed]')}>
+                {t.label}
+                <span className={'px-1.5 py-0.5 rounded-full text-[10px] ' + (tab === t.key ? 'bg-[#0D0E10]/10' : 'bg-[#2A2D31]')}>
+                  {counts[t.key]}
                 </span>
               </button>
-            );
-          })}
-        </div>
+            ))}
+          </div>
 
-        {/* Action Buttons */}
-        <div className="flex items-center gap-2 flex-wrap">
-          {isMenungguTab && (
-            <>
-              <button
-                disabled={!hasBundleSel || isLoadingMulai}
-                onClick={handleMulaiCutting}
-                className="flex items-center gap-2 px-4 h-10 rounded-md bg-[#e5c17b] text-[#0D0E10] text-sm font-semibold hover:bg-[#d4b06a] disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-              >
-                {isLoadingMulai ? <Loader2 className="w-4 h-4 animate-spin" /> : <Scissors className="w-4 h-4" />}
-                {isLoadingMulai ? 'Memproses...' : `Mulai Cutting${hasBundleSel ? ` (${allSelectedBundleIds.length})` : ''}`}
-              </button>
-
-              {isOwner && (
-                <button
-                  disabled={!hasBundleSel || isLoadingHapus}
-                  onClick={() => setShowConfirmHapus(true)}
-                  className="flex items-center gap-2 px-4 h-10 rounded-md border border-red-500/40 text-red-400 text-sm font-semibold hover:bg-red-500/10 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-                >
-                  {isLoadingHapus ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                  {isLoadingHapus ? 'Menghapus...' : `Hapus${hasBundleSel ? ` (${allSelectedBundleIds.length})` : ''}`}
+          <div className="flex items-center gap-2 flex-wrap">
+            {tab === 'menunggu' && (
+              <>
+                <button disabled={!ada || !!busy} onClick={() => setShowMulai(true)} className={btnPrimary}>
+                  {busy === 'mulai' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Scissors className="w-4 h-4" />}
+                  Mulai Cutting{ada ? ` (${terpilihIds.length})` : ''}
                 </button>
-              )}
-            </>
-          )}
-
-          {isProgressTab && (
-            <button
-              disabled={!hasBundleSel}
-              onClick={() => setShowModalSelesai(true)}
-              className="flex items-center gap-2 px-4 h-10 rounded-md bg-[#e5c17b] text-[#0D0E10] text-sm font-semibold hover:bg-[#d4b06a] disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-            >
-              <CheckCircle2 className="w-4 h-4" />
-              {`Selesai Cutting${hasBundleSel ? ` (${allSelectedBundleIds.length})` : ''}`}
+                {isOwner && (
+                  <button disabled={!ada || !!busy} onClick={() => setShowHapus(true)}
+                    className="flex items-center gap-2 px-3 h-10 rounded-md border border-red-500/40 text-red-400 text-sm font-semibold hover:bg-red-500/10 disabled:opacity-30 disabled:cursor-not-allowed">
+                    {busy === 'hapus' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />} Hapus
+                  </button>
+                )}
+              </>
+            )}
+            {tab === 'progress' && (
+              <button disabled={!ada || !!busy} onClick={() => setShowSelesai(true)} className={btnPrimary}>
+                <CheckCircle2 className="w-4 h-4" /> Selesai Cutting{ada ? ` (${terpilihIds.length})` : ''}
+              </button>
+            )}
+            {tab !== 'menunggu' && (
+              <button disabled={!ada || !!busy} onClick={() => cetak('tiket')} className={btnSecondary}>
+                <Ticket className="w-4 h-4" /> Cetak Tiket
+              </button>
+            )}
+            <button disabled={!ada || !!busy} onClick={() => cetak('kartu')} className={btnSecondary}>
+              <ClipboardList className="w-4 h-4" /> Kartu
             </button>
-          )}
-
-          {!isPendingTab && (
-            <>
-              <button
-                disabled={!hasSelection || isLoadingPrint}
-                onClick={handleCetakKartu}
-                className="flex items-center gap-2 px-4 h-10 rounded-md border border-[#2A2D31] text-[#e8eaed] text-sm font-medium hover:bg-[#2A2D31] disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-              >
-                <ClipboardList className="w-4 h-4" /> Cetak Kartu
-              </button>
-              <button
-                disabled={!hasSelection || isLoadingPrint}
-                onClick={handleCetakSPK}
-                className="flex items-center gap-2 px-4 h-10 rounded-md border border-[#2A2D31] text-[#e8eaed] text-sm font-medium hover:bg-[#2A2D31] disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-              >
-                <FileText className="w-4 h-4" /> Cetak SPK
-              </button>
-              <button
-                disabled={!hasSelection || isLoadingPrint}
-                onClick={handleCetakLabel}
-                className="flex items-center gap-2 px-4 h-10 rounded-md border border-[#2A2D31] text-[#e8eaed] text-sm font-medium hover:bg-[#2A2D31] disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-              >
-                <BarcodeIcon className="w-4 h-4" /> Cetak Label
-              </button>
-            </>
-          )}
+            <button disabled={!ada || !!busy} onClick={() => cetak('spk')} className={btnSecondary}>
+              <FileText className="w-4 h-4" /> SPK
+            </button>
+            <button disabled={!ada || !!busy} onClick={() => cetak('label')} className={btnSecondary}>
+              <BarcodeIcon className="w-4 h-4" /> Label
+            </button>
+          </div>
         </div>
+        {ada && (
+          <p className="text-xs text-[#9aa0a6]">
+            Bundle terpilih: <span className="text-[#e5c17b] font-bold">{terpilihIds.length}</span>
+            {' · '}{terpilihBundles.reduce((s, b) => s + (tab === 'selesai' ? (b.qty_aktual ?? b.qty_rencana) : b.qty_rencana), 0)} pcs
+          </p>
+        )}
       </div>
 
-      {/* Selection info */}
-      {hasBundleSel && !isSelesaiTab && !isPendingTab && (
-        <p className="text-xs text-[#9aa0a6]">
-          Bundle terpilih: <span className="text-[#e5c17b] font-bold">{allSelectedBundleIds.length}</span>
-        </p>
-      )}
-      </div>
-
-      {/* Pending Tab */}
-      {isPendingTab && <PendingCuttingTab />}
-
-      {/* Tabel PO (semua tab kecuali pending) */}
-      {!isPendingTab && (
+      {/* Tabel */}
       <div className="print:hidden rounded-xl border border-[#2A2D31] bg-[#1A1D1F] overflow-hidden">
         <div className="overflow-auto max-h-[65vh]">
-        <table className="w-full text-sm border-separate border-spacing-0">
-          <thead>
-            <tr className="bg-[#16181A]">
-              {!isPendingTab && (
-                <th
-                  className="sticky top-0 z-10 w-10 px-4 py-3 text-center bg-[#16181A] border-b border-[#2A2D31] first:rounded-tl-xl last:rounded-tr-xl"
-                >
-                  <input
-                    type="checkbox"
-                    checked={allSelected}
-                    onChange={toggleAll}
-                    className="accent-[#e5c17b] w-4 h-4 cursor-pointer"
-                  />
-                </th>
-              )}
-              <th className="sticky top-0 z-10 px-4 py-3 text-left text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold bg-[#16181A] border-b border-[#2A2D31] first:rounded-tl-xl last:rounded-tr-xl">No PO</th>
-              <th className="sticky top-0 z-10 px-4 py-3 text-left text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold bg-[#16181A] border-b border-[#2A2D31] first:rounded-tl-xl last:rounded-tr-xl">Klien</th>
-              <th className="sticky top-0 z-10 px-4 py-3 text-left text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold bg-[#16181A] border-b border-[#2A2D31] first:rounded-tl-xl last:rounded-tr-xl">Model</th>
-              <th className="sticky top-0 z-10 px-4 py-3 text-center text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold bg-[#16181A] border-b border-[#2A2D31] first:rounded-tl-xl last:rounded-tr-xl">Bundle</th>
-              <th className="sticky top-0 z-10 px-4 py-3 text-center text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold bg-[#16181A] border-b border-[#2A2D31] first:rounded-tl-xl last:rounded-tr-xl">Total QTY</th>
-              <th className="sticky top-0 z-10 px-4 py-3 text-left text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold bg-[#16181A] border-b border-[#2A2D31] first:rounded-tl-xl last:rounded-tr-xl">Status</th>
-              {isProgressTab && (
-                <th className="sticky top-0 z-10 px-4 py-3 text-left text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold bg-[#16181A] border-b border-[#2A2D31] first:rounded-tl-xl last:rounded-tr-xl">Mulai</th>
-              )}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-[#2A2D31]">
-            {tabData.length === 0 ? (
+          <table className="w-full text-sm border-separate border-spacing-0">
+            <thead>
               <tr>
-                <td
-                  colSpan={isProgressTab ? 8 : 7}
-                  className="px-4 py-12 text-center text-[#9aa0a6] text-sm bg-[#1A1D1F]"
-                >
-                  Tidak ada data di tab ini
-                </td>
+                <th className={`${th} w-10 text-center`}>
+                  <input type="checkbox" onChange={toggleSemua}
+                    checked={rows.length > 0 && rows.every(r => (pilih[r.row_id]?.size ?? 0) > 0 && pilih[r.row_id]!.size === cache[r.row_id]?.length)}
+                    className="accent-[#e5c17b] w-4 h-4 cursor-pointer" />
+                </th>
+                <th className={`${th} text-left`}>No PO</th>
+                <th className={`${th} text-left`}>Klien</th>
+                <th className={`${th} text-left`}>Artikel</th>
+                <th className={`${th} text-center`}>Bundle</th>
+                <th className={`${th} text-center`}>QTY</th>
+                {tab !== 'menunggu' && <th className={`${th} text-left`}>{tab === 'progress' ? 'Mulai' : 'Selesai'}</th>}
+                <th className={`${th} w-10`} />
               </tr>
-            ) : (
-              tabData.map(po => {
-                const isSelected = selectedPoIds.has(po.row_id);
+            </thead>
+            <tbody>
+              {rows.length === 0 ? (
+                <tr><td colSpan={colCount} className="px-4 py-12 text-center text-[#9aa0a6] text-sm">Tidak ada data di tab ini</td></tr>
+              ) : rows.map(row => {
+                const sel = pilih[row.row_id];
+                const n = cache[row.row_id]?.length;
+                const penuh = !!sel && sel.size > 0 && sel.size === n;
+                const sebagian = !!sel && sel.size > 0 && !penuh;
+                const bundles = cache[row.row_id];
                 return (
-                  <React.Fragment key={po.row_id}>
-                    <tr
-                      onClick={() => !isPendingTab && togglePO(po.row_id)}
-                    className={'transition-colors ' +
-                      (!isPendingTab ? 'cursor-pointer ' : '') +
-                      (isSelected ? 'bg-[#e5c17b]/5' : 'bg-[#1A1D1F] hover:bg-[#1E2124]')}
-                  >
-                    {!isPendingTab && (
-                      <td className="px-4 py-3 text-center" onClick={e => e.stopPropagation()}>
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={() => togglePO(po.row_id)}
-                          className="accent-[#e5c17b] w-4 h-4 cursor-pointer"
-                        />
+                  <React.Fragment key={row.row_id}>
+                    <tr onClick={() => toggleExpand(row)}
+                      className={'cursor-pointer transition-colors ' + (sel?.size ? 'bg-[#e5c17b]/5' : 'hover:bg-[#1E2124]')}>
+                      <td className="px-4 py-3 text-center border-b border-[#2A2D31]" onClick={e => e.stopPropagation()}>
+                        {loadingRow === row.row_id
+                          ? <Loader2 className="w-4 h-4 animate-spin text-[#e5c17b] mx-auto" />
+                          : <input type="checkbox" checked={penuh}
+                              ref={el => { if (el) el.indeterminate = sebagian; }}
+                              onChange={() => toggleRow(row)} className="accent-[#e5c17b] w-4 h-4 cursor-pointer" />}
                       </td>
-                    )}
-                    <td className="px-4 py-3 font-mono font-bold text-[#e5c17b]">{po.no_po}</td>
-                    <td className="px-4 py-3 text-[#9aa0a6]">{po.klien_nama}</td>
-                    <td className="px-4 py-3 text-[#e8eaed]">{po.model_nama ?? '-'}</td>
-                    <td className="px-4 py-3 text-center font-semibold text-[#e8eaed]">{po.total_bundle}</td>
-                    <td className="px-4 py-3 text-center font-mono text-[#e8eaed]">
-                      {po.total_qty} <span className="text-[#9aa0a6] font-normal text-xs">pcs</span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center">
-                        <StatusBadge status={po.status} />
-                        <button onClick={e => { e.stopPropagation(); handleExpandPO(po); }}
-                          className="ml-2 text-[#9aa0a6] hover:text-[#e5c17b] transition-colors">
-                          {expandedPoId === po.row_id
-                            ? <ChevronDown className="w-4 h-4" />
-                            : <ChevronRight className="w-4 h-4" />}
-                        </button>
-                      </div>
-                    </td>
-                    {isProgressTab && (
-                      <td className="px-4 py-3 text-xs text-[#9aa0a6]">
-                        <span className="flex items-center gap-1">
-                          <Clock className="w-3 h-3" />
-                          {formatTime(po.start_time)}
-                        </span>
+                      <td className="px-4 py-3 font-mono font-bold text-[#e5c17b] border-b border-[#2A2D31]">{row.no_po}</td>
+                      <td className="px-4 py-3 text-[#9aa0a6] border-b border-[#2A2D31]">{row.klien_nama}</td>
+                      <td className="px-4 py-3 text-[#e8eaed] border-b border-[#2A2D31]">{row.model_nama ?? '-'}</td>
+                      <td className="px-4 py-3 text-center font-semibold text-[#e8eaed] border-b border-[#2A2D31]">
+                        {sel?.size ? <><span className="text-[#e5c17b]">{sel.size}</span>/</> : null}{row.total_bundle}
                       </td>
-                    )}
-                  </tr>
-                  {expandedPoId === po.row_id && (
-                    <tr key={`${po.row_id}-expanded`}>
-                      <td colSpan={isProgressTab ? 8 : 7}
-                          className="bg-[#16181A] px-4 py-4 border-b border-[#2A2D31]">
+                      <td className="px-4 py-3 text-center font-mono text-[#e8eaed] border-b border-[#2A2D31]">
+                        {row.total_qty} <span className="text-[#9aa0a6] text-xs">pcs</span>
+                        {row.qty_lebih > 0 && <span className="ml-1 text-[10px] text-sky-400 font-bold">+{row.qty_lebih}</span>}
+                      </td>
+                      {tab !== 'menunggu' && (
+                        <td className="px-4 py-3 text-xs text-[#9aa0a6] border-b border-[#2A2D31]">
+                          <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{formatTime(row.waktu)}</span>
+                        </td>
+                      )}
+                      <td className="px-2 py-3 text-[#9aa0a6] border-b border-[#2A2D31]">
+                        {expanded === row.row_id ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                      </td>
+                    </tr>
 
-                        {loadingDetail === po.row_id && (
-                          <div className="flex items-center gap-2 text-[#9aa0a6] text-sm py-2">
-                            <Loader2 className="w-4 h-4 animate-spin" /> Memuat detail...
-                          </div>
-                        )}
-
-                        {bundleCache[po.row_id] && (
-                          <div>
-                            {/* Header ringkasan + select all */}
-                            <div className="flex items-center justify-between mb-3">
-                              {(() => {
-                                const visibleBundles = isSelesaiTab
-                                  ? bundleCache[po.row_id]
-                                  : getPilihableBundles(po.row_id);
-                                return (
-                                  <p className="text-[10px] text-[#9aa0a6] uppercase font-bold tracking-widest">
-                                    {visibleBundles.length} Bundle
-                                    · {[...new Set(visibleBundles.map(b => b.warna))].length} Warna
-                                    · {[...new Set(visibleBundles.map(b => b.size))].length} Size
-                                  </p>
-                                );
-                              })()}
-                              {!isSelesaiTab && (
-                                <label className="flex items-center gap-1.5 text-[10px] text-[#9aa0a6] cursor-pointer hover:text-[#e5c17b]">
-                                  <input
-                                    type="checkbox"
-                                    className="accent-[#e5c17b] w-3.5 h-3.5"
-                                    checked={(selectedBundleIds[po.row_id]?.size ?? 0) === getPilihableBundles(po.row_id).length}
-                                    onChange={() => toggleAllBundlesForPO(po.row_id)}
-                                  />
-                                  Pilih Semua
-                                </label>
-                              )}
-                            </div>
-                            {/* Tabel bundle dengan checkbox — bundle yang cutting-nya
-                                sudah "selesai" disembunyikan dari tab selain Selesai,
-                                supaya tidak bisa dipilih & diproses ulang. */}
-                            <table className="w-full text-xs border-collapse">
+                    {expanded === row.row_id && (
+                      <tr>
+                        <td colSpan={colCount} className="bg-[#16181A] px-4 py-3 border-b border-[#2A2D31]">
+                          {!bundles ? (
+                            <div className="flex items-center gap-2 text-[#9aa0a6] text-sm py-2"><Loader2 className="w-4 h-4 animate-spin" /> Memuat...</div>
+                          ) : (
+                            <table className="w-full text-xs">
                               <thead>
-                                <tr className="border-b border-[#2A2D31]">
-                                  {!isSelesaiTab && <th className="w-8 py-1.5 px-2" />}
-                                  <th className="text-left py-1.5 px-2 text-[#9aa0a6] font-bold uppercase tracking-wider">Barcode</th>
-                                  <th className="text-left py-1.5 px-2 text-[#9aa0a6] font-bold uppercase tracking-wider">Warna</th>
-                                  <th className="text-left py-1.5 px-2 text-[#9aa0a6] font-bold uppercase tracking-wider">Size</th>
-                                  <th className="text-center py-1.5 px-2 text-[#9aa0a6] font-bold uppercase tracking-wider">Qty Order</th>
-                                  <th className="text-left py-1.5 px-2 text-[#9aa0a6] font-bold uppercase tracking-wider">Status Cutting</th>
+                                <tr className="border-b border-[#2A2D31] text-[#9aa0a6] uppercase tracking-wider">
+                                  <th className="w-8 py-1.5 px-2" />
+                                  <th className="text-left py-1.5 px-2 font-bold">Barcode</th>
+                                  <th className="text-left py-1.5 px-2 font-bold">Warna</th>
+                                  <th className="text-left py-1.5 px-2 font-bold">Size</th>
+                                  <th className="text-center py-1.5 px-2 font-bold">{tab === 'selesai' ? 'Hasil' : 'Isi'}</th>
                                 </tr>
                               </thead>
                               <tbody>
-                                {(isSelesaiTab ? bundleCache[po.row_id] : getPilihableBundles(po.row_id)).map(bundle => (
-                                  <tr key={bundle.id} className="border-b border-[#2A2D31]/50 hover:bg-[#1A1D1F]">
-                                    {!isSelesaiTab && (
-                                      <td className="py-1.5 px-2">
-                                        <input
-                                          type="checkbox"
-                                          className="accent-[#e5c17b] w-3.5 h-3.5 cursor-pointer"
-                                          checked={selectedBundleIds[po.row_id]?.has(bundle.id) ?? false}
-                                          onChange={() => toggleBundle(po.row_id, bundle.id)}
-                                        />
-                                      </td>
-                                    )}
-                                    <td className="py-1.5 px-2 font-mono text-[#e5c17b]">{bundle.barcode}</td>
-                                    <td className="py-1.5 px-2 text-[#e8eaed]">{bundle.warna}</td>
-                                    <td className="py-1.5 px-2 text-[#e8eaed]">{bundle.size}</td>
-                                    <td className="py-1.5 px-2 text-center text-[#e8eaed]">{bundle.qty_per_bundle}</td>
+                                {bundles.map(b => (
+                                  <tr key={b.id} className="border-b border-[#2A2D31]/50 hover:bg-[#1A1D1F]">
                                     <td className="py-1.5 px-2">
-                                      {bundle.cutting_status === 'selesai'
-                                        ? <span className="text-green-400 font-bold">Selesai</span>
-                                        : bundle.cutting_status === 'partial'
-                                        ? <span className="text-orange-400 font-bold">Partial</span>
-                                        : bundle.cutting_status === 'progress'
-                                        ? <span className="text-[#e5c17b] font-bold">Dipotong</span>
-                                        : <span className="text-[#9aa0a6]">Menunggu</span>}
+                                      <input type="checkbox" checked={sel?.has(b.id) ?? false}
+                                        onChange={() => toggleBundle(row.row_id, b.id)}
+                                        className="accent-[#e5c17b] w-3.5 h-3.5 cursor-pointer" />
+                                    </td>
+                                    <td className="py-1.5 px-2 font-mono text-[#e5c17b]">{b.barcode}</td>
+                                    <td className="py-1.5 px-2 text-[#e8eaed]">{b.warna}</td>
+                                    <td className="py-1.5 px-2 text-[#e8eaed]">{b.size}</td>
+                                    <td className="py-1.5 px-2 text-center text-[#e8eaed]">
+                                      {tab === 'selesai' ? (b.qty_aktual ?? b.qty_rencana) : b.qty_rencana} pcs
+                                      {b.qty_lebih > 0 && <span className="ml-1 text-sky-400 font-bold">+{b.qty_lebih}</span>}
                                     </td>
                                   </tr>
                                 ))}
                               </tbody>
                             </table>
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  )}
-                </React.Fragment>
-              );
-            })
-            )}
-          </tbody>
-        </table>
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       </div>
-      )}
 
-      {/* Dialog Konfirmasi Hapus */}
-      {showConfirmHapus && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+      {/* Konfirmasi hapus */}
+      {showHapus && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 print:hidden">
           <div className="bg-[#1A1D1F] border border-red-500/30 rounded-2xl p-6 w-full max-w-sm shadow-2xl">
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center shrink-0">
-                <AlertTriangle className="w-5 h-5 text-red-400" />
-              </div>
+              <div className="w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center"><AlertTriangle className="w-5 h-5 text-red-400" /></div>
               <div>
                 <h3 className="font-bold text-[#e8eaed]">Hapus Bundle?</h3>
                 <p className="text-xs text-[#9aa0a6] mt-0.5">Tindakan ini tidak bisa dibatalkan</p>
               </div>
             </div>
             <p className="text-sm text-[#9aa0a6] mb-6">
-              Anda akan menghapus <span className="text-red-400 font-bold">{allSelectedBundleIds.length} bundle</span> yang masih berstatus menunggu. Bundle yang sudah mulai proses cutting tidak akan terhapus.
+              Menghapus <span className="text-red-400 font-bold">{terpilihIds.length} bundle</span> yang masih Menunggu.
             </p>
             <div className="flex gap-3">
-              <button
-                onClick={() => setShowConfirmHapus(false)}
-                className="flex-1 h-10 rounded-xl border border-[#2A2D31] text-[#9aa0a6] text-sm font-medium hover:bg-[#2A2D31] transition-colors"
-              >
-                Batal
-              </button>
-              <button
-                onClick={handleHapusBundle}
-                className="flex-1 h-10 rounded-xl bg-red-500/20 border border-red-500/40 text-red-400 text-sm font-bold hover:bg-red-500/30 transition-colors"
-              >
-                Ya, Hapus
-              </button>
+              <button onClick={() => setShowHapus(false)} className="flex-1 h-10 rounded-xl border border-[#2A2D31] text-[#9aa0a6] text-sm hover:bg-[#2A2D31]">Batal</button>
+              <button onClick={hapus} className="flex-1 h-10 rounded-xl bg-red-500/20 border border-red-500/40 text-red-400 text-sm font-bold hover:bg-red-500/30">Ya, Hapus</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Modal Selesai Cutting */}
-      {showModalSelesai && (
-        <ModalSelesaiCutting
-          selectedBundleIds={allSelectedBundleIds}
-          onSuccess={() => {
-            setShowModalSelesai(false);
-            setSelectedPoIds(new Set());
-            setSelectedBundleIds({});
-            router.refresh();
-          }}
-          onClose={() => setShowModalSelesai(false)}
+      {showMulai && (
+        <ModalMulaiCutting
+          bundles={terpilihBundles}
+          isSubmitting={busy === 'mulai' || busy === 'print'}
+          onSubmit={mulai}
+          onClose={() => setShowMulai(false)}
         />
       )}
 
-      {/* Print Layouts */}
-      {printMode === 'spk'   && <PrintSPKLayout bundles={spkBundles} />}
-      {printMode === 'label' && <PrintLabelLayout bundles={spkBundles} />}
+      {showSelesai && (
+        <ModalSelesaiCutting
+          selectedBundleIds={terpilihIds}
+          onSuccess={() => { setShowSelesai(false); resetPilihan(); router.refresh(); }}
+          onClose={() => setShowSelesai(false)}
+        />
+      )}
+
+      {/* Layout cetak */}
+      {printMode === 'tiket' && <PrintCuttingTicketLayout bundles={printBundles} />}
+      {printMode === 'spk'   && <PrintSPKLayout bundles={printBundles} />}
+      {printMode === 'label' && <PrintLabelLayout bundles={printBundles} />}
       {printMode === 'kartu' && (
         <PrintKartuKerjaLayout
           bundles={kartuBundles}

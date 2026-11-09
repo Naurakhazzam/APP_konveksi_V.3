@@ -122,7 +122,7 @@ export async function getBundlesForPrint(poItemId: string): Promise<PrintBundle[
   const { data, error } = await supabase
     .from('bundle')
     .select(`
-      id, barcode, no_urut, po_id, po_item_id, status_tahap,
+      id, barcode, no_urut, po_id, po_item_id, status_tahap, qty_rencana,
       po:po_id(no_po, tanggal_order, tanggal_target, catatan, klien:klien_id(nama)),
       po_item:po_item_id(warna, size, qty_per_bundle, produk:produk_id(nama, model:model_id(nama)))
     `)
@@ -148,7 +148,7 @@ export async function getBundlesForPrint(poItemId: string): Promise<PrintBundle[
       klien_nama: b.po?.klien?.nama ?? '-',
       warna: b.po_item?.warna ?? '-',
       size: b.po_item?.size ?? '-',
-      qty_per_bundle: cuttingQty ?? b.po_item?.qty_per_bundle ?? 0,
+      qty_per_bundle: cuttingQty ?? b.qty_rencana ?? b.po_item?.qty_per_bundle ?? 0,
       model_nama: b.po_item?.produk?.model?.nama ?? b.po_item?.produk?.nama ?? null,
       cutting_done: cuttingStatus === 'selesai' || cuttingStatus === 'partial',
     } as PrintBundle;

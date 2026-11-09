@@ -41,7 +41,7 @@ export function KategoriFormModal({ mode, initialData, id }: { mode: 'add'|'edit
 
   const { register, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm<KategoriProdukInput>({
     resolver: zodResolver(KategoriProdukSchema),
-    defaultValues: initialData || { nama: '' },
+    defaultValues: initialData || { nama: '', jenis_bahan: '' },
   });
 
   const onSubmit = async (values: KategoriProdukInput) => {
@@ -71,6 +71,11 @@ export function KategoriFormModal({ mode, initialData, id }: { mode: 'add'|'edit
             <Label htmlFor="nama" className="text-sm">Nama Kategori</Label>
             <Input id="nama" disabled={isSubmitting} className="bg-[#1E2124] border-[#2A2D31]" {...register('nama')} />
             {errors.nama && <p className="text-xs text-red-500">{errors.nama.message}</p>}
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="jenis_bahan" className="text-sm">Jenis Bahan Utama</Label>
+            <Input id="jenis_bahan" placeholder='mis. "Bahan JN", "Toyobo"' disabled={isSubmitting} className="bg-[#1E2124] border-[#2A2D31]" {...register('jenis_bahan')} />
+            <p className="text-[11px] text-[#9aa0a6]">Awalan nama bahan di inventory. Saat Selesai Cutting, bahan dipilih otomatis dari jenis bahan + warna produk (mis. Bahan JN + Black → Bahan JN Hitam).</p>
           </div>
           {serverError && <div className="p-3 bg-red-500/10 text-xs text-red-500">{serverError}</div>}
           <div className="pt-4 flex justify-end gap-2">

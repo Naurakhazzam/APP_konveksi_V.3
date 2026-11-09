@@ -132,3 +132,4 @@ export async function getAntrianData(): Promise<{
 
   return { antrian, dipotong, selesai };
 }
+

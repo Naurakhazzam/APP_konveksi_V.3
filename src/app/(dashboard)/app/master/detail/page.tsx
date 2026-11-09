@@ -66,6 +66,7 @@ export default async function MasterDetailPage() {
                   <TableHeader className="bg-[#2A2D31]/30">
                     <TableRow className="border-[#2A2D31] hover:bg-transparent">
                       <TableHead className="text-[#9aa0a6]">Nama Kategori</TableHead>
+                      <TableHead className="text-[#9aa0a6]">Jenis Bahan Utama</TableHead>
                       {isOwner && <TableHead className="text-right text-[#9aa0a6]">Aksi</TableHead>}
                     </TableRow>
                   </TableHeader>
@@ -73,10 +74,11 @@ export default async function MasterDetailPage() {
                     {dataKategori.map(val => (
                       <TableRow key={val.id} className="border-[#2A2D31] hover:bg-[#2A2D31]/20">
                         <TableCell className="font-medium text-[#e8eaed]">{val.nama}</TableCell>
+                        <TableCell className="text-[#9aa0a6]">{val.jenis_bahan ?? '—'}</TableCell>
                         {isOwner && (
                           <TableCell className="text-right">
                             <div className="flex justify-end gap-1">
-                              <KategoriFormModal mode="edit" id={val.id} initialData={{ nama: val.nama }} />
+                              <KategoriFormModal mode="edit" id={val.id} initialData={{ nama: val.nama, jenis_bahan: val.jenis_bahan ?? '' }} />
                               <KategoriDeleteAction id={val.id} />
                             </div>
                           </TableCell>

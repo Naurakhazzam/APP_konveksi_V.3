@@ -3,8 +3,9 @@
 import React, { useState } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Info, Boxes, Clock, Tag, Layout } from 'lucide-react';
+import { Info, Boxes, Clock, Tag, Layout, Scissors } from 'lucide-react';
 import AksesoriTab from './AksesoriTab';
+import StandarBahanTab from './StandarBahanTab';
 import { ModelAksesori } from '@/lib/actions/produksi/model-aksesori.actions';
 
 interface ModelDetailClientProps {
@@ -32,6 +33,13 @@ export default function ModelDetailClient({ model, initialAksesoris }: ModelDeta
           >
             <Boxes size={16} />
             Aksesori
+          </TabsTrigger>
+          <TabsTrigger 
+            value="bahan" 
+            className="data-[state=active]:bg-[#e5c17b] data-[state=active]:text-[#2b2318] text-[#9aa0a6] gap-2 px-6"
+          >
+            <Scissors size={16} />
+            Standar Bahan
           </TabsTrigger>
         </TabsList>
 
@@ -83,6 +91,10 @@ export default function ModelDetailClient({ model, initialAksesoris }: ModelDeta
 
           <TabsContent value="aksesori">
             <AksesoriTab modelId={model.id} initialData={initialAksesoris} />
+          </TabsContent>
+
+          <TabsContent value="bahan">
+            <StandarBahanTab modelId={model.id} />
           </TabsContent>
         </div>
       </Tabs>
