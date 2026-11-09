@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import {
-  Package, Clock, Loader2, CheckCircle, Search, Undo2, X, SkipForward, MinusCircle, AlertTriangle,
+  Package, Clock, Loader2, CheckCircle, Search, Undo2, X, SkipForward, MinusCircle, AlertTriangle, Printer,
 } from 'lucide-react';
 import {
   getRiwayatSelesaiTahap, selesaiTahapBatch, batalSelesaiTahapBatch,
@@ -15,6 +15,7 @@ import { matchesBundleQuery } from '@/lib/search/bundle-search';
 import { TAHAP_CONFIG } from '@/modules/produksi/constants/tahap';
 import StagePagination from '@/components/produksi/StagePagination';
 import RowMenu from '@/components/produksi/RowMenu';
+import PrintHangTagLayout from '../packing/PrintHangTagLayout';
 
 interface Props {
   tahap: TahapBorongan;
@@ -25,13 +26,31 @@ interface Props {
 type Tab = 'antrian' | 'selesai';
 const PAGE_SIZE = 20;
 
+type HangTag = { noUrut: string; model_nama: string | null; warna: string; size: string; qty: number };
+const keHangTag = (b: BundleTahapItem): HangTag => ({
+  noUrut: b.barcode.split('-')[2] ?? b.barcode,
+  model_nama: b.model_nama,
+  warna: b.warna,
+  size: b.size,
+  qty: b.qty_per_bundle,
+});
+
 const formatWaktu = (s: string | null) =>
   !s ? '-' : new Date(s).toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
 
 export default function TahapListClient({ tahap, initialAntrian, initialSelesai }: Props) {
   const router = useRouter();
   const label = TAHAP_CONFIG[tahap].label;
+  const isPacking = tahap === 'packing';
   const [activeTab, setActiveTab] = useState<Tab>('antrian');
+
+  // ── Hang tag (khusus Packing): dicetak otomatis setelah Selesai, bisa cetak ulang ──
+  const [hangTag, setHangTag] = useState<HangTag[] | null>(null);
+  const cetakHangTag = (bundles: BundleTahapItem[]) => {
+    if (!isPacking || bundles.length === 0) return;
+    setHangTag(bundles.map(keHangTag));
+    setTimeout(() => { window.print(); setHangTag(null); }, 600);
+  };
   const [cari, setCari] = useState('');
 
   // ── Antrian (semua baris dari server, disaring di sini) ──
@@ -115,16 +134,20 @@ export default function TahapListClient({ tahap, initialAntrian, initialSelesai 
     setPilihAntrian(s);
   };
 
-  const selesaiBisaBatal = selesaiData.filter(b => b.bisa_batal);
-  const semuaSelesaiTerpilih = selesaiBisaBatal.length > 0 && selesaiBisaBatal.every(b => pilihSelesai.has(b.id));
+  // Packing: semua baris bisa dicentang (untuk cetak ulang hang tag);
+  // tahap lain hanya yang masih bisa dibatalkan.
+  const selesaiBisaPilih = isPacking ? selesaiData : selesaiData.filter(b => b.bisa_batal);
+  const semuaSelesaiTerpilih = selesaiBisaPilih.length > 0 && selesaiBisaPilih.every(b => pilihSelesai.has(b.id));
   const pilihSemuaSelesai = () => {
     setPilihSelesai(prev => {
       const m = new Map(prev);
-      if (semuaSelesaiTerpilih) selesaiBisaBatal.forEach(b => m.delete(b.id));
-      else selesaiBisaBatal.forEach(b => m.set(b.id, b));
+      if (semuaSelesaiTerpilih) selesaiBisaPilih.forEach(b => m.delete(b.id));
+      else selesaiBisaPilih.forEach(b => m.set(b.id, b));
       return m;
     });
   };
+  const pilihanSelesai = [...pilihSelesai.values()];
+  const pilihanBisaBatal = pilihanSelesai.every(b => b.bisa_batal);
   const toggleSelesai = (item: SelesaiTahapItem) => {
     setPilihSelesai(prev => {
       const m = new Map(prev);
@@ -193,7 +216,7 @@ export default function TahapListClient({ tahap, initialAntrian, initialSelesai 
         <h2 className="text-xl font-bold text-[#e8eaed]">Monitoring {label}</h2>
         <p className="text-[#9aa0a6] text-[13px] mt-1.5">
           Centang bundle (atau scan barcode di kolom cari) → Selesaikan. Qty penuh otomatis; bundle yang kurang
-          diselesaikan lewat menu ⋯.
+          diselesaikan lewat menu ⋯.{isPacking && ' Hang tag langsung dicetak setelah disimpan; cetak ulang dari tab Selesai.'}
         </p>
       </div>
 
@@ -238,12 +261,34 @@ export default function TahapListClient({ tahap, initialAntrian, initialSelesai 
             </>
           )}
           {activeTab === 'selesai' && pilihSelesai.size > 0 && (
-            <button
-              onClick={() => setBatal([...pilihSelesai.values()])}
-              className="flex items-center gap-2 h-9 px-3 rounded-lg border border-orange-500/40 text-orange-400 text-xs font-bold hover:bg-orange-500/10"
-            >
-              <Undo2 className="w-4 h-4" /> Batalkan Selesai ({pilihSelesai.size})
-            </button>
+            <>
+              <button
+                onClick={() => setPilihSelesai(new Map())}
+                className="text-xs font-semibold text-[#9aa0a6] hover:text-[#e8eaed] px-2"
+              >
+                Batal pilih
+              </button>
+              <button
+                onClick={() => setBatal(pilihanSelesai)}
+                disabled={!pilihanBisaBatal}
+                title={pilihanBisaBatal ? undefined : 'Ada bundle yang sudah masuk surat jalan'}
+                className="flex items-center gap-2 h-9 px-3 rounded-lg border border-orange-500/40 text-orange-400 text-xs font-bold hover:bg-orange-500/10 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Undo2 className="w-4 h-4" /> Batalkan Selesai ({pilihSelesai.size})
+              </button>
+              {isPacking && (
+                <button
+                  onClick={() => {
+                    cetakHangTag(pilihanSelesai);
+                    toast.success(`Mencetak ulang hang tag ${pilihSelesai.size} bundle`);
+                    setPilihSelesai(new Map());
+                  }}
+                  className="flex items-center gap-2 bg-[#e5c17b] hover:bg-[#d4b06a] text-[#0D0E10] h-9 px-4 rounded-lg text-sm font-bold"
+                >
+                  <Printer className="w-4 h-4" /> Print Ulang Hang Tag ({pilihSelesai.size})
+                </button>
+              )}
+            </>
           )}
         </div>
 
@@ -302,7 +347,7 @@ export default function TahapListClient({ tahap, initialAntrian, initialSelesai 
                 <thead>
                   <tr>
                     <TH className="w-12 text-center">
-                      <Kotak checked={semuaSelesaiTerpilih} onChange={pilihSemuaSelesai} disabled={selesaiBisaBatal.length === 0} />
+                      <Kotak checked={semuaSelesaiTerpilih} onChange={pilihSemuaSelesai} disabled={selesaiBisaPilih.length === 0} />
                     </TH>
                     <TH>No.</TH>
                     <TH>No. PO</TH>
@@ -320,7 +365,7 @@ export default function TahapListClient({ tahap, initialAntrian, initialSelesai 
                   {selesaiData.length === 0 ? <Kosong cols={11} teks={`Belum ada bundle yang selesai ${label}`} /> : selesaiData.map((item, idx) => (
                     <tr key={item.id} className={`transition-colors ${pilihSelesai.has(item.id) ? 'bg-orange-500/5' : 'hover:bg-[#2A2D31]/40'}`}>
                       <td className="px-4 py-3 text-center">
-                        <Kotak checked={pilihSelesai.has(item.id)} onChange={() => toggleSelesai(item)} disabled={!item.bisa_batal} />
+                        <Kotak checked={pilihSelesai.has(item.id)} onChange={() => toggleSelesai(item)} disabled={!isPacking && !item.bisa_batal} />
                       </td>
                       <td className="px-4 py-3 text-xs font-bold text-[#9aa0a6]">{(selesaiPage - 1) * PAGE_SIZE + idx + 1}</td>
                       <KolomBundle b={item} />
@@ -338,12 +383,20 @@ export default function TahapListClient({ tahap, initialAntrian, initialSelesai 
                         )}
                       </td>
                       <td className="px-4 py-3">
-                        <RowMenu items={[{
-                          label: 'Batalkan selesai', icon: <Undo2 className="w-3.5 h-3.5" />, danger: true,
-                          disabled: !item.bisa_batal,
-                          hint: item.bisa_batal ? undefined : 'Sudah masuk tahap berikutnya — batalkan dari menu tahap itu dulu',
-                          onClick: () => setBatal([item]),
-                        }]} />
+                        <RowMenu items={[
+                          ...(isPacking ? [{
+                            label: 'Print ulang hang tag', icon: <Printer className="w-3.5 h-3.5" />,
+                            onClick: () => { cetakHangTag([item]); toast.success(`Mencetak ulang hang tag ${item.barcode}`); },
+                          }] : []),
+                          {
+                            label: 'Batalkan selesai', icon: <Undo2 className="w-3.5 h-3.5" />, danger: true,
+                            disabled: !item.bisa_batal,
+                            hint: item.bisa_batal ? undefined
+                              : isPacking ? 'Sudah masuk surat jalan'
+                              : 'Sudah masuk tahap berikutnya — batalkan dari menu tahap itu dulu',
+                            onClick: () => setBatal([item]),
+                          },
+                        ]} />
                       </td>
                     </tr>
                   ))}
@@ -365,7 +418,7 @@ export default function TahapListClient({ tahap, initialAntrian, initialSelesai 
           tahap={tahap}
           bundles={konfirmasi}
           onClose={() => setKonfirmasi(null)}
-          onSuccess={() => { setKonfirmasi(null); sesudahAksi(); }}
+          onSuccess={b => { setKonfirmasi(null); sesudahAksi(); cetakHangTag(b); }}
         />
       )}
       {qtyKurang && (
@@ -373,7 +426,7 @@ export default function TahapListClient({ tahap, initialAntrian, initialSelesai 
           tahap={tahap}
           bundle={qtyKurang}
           onClose={() => setQtyKurang(null)}
-          onSuccess={() => { setQtyKurang(null); sesudahAksi(); }}
+          onSuccess={b => { setQtyKurang(null); sesudahAksi(); cetakHangTag(b); }}
         />
       )}
       {batal && (
@@ -384,6 +437,7 @@ export default function TahapListClient({ tahap, initialAntrian, initialSelesai 
           onSuccess={() => { setBatal(null); sesudahAksi(); muatSelesai(1, cari.trim()); }}
         />
       )}
+      {hangTag && hangTag.length > 0 && <PrintHangTagLayout bundles={hangTag} />}
     </div>
   );
 }
@@ -446,7 +500,9 @@ const BtnTutup = ({ onClick, disabled }: { onClick: () => void; disabled: boolea
 );
 
 function ModalSelesai({ tahap, bundles, onClose, onSuccess }: {
-  tahap: TahapBorongan; bundles: BundleTahapItem[]; onClose: () => void; onSuccess: () => void;
+  tahap: TahapBorongan; bundles: BundleTahapItem[]; onClose: () => void;
+  /** Dipanggil dengan bundle yang tersimpan — dipakai cetak hang tag Packing. */
+  onSuccess: (selesai: BundleTahapItem[]) => void;
 }) {
   const [sibuk, setSibuk] = useState(false);
   const label = TAHAP_CONFIG[tahap].label;
@@ -457,7 +513,7 @@ function ModalSelesai({ tahap, bundles, onClose, onSuccess }: {
     try {
       const res = await selesaiTahapBatch(tahap, bundles.map(b => ({ bundle_id: b.id })));
       toast.success(`${res.jumlah} bundle selesai ${label}`);
-      onSuccess();
+      onSuccess(bundles);
     } catch (e: any) {
       toast.error(`Gagal, tidak ada yang tersimpan: ${e.message}`);
       setSibuk(false);
@@ -492,7 +548,8 @@ function ModalSelesai({ tahap, bundles, onClose, onSuccess }: {
 }
 
 function ModalQtyKurang({ tahap, bundle, onClose, onSuccess }: {
-  tahap: TahapBorongan; bundle: BundleTahapItem; onClose: () => void; onSuccess: () => void;
+  tahap: TahapBorongan; bundle: BundleTahapItem; onClose: () => void;
+  onSuccess: (selesai: BundleTahapItem[]) => void;
 }) {
   const [sibuk, setSibuk] = useState(false);
   const [qty, setQty] = useState(Math.max(bundle.qty_per_bundle - 1, 1));
@@ -512,7 +569,7 @@ function ModalQtyKurang({ tahap, bundle, onClose, onSuccess }: {
     try {
       await selesaiTahapBatch(tahap, [{ bundle_id: bundle.id, qty, alasan_qty_id: alasanId }]);
       toast.success(`${bundle.barcode} selesai ${label} — ${qty} pcs`);
-      onSuccess();
+      onSuccess([{ ...bundle, qty_per_bundle: qty }]);
     } catch (e: any) {
       toast.error(`Gagal: ${e.message}`);
       setSibuk(false);
@@ -618,7 +675,9 @@ function ModalBatal({ tahap, bundles, onClose, onSuccess }: {
         </p>
         <p className="text-xs text-[#e8eaed]">• Bundle kembali ke tab Antrian {label}.</p>
         <p className="text-xs text-[#e8eaed]">• Upah {label} bundle ini dibatalkan (ditolak bila upahnya sudah dibayar).</p>
-        <p className="text-xs text-[#e8eaed]">• Stok aksesori tahap ini (mis. kancing) dikembalikan.</p>
+        {tahap === 'packing'
+          ? <p className="text-xs text-[#e8eaed]">• Hang tag dicetak lagi saat bundle diselesaikan ulang.</p>
+          : <p className="text-xs text-[#e8eaed]">• Stok aksesori tahap ini (mis. kancing) dikembalikan.</p>}
       </div>
       <div className="space-y-2">
         <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[#e5c17b]">Alasan *</label>

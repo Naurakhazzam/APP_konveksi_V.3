@@ -6,11 +6,11 @@ import { matchesBundleQuery } from '@/lib/search/bundle-search';
 import { TAHAP_ORDER, TAHAP_CONFIG, getPrevTahap, type TahapKey } from '@/modules/produksi/constants/tahap';
 
 /**
- * Tahap borongan: Lubang Kancing, Buang Benang, QC, Steam.
+ * Tahap borongan: Lubang Kancing, Buang Benang, QC, Steam, Packing.
  * Tidak ada langkah "terima" terpisah — bundle di Antrian langsung
  * diselesaikan (terima + selesai dalam satu transaksi di DB).
  */
-export type TahapBorongan = 'lubang_kancing' | 'buang_benang' | 'qc' | 'steam';
+export type TahapBorongan = 'lubang_kancing' | 'buang_benang' | 'qc' | 'steam' | 'packing';
 
 const TENANT_ID = 'STX-001';
 
@@ -151,11 +151,25 @@ export async function getRiwayatSelesaiTahap(
 
   const rows = (data ?? []) as any[];
   const karyawan = await petaKaryawan(supabase, rows);
+
+  // Packing: tahap terakhir — posisinya ditentukan surat jalan.
+  const sudahSJ = new Set<string>();
+  if (tahap === 'packing' && rows.length > 0) {
+    const { data: sj } = await supabase
+      .from('surat_jalan_item').select('bundle_id').in('bundle_id', rows.map(r => r.id));
+    sj?.forEach(x => sudahSJ.add(x.bundle_id));
+  }
+
   const mapped: SelesaiTahapItem[] = rows.map(r => {
     const s = r.status_tahap?.[tahap] ?? {};
+    const posisi = tahap === 'packing'
+      ? (sudahSJ.has(r.id)
+          ? { posisi: 'Sudah surat jalan', dilewati: [], bisa_batal: false }
+          : { posisi: 'Siap surat jalan', dilewati: [], bisa_batal: true })
+      : hitungPosisi(r.status_tahap, tahap);
     return {
       ...petakan(r, karyawan, Number(s.qty_selesai ?? s.qty_terima ?? 0), s.waktu_selesai ?? null),
-      ...hitungPosisi(r.status_tahap, tahap),
+      ...posisi,
     };
   });
 
