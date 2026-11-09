@@ -97,6 +97,25 @@ export async function batalJahitBatch(
   return { jumlah: Number((data as any)?.jumlah ?? 0) };
 }
 
+/**
+ * Salah klik Selesai Cutting: bundle di Antrian Jahit dikembalikan ke
+ * "Sedang Dipotong" — upah potong dibatalkan, stok kain & bundle sisa
+ * otomatis dikembalikan.
+ */
+export async function kembalikanKeCutting(bundle_ids: string[], alasan: string): Promise<{ jumlah: number }> {
+  const supabase = await createClient();
+  const user_id = await getUserId(supabase);
+  const { data, error } = await supabase.rpc('batal_selesai_cutting', {
+    p_bundle_ids: bundle_ids,
+    p_alasan:     alasan,
+    p_user_id:    user_id,
+    p_tenant_id:  TENANT_ID,
+  });
+  if (error) throw new Error(error.message);
+  revalidateProduksi();
+  return { jumlah: Number((data as any)?.jumlah ?? 0) };
+}
+
 // ── Riwayat Selesai Jahit ────────────────────────────────────────────────
 
 export interface SelesaiJahitItem {

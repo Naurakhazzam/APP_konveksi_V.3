@@ -196,7 +196,7 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
   const [showSerahTerima, setShowSerahTerima] = useState(false);
   const [showSelesai, setShowSelesai] = useState(false);
   const [showTutupDataLama, setShowTutupDataLama] = useState(false);
-  const [batal, setBatal] = useState<{ mode: 'serah_terima' | 'selesai'; bundles: BundleBatal[] } | null>(null);
+  const [batal, setBatal] = useState<{ mode: 'cutting' | 'serah_terima' | 'selesai'; bundles: BundleBatal[] } | null>(null);
   const [splitBundle, setSplitBundle] = useState<AntrianJahitBundle | null>(null);
   const [splitAwalBundle, setSplitAwalBundle] = useState<AntrianJahitBundle | null>(null);
   const [koreksiBundle, setKoreksiBundle] = useState<AntrianJahitBundle | null>(null);
@@ -410,6 +410,13 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
                     <Archive className="w-4 h-4" /> Tutup Data Lama ({pilihAntrian.size})
                   </button>
                   <button
+                    onClick={() => setBatal({ mode: 'cutting', bundles: antrianSemua.filter(b => pilihAntrian.has(b.id)).map(keBatal) })}
+                    title="Salah klik Selesai Cutting — kembalikan ke Sedang Dipotong"
+                    className="flex items-center gap-2 h-9 px-3 rounded-lg border border-orange-500/40 text-orange-400 text-xs font-bold hover:bg-orange-500/10"
+                  >
+                    <Undo2 className="w-4 h-4" /> Kembalikan ke Cutting ({pilihAntrian.size})
+                  </button>
+                  <button
                     onClick={() => setShowSerahTerima(true)}
                     className="flex items-center gap-2 bg-[#e5c17b] hover:bg-[#d4b06a] text-[#0D0E10] h-9 px-4 rounded-lg text-sm font-bold shadow-lg"
                   >
@@ -491,6 +498,11 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
                             hint: item.qty_per_bundle <= 1 ? 'Qty cuma 1 pcs' : 'Tugaskan sebagian qty ke satu penjahit, sisanya tetap di Antrian',
                           },
                           { label: 'Koreksi hasil cutting', icon: <Pencil className="w-3.5 h-3.5" />, onClick: () => setKoreksiCuttingBundle(item) },
+                          {
+                            label: 'Kembalikan ke Cutting', icon: <Undo2 className="w-3.5 h-3.5" />, danger: true,
+                            hint: 'Salah klik Selesai Cutting — kembali ke Sedang Dipotong',
+                            onClick: () => setBatal({ mode: 'cutting', bundles: [keBatal(item)] }),
+                          },
                         ]} />
                       </td>
                     </tr>

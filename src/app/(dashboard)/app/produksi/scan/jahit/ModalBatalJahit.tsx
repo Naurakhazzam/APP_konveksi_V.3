@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { batalJahitBatch } from '@/lib/actions/produksi/jahit.actions';
+import { batalJahitBatch, kembalikanKeCutting } from '@/lib/actions/produksi/jahit.actions';
 import { X, Undo2, Loader2, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -18,13 +18,26 @@ export interface BundleBatal {
 
 interface Props {
   bundles: BundleBatal[];
-  /** serah_terima: Sedang Dijahit → Antrian · selesai: Selesai → Sedang Dijahit */
-  mode: 'serah_terima' | 'selesai';
+  /**
+   * cutting: Antrian Jahit → Sedang Dipotong (salah klik Selesai Cutting)
+   * serah_terima: Sedang Dijahit → Antrian · selesai: Selesai → Sedang Dijahit
+   */
+  mode: 'cutting' | 'serah_terima' | 'selesai';
   onSuccess: () => void;
   onClose: () => void;
 }
 
 const INFO = {
+  cutting: {
+    judul: 'Kembalikan ke Cutting',
+    arah: 'Antrian Jahit → kembali ke Sedang Dipotong',
+    efek: [
+      'Bundle kembali ke tab Sedang Dipotong di Antrian Cutting — input ulang hasilnya dari sana.',
+      'Upah tukang potong dibatalkan (ditolak bila upahnya sudah dibayar).',
+      'Stok kain yang tercatat terpakai dikembalikan.',
+      'Bundle sisa yang dibuat otomatis digabung kembali (bila belum dipotong).',
+    ],
+  },
   serah_terima: {
     judul: 'Batalkan Serah Terima',
     arah: 'Sedang Dijahit → kembali ke Antrian',
@@ -55,7 +68,10 @@ export default function ModalBatalJahit({ bundles, mode, onSuccess, onClose }: P
     if (!alasan.trim()) return;
     setIsSubmitting(true);
     try {
-      const res = await batalJahitBatch(bundles.map(b => b.id), mode, alasan.trim());
+      const ids = bundles.map(b => b.id);
+      const res = mode === 'cutting'
+        ? await kembalikanKeCutting(ids, alasan.trim())
+        : await batalJahitBatch(ids, mode, alasan.trim());
       toast.success(`${res.jumlah} bundle dibatalkan — ${info.arah.toLowerCase()}`);
       onSuccess();
     } catch (err: any) {
