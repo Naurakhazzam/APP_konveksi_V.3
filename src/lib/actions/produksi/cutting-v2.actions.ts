@@ -142,9 +142,10 @@ export async function getCuttingRows(): Promise<CuttingRow[]> {
   }
 
   return [...map.values()].sort((a, b) => {
-    // Selesai: terbaru dulu; lainnya: urut No PO lalu model
+    // Selesai: paling baru selesai di atas; Menunggu & Sedang Dipotong: PO terbaru
+    // (nomor PO terbesar) di atas, lalu urut nama model dalam PO yang sama
     if (a.status === 'selesai' && b.status === 'selesai') return String(b.waktu).localeCompare(String(a.waktu));
-    return a.no_po.localeCompare(b.no_po) || (a.model_nama ?? '').localeCompare(b.model_nama ?? '');
+    return b.no_po.localeCompare(a.no_po) || (a.model_nama ?? '').localeCompare(b.model_nama ?? '');
   });
 }
 
