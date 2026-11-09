@@ -34,6 +34,9 @@ import ModalKonfirmasiQtySingle from '@/components/produksi/ModalKonfirmasiQtySi
 import ToastQtyLebih from '@/components/produksi/ToastQtyLebih';
 import RejectSection from '@/components/produksi/RejectSection';
 import PrintHangTagLayout from '../packing/PrintHangTagLayout';
+import { selesaiTahapBatch, type TahapBorongan } from '@/lib/actions/produksi/tahap-borongan.actions';
+
+const TAHAP_BORONGAN: TahapKey[] = ['lubang_kancing', 'buang_benang', 'qc', 'steam'];
 import {
   buatReject,
   getAlasanRejectList,
@@ -291,6 +294,22 @@ export default function ScanSimpleClient({ tahap, tahapLabel, mode = 'lanjut', k
     const bundle = state.bundle;
 
     setState({ phase: 'SUBMITTING', bundle });
+    // Lubang Kancing / Buang Benang / QC / Steam: terima + selesai dalam satu
+    // transaksi (tidak ada lagi bundle yang tertahan di 'terima' bila gagal).
+    if (TAHAP_BORONGAN.includes(tahap)) {
+      try {
+        const res = await selesaiTahapBatch(tahap as TahapBorongan, [
+          { bundle_id: bundle.id, qty: qtySelesai, alasan_qty_id },
+        ]);
+        toast.success(`${tahapLabel} selesai`);
+        setState({ phase: 'RESULT', gajiLedgerId: null, upah: res.upah_total });
+        router.refresh();
+      } catch (err: any) {
+        toast.error(err.message || 'Gagal proses');
+        setState({ phase: 'LOADED', bundle });
+      }
+      return;
+    }
     try {
       // Step 1: terima tahap ini (auto-close prev tahap)
       await scanLanjutTahap({
