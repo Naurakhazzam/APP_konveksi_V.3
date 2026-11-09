@@ -35,8 +35,8 @@ export default function ModalKoreksiCutting({ bundle, onSuccess, onClose }: Prop
         result.upah_aksi === 'dikurangi'  ? `, upah cutting -Rp${Math.abs(result.upah_selisih).toLocaleString('id-ID')}` :
         result.upah_aksi === 'entri_baru' ? `, kekurangan upah cutting Rp${result.upah_selisih.toLocaleString('id-ID')} dicatat (belum lunas)` :
         '';
-      const statusInfo = result.status_baru === 'partial'
-        ? '. Bundle masuk tab Pending Cutting karena di bawah rencana.'
+      const statusInfo = bundle.qty_rencana > 0 && qtyNum < bundle.qty_rencana && result.status_baru !== 'partial'
+        ? '. Kekurangannya kembali ke Menunggu di Antrian Cutting.'
         : '';
 
       toast.success(`${bundle.barcode}: hasil cutting ${result.qty_lama} → ${result.qty_baru} pcs${upahInfo}${statusInfo}`);
@@ -142,8 +142,8 @@ export default function ModalKoreksiCutting({ bundle, onSuccess, onClose }: Prop
                 </p>
                 {bundle.qty_rencana > 0 && qtyNum < bundle.qty_rencana && (
                   <p className="text-orange-400">
-                    Di bawah rencana ({bundle.qty_rencana} pcs) — sisa {bundle.qty_rencana - qtyNum} pcs akan muncul di tab Pending Cutting
-                    (kecuali bundle ini sudah pernah di-Close).
+                    Di bawah rencana ({bundle.qty_rencana} pcs) — sisa {bundle.qty_rencana - qtyNum} pcs kembali sebagai bundle baru
+                    di Menunggu (Antrian Cutting).
                   </p>
                 )}
                 {bundle.qty_rencana > 0 && qtyNum > bundle.qty_rencana && (

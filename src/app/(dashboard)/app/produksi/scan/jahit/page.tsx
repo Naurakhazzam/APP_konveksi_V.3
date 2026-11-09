@@ -1,6 +1,6 @@
 import { PageWrapper } from '@/components/ui/PageWrapper';
 import { getKaryawanForTahap, getAntrianJahit } from '@/lib/actions/produksi/scan.actions';
-import { getSelesaiPerTahap } from '@/lib/actions/produksi/stage-bundles.actions';
+import { getRiwayatSelesaiJahit } from '@/lib/actions/produksi/jahit.actions';
 import ScanJahitClient from './ScanJahitClient';
 import JahitListClient from './JahitListClient';
 
@@ -9,7 +9,7 @@ export default async function ScanJahitPage() {
     await Promise.all([
       getKaryawanForTahap('jahit'),
       getAntrianJahit(),
-      getSelesaiPerTahap('jahit', 1, 20),
+      getRiwayatSelesaiJahit(1, 20),
     ]);
 
   return (

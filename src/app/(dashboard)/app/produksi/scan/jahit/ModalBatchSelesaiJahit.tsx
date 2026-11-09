@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { type AntrianJahitBundle } from '@/lib/actions/produksi/scan.actions';
 import { getAlasanQty, type AlasanQty } from '@/lib/actions/produksi/qty-approval.actions';
-import { scanSelesai } from '@/lib/actions/produksi/scan-mutations.actions';
+import { selesaiJahitBatch } from '@/lib/actions/produksi/jahit.actions';
 import { X, CheckCircle, AlertTriangle, Loader2, User } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -73,30 +73,23 @@ export default function ModalBatchSelesaiJahit({ bundles, karyawanList, onSucces
   const handleSubmit = async () => {
     if (hasErrors || isSubmitting) return;
     setIsSubmitting(true);
-    let berhasil = 0;
-    let gagal = 0;
-    for (const b of bundles) {
-      const row = rows.find(r => r.bundleId === b.id)!;
-      try {
-        await scanSelesai({
-          barcode: b.barcode,
-          tahap: 'jahit',
-          karyawan_id: getKaryawanId(b),
-          qty: row.qty,
-          catatan: row.catatan || undefined,
-          alasan_qty_id: row.alasan_qty_id,
-          tenant_id: 'STX-001',
-        });
-        berhasil++;
-      } catch (err: any) {
-        gagal++;
-        toast.error(`Gagal: ${b.barcode} — ${err.message}`);
-      }
-    }
-    setIsSubmitting(false);
-    if (berhasil > 0) {
-      toast.success(`${berhasil} bundle berhasil diselesaikan${gagal > 0 ? `, ${gagal} gagal` : ''}`);
+    try {
+      // Satu transaksi: semua bundle tersimpan, atau tidak sama sekali.
+      const res = await selesaiJahitBatch(rows.map(r => ({
+        bundle_id: r.bundleId,
+        qty: r.qty,
+        alasan_qty_id: r.alasan_qty_id,
+        catatan: r.catatan || undefined,
+      })));
+      toast.success(
+        `${res.jumlah} bundle selesai dijahit` +
+        (res.qty_lebih > 0 ? ` — ${res.qty_lebih} qty lebih menunggu approval` : ''),
+      );
       onSuccess();
+    } catch (err: any) {
+      toast.error(`Gagal menyimpan, tidak ada yang berubah: ${err.message}`);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 

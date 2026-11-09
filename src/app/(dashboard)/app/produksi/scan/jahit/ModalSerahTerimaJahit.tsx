@@ -2,11 +2,12 @@
 
 import React, { useState, useEffect } from 'react';
 import { type AntrianJahitBundle } from '@/lib/actions/produksi/scan.actions';
-import { scanJahitTerima } from '@/lib/actions/produksi/scan-mutations.actions';
+import { serahTerimaJahitBatch } from '@/lib/actions/produksi/jahit.actions';
+import { getAlasanQty, type AlasanQty } from '@/lib/actions/produksi/qty-approval.actions';
 import { getAksesoriForKartuKerja, type ModelAksesori } from '@/lib/actions/produksi/model-aksesori.actions';
-import { getBenangItems, submitBenangSerahTerima, type BenangItem } from '@/lib/actions/inventory/benang.actions';
+import { getBenangItems, type BenangItem } from '@/lib/actions/inventory/benang.actions';
 import PrintKartuKerjaLayout, { type KartuBundle, type AksesoriItem } from '@/app/(dashboard)/app/produksi/antrian-cutting/PrintKartuKerjaLayout';
-import { X, User, Printer, Loader2, AlertCircle, Tag, PackageCheck, Wind, Plus, Trash2 } from 'lucide-react';
+import { X, User, Printer, Loader2, AlertCircle, Tag, PackageCheck, Wind, Plus, Trash2, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface Props {
@@ -50,6 +51,35 @@ export default function ModalSerahTerimaJahit({ selectedBundles, karyawanList, o
   const [benangItems, setBenangItems]   = useState<BenangItem[]>([]);
   const [loadingBenang, setLoadingBenang] = useState(true);
   const [benangRows, setBenangRows]     = useState<BenangRow[]>([]);
+
+  // Input susulan: barang sudah jadi → terima + selesai sekaligus
+  const [langsungSelesai, setLangsungSelesai] = useState(false);
+  const [printKartu, setPrintKartu]           = useState(true);
+  const [alasanList, setAlasanList]           = useState<AlasanQty[]>([]);
+  const [qtySelesai, setQtySelesai] = useState<Record<string, string>>(
+    () => Object.fromEntries(selectedBundles.map(b => [b.id, String(b.qty_per_bundle)])),
+  );
+  const [alasanQty, setAlasanQty] = useState<Record<string, string>>({});
+
+  const toggleLangsungSelesai = (v: boolean) => {
+    setLangsungSelesai(v);
+    // Barang sudah jadi → kartu kerja biasanya tidak perlu dicetak lagi
+    setPrintKartu(!v);
+    if (v && alasanList.length === 0) getAlasanQty().then(setAlasanList).catch(() => {});
+  };
+
+  // Validasi qty selesai per bundle (hanya bila langsung selesai)
+  const errorSelesai: Record<string, string | null> = {};
+  for (const b of selectedBundles) {
+    if (!langsungSelesai) { errorSelesai[b.id] = null; continue; }
+    const q = parseInt(qtySelesai[b.id] ?? '') || 0;
+    errorSelesai[b.id] =
+      q < 1 ? 'Min 1'
+      : q > b.qty_per_bundle ? `Maks ${b.qty_per_bundle}`
+      : q < b.qty_per_bundle && !alasanQty[b.id] ? 'Pilih alasan'
+      : null;
+  }
+  const adaErrorSelesai = Object.values(errorSelesai).some(Boolean);
 
   // Load aksesori + benang saat modal dibuka
   useEffect(() => {
@@ -140,50 +170,45 @@ export default function ModalSerahTerimaJahit({ selectedBundles, karyawanList, o
 
     const selectedKaryawan = karyawanList.find(k => k.id === karyawanId);
     if (!selectedKaryawan) return;
+    if (adaErrorSelesai) {
+      toast.error('Periksa qty selesai — ada yang belum lengkap');
+      return;
+    }
 
     setIsSubmitting(true);
     try {
-      // 1. Process scan terima untuk setiap bundle
-      const warnings: string[] = [];
-      for (const bundle of selectedBundles) {
-        const res = await scanJahitTerima({
-          barcode    : bundle.barcode,
-          karyawan_id: karyawanId,
-          qty        : bundle.qty_per_bundle
-        });
-        if (res.stok_warnings?.length > 0) {
-          res.stok_warnings.forEach((w: any) => {
-            warnings.push(`${w.item_nama} kurang ${w.qty_kurang}`);
-          });
-        }
-      }
-
-      if (warnings.length > 0) {
-        toast.warning(`Beberapa stok aksesori kurang: ${warnings.join(', ')}`);
-      }
-
-      // 2. Catat serah terima benang (jika ada)
-      if (benangRows.length > 0) {
-        const bundleIds = selectedBundles.map(b => b.id);
-        const today     = new Date().toISOString().split('T')[0];
-
-        // Hanya submit row dengan qty > 0 (qty 0 = tidak diserahkan, tidak perlu dicatat)
-        const benangToSubmit = benangRows.filter(r => parseFloat(r.qty) > 0);
-        if (benangToSubmit.length > 0) {
-          await submitBenangSerahTerima(
-            benangToSubmit.map(row => ({
-              karyawan_id       : karyawanId,
-              inventory_item_id : row.inventory_item_id,
-              qty               : parseFloat(row.qty),
-              tanggal           : today,
-              bundle_ids        : bundleIds,
-              keterangan        : `Serah terima jahit – ${selectedBundles.map(b => b.barcode).join(', ')}`,
+      // 1. Serah terima (+ selesai bila input susulan) + benang — satu transaksi
+      const res = await serahTerimaJahitBatch({
+        bundle_ids: selectedBundles.map(b => b.id),
+        karyawan_id: karyawanId,
+        langsung_selesai: langsungSelesai,
+        items: langsungSelesai
+          ? selectedBundles.map(b => ({
+              bundle_id: b.id,
+              qty_selesai: parseInt(qtySelesai[b.id]) || b.qty_per_bundle,
+              alasan_qty_id: alasanQty[b.id] || null,
             }))
-          );
-        }
+          : [],
+        benang: benangRows
+          .filter(r => parseFloat(r.qty) > 0)
+          .map(r => ({ inventory_item_id: r.inventory_item_id, qty: parseFloat(r.qty) })),
+      });
+
+      if (res.stok_warnings.length > 0) {
+        toast.warning(`Beberapa stok aksesori kurang: ${res.stok_warnings.map(w => `${w.item_nama} kurang ${w.qty_kurang}`).join(', ')}`);
       }
 
-      // 3. Siapkan data untuk kartu kerja
+      const pesan = langsungSelesai
+        ? `${selectedBundles.length} bundle diserahkan & selesai dijahit (${selectedKaryawan.nama})`
+        : `Berhasil serah terima ${selectedBundles.length} bundle ke ${selectedKaryawan.nama}`;
+
+      if (!printKartu) {
+        toast.success(pesan);
+        onSuccess();
+        return;
+      }
+
+      // 2. Siapkan data untuk kartu kerja
       const dataToPrint: KartuBundle[] = selectedBundles.map((b) => {
         const aks: AksesoriItem[] = (aksesoriMap[b.po_item_id] ?? []).map(item => ({
           nama        : item.inventory_item_nama,
@@ -221,7 +246,7 @@ export default function ModalSerahTerimaJahit({ selectedBundles, karyawanList, o
       // 4. Trigger print
       setTimeout(() => {
         window.print();
-        toast.success(`Berhasil serah terima ${selectedBundles.length} bundle`);
+        toast.success(pesan);
         onSuccess();
       }, 500);
 
@@ -289,16 +314,54 @@ export default function ModalSerahTerimaJahit({ selectedBundles, karyawanList, o
                         <th className="px-4 py-2 text-[10px] uppercase text-[#9aa0a6] font-bold">Barcode</th>
                         <th className="px-4 py-2 text-[10px] uppercase text-[#9aa0a6] font-bold">Warna/Size</th>
                         <th className="px-4 py-2 text-[10px] uppercase text-[#9aa0a6] font-bold text-center">QTY</th>
+                        {langsungSelesai && (
+                          <th className="px-4 py-2 text-[10px] uppercase text-green-400 font-bold text-center">QTY Selesai</th>
+                        )}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#2A2D31]">
-                      {selectedBundles.map(b => (
-                        <tr key={b.id} className="hover:bg-[#2A2D31]/30">
+                      {selectedBundles.map(b => {
+                        const q = parseInt(qtySelesai[b.id] ?? '') || 0;
+                        const kurang = langsungSelesai && q > 0 && q < b.qty_per_bundle;
+                        return (
+                        <tr key={b.id} className="hover:bg-[#2A2D31]/30 align-top">
                           <td className="px-4 py-2 font-mono text-[#e5c17b] text-xs">{b.barcode}</td>
                           <td className="px-4 py-2 text-[#e8eaed]">{b.warna} / {b.size}</td>
                           <td className="px-4 py-2 text-center text-[#e8eaed] font-bold">{b.qty_per_bundle}</td>
+                          {langsungSelesai && (
+                            <td className="px-4 py-2">
+                              <div className="flex flex-col items-center gap-1">
+                                <input
+                                  type="number"
+                                  min={1}
+                                  max={b.qty_per_bundle}
+                                  value={qtySelesai[b.id] ?? ''}
+                                  onChange={e => setQtySelesai(p => ({ ...p, [b.id]: e.target.value }))}
+                                  disabled={isSubmitting}
+                                  className={`w-16 bg-[#0D0E10] border rounded-lg px-2 py-1 text-center text-xs font-bold text-[#e8eaed] outline-none focus:ring-1 focus:ring-[#e5c17b] ${
+                                    errorSelesai[b.id] ? 'border-red-500/60' : 'border-[#2A2D31]'
+                                  }`}
+                                />
+                                {kurang && (
+                                  <select
+                                    value={alasanQty[b.id] ?? ''}
+                                    onChange={e => setAlasanQty(p => ({ ...p, [b.id]: e.target.value }))}
+                                    disabled={isSubmitting}
+                                    className="w-36 bg-[#0D0E10] border border-orange-500/40 rounded-lg px-2 py-1 text-[11px] text-[#e8eaed] outline-none"
+                                  >
+                                    <option value="">-- alasan kurang --</option>
+                                    {alasanList.map(a => <option key={a.id} value={a.id}>{a.label}</option>)}
+                                  </select>
+                                )}
+                                {errorSelesai[b.id] && !kurang && (
+                                  <span className="text-[10px] text-red-400">{errorSelesai[b.id]}</span>
+                                )}
+                              </div>
+                            </td>
+                          )}
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -461,6 +524,38 @@ export default function ModalSerahTerimaJahit({ selectedBundles, karyawanList, o
               )}
             </div>
 
+            {/* ── Input susulan ── */}
+            <div className={`rounded-xl border p-4 space-y-2 transition-colors ${
+              langsungSelesai ? 'border-green-500/40 bg-green-500/5' : 'border-[#2A2D31] bg-[#16181A]'
+            }`}>
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={langsungSelesai}
+                  onChange={e => toggleLangsungSelesai(e.target.checked)}
+                  disabled={isSubmitting}
+                  className="accent-green-500 w-4 h-4 mt-0.5"
+                />
+                <span>
+                  <span className="text-sm font-bold text-[#e8eaed]">Sudah selesai dijahit (input susulan)</span>
+                  <span className="block text-xs text-[#9aa0a6] mt-0.5">
+                    Bundle langsung tercatat Terima + Selesai dan upah jahit langsung masuk.
+                    Qty selesai bisa diubah per bundle di tabel di atas.
+                  </span>
+                </span>
+              </label>
+              <label className="flex items-center gap-3 cursor-pointer pl-7">
+                <input
+                  type="checkbox"
+                  checked={printKartu}
+                  onChange={e => setPrintKartu(e.target.checked)}
+                  disabled={isSubmitting}
+                  className="accent-[#e5c17b] w-4 h-4"
+                />
+                <span className="text-xs text-[#9aa0a6]">Print kartu kerja</span>
+              </label>
+            </div>
+
           </div>
 
           {/* Footer */}
@@ -474,11 +569,17 @@ export default function ModalSerahTerimaJahit({ selectedBundles, karyawanList, o
             </button>
             <button
               onClick={handleSubmit}
-              disabled={isSubmitting || !karyawanId}
-              className="flex items-center gap-2 bg-[#e5c17b] hover:bg-[#d4b06a] text-[#0D0E10] px-6 py-2.5 rounded-xl text-sm font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={isSubmitting || !karyawanId || adaErrorSelesai}
+              className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                langsungSelesai ? 'bg-green-600 hover:bg-green-500 text-white' : 'bg-[#e5c17b] hover:bg-[#d4b06a] text-[#0D0E10]'
+              }`}
             >
-              {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Printer className="w-4 h-4" />}
-              {isSubmitting ? 'Memproses...' : 'Print & Mulai Jahit'}
+              {isSubmitting
+                ? <Loader2 className="w-4 h-4 animate-spin" />
+                : printKartu ? <Printer className="w-4 h-4" /> : <CheckCircle className="w-4 h-4" />}
+              {isSubmitting ? 'Memproses...'
+                : langsungSelesai ? (printKartu ? 'Print & Simpan Selesai' : 'Simpan Selesai')
+                : (printKartu ? 'Print & Mulai Jahit' : 'Mulai Jahit')}
             </button>
           </div>
         </div>

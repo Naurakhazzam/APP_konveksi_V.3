@@ -241,7 +241,12 @@ export async function getAntrianJahit(): Promise<AntrianJahitBundle[]> {
     `)
     .eq('tenant_id', TENANT_ID)
     // Bundle "data lama" yang ditutup manual tidak ikut antrian.
-    .is('ditutup_at', null);
+    .is('ditutup_at', null)
+    // Saring di database (dulu semua bundle diambil lalu disaring di JS —
+    // makin lambat seiring data bertambah). Filter JS di bawah tetap jadi
+    // pengaman untuk aturan partial qty>0.
+    .in('status_tahap->cutting->>status', ['selesai', 'partial'])
+    .or('status_tahap->jahit->>status.is.null,status_tahap->jahit->>status.neq.selesai');
 
   if (error) throw new Error(error.message);
 
@@ -292,9 +297,10 @@ export async function getAntrianJahit(): Promise<AntrianJahitBundle[]> {
     };
   });
 
+  // PO terbaru dulu (sama dengan Antrian Cutting), lalu urut barcode.
   result.sort((a, b) => {
     if (a.no_po !== b.no_po) {
-      return a.no_po.localeCompare(b.no_po);
+      return b.no_po.localeCompare(a.no_po);
     }
     return a.barcode.localeCompare(b.barcode);
   });
