@@ -85,7 +85,7 @@ export default function ModalTutupDataLama({
               value={alasan}
               onChange={e => setAlasan(e.target.value)}
               rows={2}
-              placeholder="mis. Sudah dikirim, lupa dibuatkan surat jalan (data lama)"
+              placeholder="mis. PO expired / dibatalkan klien, atau sudah dikirim tapi lupa dibuatkan surat jalan"
               className="mt-1 w-full rounded-lg bg-[#0D0E10] border border-[#2A2D31] px-3 py-2 text-sm text-[#e8eaed] focus:outline-none focus:border-[#e5c17b]/60"
             />
           </div>

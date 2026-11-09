@@ -45,6 +45,7 @@ function posisiTerakhir(statusTahap: Record<string, { status?: string }> | null)
 function revalidateSemua() {
   revalidatePath('/app/produksi/scan/jahit');
   revalidatePath('/app/pengiriman/buat-surat-jalan');
+  revalidatePath('/app/produksi/antrian-cutting');
 }
 
 export async function tutupBundleDataLama(

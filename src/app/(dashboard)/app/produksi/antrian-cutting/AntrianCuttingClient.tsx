@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   FileText, Barcode as BarcodeIcon, ClipboardList, Scissors, CheckCircle2,
-  Loader2, Clock, ChevronDown, ChevronRight, Trash2, AlertTriangle, Ticket, Undo2,
+  Loader2, Clock, ChevronDown, ChevronRight, Trash2, AlertTriangle, Ticket, Undo2, Archive,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { deleteBundleMenunggu } from '@/lib/actions/produksi/cutting.actions';
@@ -20,6 +20,8 @@ import PrintLabelLayout from './PrintLabelLayout';
 import PrintKartuKerjaLayout from './PrintKartuKerjaLayout';
 import type { AksesoriItem, KartuBundle } from './PrintKartuKerjaLayout';
 import ModalMulaiCutting from './ModalMulaiCutting';
+import ModalTutupDataLama, { type BundleUntukDitutup } from '@/components/produksi/ModalTutupDataLama';
+import TombolDataDitutup from '@/components/produksi/TombolDataDitutup';
 import ModalSelesaiCutting from './ModalSelesaiCutting';
 
 interface Props {
@@ -57,6 +59,7 @@ export default function AntrianCuttingClient({ poList, role }: Props) {
   const [showSelesai, setShowSelesai] = useState(false);
   const [showHapus, setShowHapus] = useState(false);
   const [showBatal, setShowBatal] = useState(false);
+  const [showTutup, setShowTutup] = useState(false);
   const [busy, setBusy] = useState<null | 'mulai' | 'hapus' | 'print' | 'batal'>(null);
 
   const [printMode, setPrintMode] = useState<PrintMode | null>(null);
@@ -142,6 +145,18 @@ export default function AntrianCuttingClient({ poList, role }: Props) {
     return all.filter(b => set.has(b.id));
   }, [cache, terpilihIds]);
   const ada = terpilihIds.length > 0;
+
+  /** Bundle terpilih + info PO/model untuk modal Tutup Data Lama */
+  const terpilihUntukTutup = useMemo((): BundleUntukDitutup[] => {
+    const set = new Set(terpilihIds);
+    return Object.entries(cache).flatMap(([rid, list]) => {
+      const row = poList.find(r => r.row_id === rid);
+      return list.filter(b => set.has(b.id)).map(b => ({
+        id: b.id, barcode: b.barcode, no_po: row?.no_po ?? '-',
+        model_nama: row?.model_nama ?? null, warna: b.warna, size: b.size,
+      }));
+    });
+  }, [cache, terpilihIds, poList]);
 
   const resetPilihan = () => { setPilih({}); };
 
@@ -237,6 +252,14 @@ export default function AntrianCuttingClient({ poList, role }: Props) {
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
+            <TombolDataDitutup onBerubah={() => router.refresh()} />
+            {tab !== 'selesai' && (
+              <button disabled={!ada || !!busy} onClick={() => setShowTutup(true)}
+                title="PO/bundle yang sudah tidak akan dipotong — tutup tanpa upah, bisa dibuka lagi"
+                className={btnSecondary}>
+                <Archive className="w-4 h-4" /> Tutup Data Lama
+              </button>
+            )}
             {tab === 'menunggu' && (
               <>
                 <button disabled={!ada || !!busy} onClick={() => setShowMulai(true)} className={btnPrimary}>
@@ -436,6 +459,14 @@ export default function AntrianCuttingClient({ poList, role }: Props) {
             </div>
           </div>
         </div>
+      )}
+
+      {showTutup && (
+        <ModalTutupDataLama
+          bundles={terpilihUntukTutup}
+          onClose={() => setShowTutup(false)}
+          onSelesai={() => { setShowTutup(false); resetPilihan(); router.refresh(); }}
+        />
       )}
 
       {showMulai && (
