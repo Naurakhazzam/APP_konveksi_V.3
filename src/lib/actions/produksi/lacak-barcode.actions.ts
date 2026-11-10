@@ -1,6 +1,7 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
+import { getUserFromClaims } from '@/lib/auth/session';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { revalidatePath } from 'next/cache';
@@ -709,7 +710,7 @@ export async function lacakBarcodeExact(barcode: string): Promise<LacakBarcodeRe
 // sebagai timeline Riwayat Lengkap — itulah pengganti PIN/izin khusus.
 
 async function resolveUserId(supabase: SupabaseClient): Promise<string> {
-  const { data: { user }, error } = await supabase.auth.getUser();
+  const { data: { user }, error } = await getUserFromClaims(supabase);
   if (error || !user) throw new Error('Sesi Anda sudah habis, silakan login ulang.');
   return user.id;
 }

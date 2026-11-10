@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
+import { getUserFromClaims } from '@/lib/auth/session';
 import { matchesBundleQuery } from '@/lib/search/bundle-search';
 import { TAHAP_ORDER, TAHAP_CONFIG, getPrevTahap, type TahapKey } from '@/modules/produksi/constants/tahap';
 
@@ -15,7 +16,7 @@ export type TahapBorongan = 'lubang_kancing' | 'buang_benang' | 'qc' | 'steam' |
 const TENANT_ID = 'STX-001';
 
 async function getUserId(supabase: Awaited<ReturnType<typeof createClient>>): Promise<string> {
-  const { data: { user }, error } = await supabase.auth.getUser();
+  const { data: { user }, error } = await getUserFromClaims(supabase);
   if (error || !user) throw new Error('Unauthorized');
   return user.id;
 }

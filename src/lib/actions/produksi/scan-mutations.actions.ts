@@ -1,6 +1,7 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
+import { getUserFromClaims } from '@/lib/auth/session';
 import {
   ScanCuttingTerimaInputSchema,
   ScanSelesaiInputSchema,
@@ -33,7 +34,7 @@ export interface ScanSelesaiResult {
 
 async function resolveUserId(): Promise<string> {
   const supabase = await createClient();
-  const { data: { user }, error } = await supabase.auth.getUser();
+  const { data: { user }, error } = await getUserFromClaims(supabase);
   if (error || !user) throw new Error('Unauthorized');
   return user.id;
 }

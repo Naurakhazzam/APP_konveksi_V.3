@@ -1,6 +1,7 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
+import { getUserFromClaims } from '@/lib/auth/session';
 import bcrypt from 'bcryptjs';
 
 const TENANT_ID = 'STX-001';
@@ -8,7 +9,7 @@ const TENANT_ID = 'STX-001';
 /** Helper to resolve the current user's ID */
 async function resolveUserId(): Promise<string> {
   const supabase = await createClient();
-  const { data: { user }, error } = await supabase.auth.getUser();
+  const { data: { user }, error } = await getUserFromClaims(supabase);
   if (error || !user) {
     throw new Error('Sesi Anda sudah habis, silakan login ulang.');
   }

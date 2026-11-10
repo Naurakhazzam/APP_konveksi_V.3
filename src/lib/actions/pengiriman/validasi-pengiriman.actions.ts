@@ -1,6 +1,7 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
+import { getUserFromClaims } from '@/lib/auth/session';
 import { revalidatePath } from 'next/cache';
 import bcrypt from 'bcryptjs';
 
@@ -11,7 +12,7 @@ const REVALIDATE_PATH = '/app/pengiriman/validasi';
 
 async function resolveUserId(): Promise<string> {
   const supabase = await createClient();
-  const { data: { user }, error } = await supabase.auth.getUser();
+  const { data: { user }, error } = await getUserFromClaims(supabase);
   if (error || !user) throw new Error('Sesi Anda sudah habis, silakan login ulang.');
   return user.id;
 }

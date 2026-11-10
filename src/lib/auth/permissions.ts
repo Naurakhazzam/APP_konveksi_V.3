@@ -1,5 +1,6 @@
 import { cache } from 'react';
 import { createClient } from '@/lib/supabase/server';
+import { getUserFromClaims } from '@/lib/auth/session';
 
 // ---------------------------------------------------------------------------
 // Tipe
@@ -35,7 +36,7 @@ export const getCurrentUserProfile = cache(async (): Promise<UserProfile | null>
   const {
     data: { user },
     error: userError,
-  } = await supabase.auth.getUser();
+  } = await getUserFromClaims(supabase);
 
   if (userError || !user) return null;
 

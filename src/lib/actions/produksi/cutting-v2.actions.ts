@@ -15,6 +15,7 @@
  */
 
 import { createClient } from '@/lib/supabase/server';
+import { getUserFromClaims } from '@/lib/auth/session';
 import { revalidatePath } from 'next/cache';
 import type { AntrianBundle } from './antrian.actions';
 import { getCurrentUserProfile } from '@/lib/auth/permissions';
@@ -71,7 +72,7 @@ function rowId(po_id: string, model: string | null, status: CuttingStatus) {
 
 async function resolveUserId() {
   const supabase = await createClient();
-  const { data: { user }, error } = await supabase.auth.getUser();
+  const { data: { user }, error } = await getUserFromClaims(supabase);
   if (error || !user) throw new Error('Unauthorized');
   return user.id;
 }
@@ -549,44 +550,31 @@ export interface PemakaianCuttingRow {
 
 export async function getPemakaianCutting(): Promise<PemakaianCuttingRow[]> {
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from('pemakaian_bahan')
-    .select(`
-      id, bundle_id, po_item_id, inventory_item_id, qty_pakai, rate_per_pcs, harga_pakai, created_at,
-      bundle:bundle_id ( barcode, qty_rencana, status_tahap ),
-      inventory_item:inventory_item_id ( nama, satuan ),
-      po_item:po_item_id (
-        warna, size, qty_order,
-        po:po_id ( id, no_po, klien:klien_id ( nama ) ),
-        produk:produk_id ( nama, model_id, model:model_id ( nama, kategori:kategori_id ( jenis_bahan ) ) )
-      )
-    `)
-    .eq('tenant_id', TENANT_ID)
-    .order('created_at', { ascending: false });
-  if (error) throw new Error(`Gagal memuat pemakaian bahan: ${error.message}`);
-
-  const raws = (data ?? []) as any[];
-
-  // Nama tukang potong & standar pemakaian diambil sekali untuk semua baris
-  const karyawanIds = new Set<string>();
-  const modelIds = new Set<string>();
-  for (const r of raws) {
-    const kid = one<any>(r.bundle)?.status_tahap?.cutting?.karyawan_id;
-    if (kid) karyawanIds.add(kid);
-    const mid = one<any>(one<any>(r.po_item)?.produk)?.model_id;
-    if (mid) modelIds.add(mid);
-  }
-  const [karyRes, standarRes] = await Promise.all([
-    karyawanIds.size
-      ? supabase.from('karyawan').select('id, nama').in('id', [...karyawanIds])
-      : Promise.resolve({ data: [], error: null }),
-    modelIds.size
-      ? supabase.from('standar_pemakaian_bahan').select('model_id, size, rate_per_pcs')
-          .eq('tenant_id', TENANT_ID).in('model_id', [...modelIds])
-      : Promise.resolve({ data: [], error: null }),
+  // Tiga query jalan bersamaan (1 kali tunggu). Karyawan & standar tabelnya
+  // kecil, jadi diambil utuh daripada menunggu daftar id dari query pertama.
+  const [mainRes, karyRes, standarRes] = await Promise.all([
+    supabase
+      .from('pemakaian_bahan')
+      .select(`
+        id, bundle_id, po_item_id, inventory_item_id, qty_pakai, rate_per_pcs, harga_pakai, created_at,
+        bundle:bundle_id ( barcode, qty_rencana, status_tahap ),
+        inventory_item:inventory_item_id ( nama, satuan ),
+        po_item:po_item_id (
+          warna, size, qty_order,
+          po:po_id ( id, no_po, klien:klien_id ( nama ) ),
+          produk:produk_id ( nama, model_id, model:model_id ( nama, kategori:kategori_id ( jenis_bahan ) ) )
+        )
+      `)
+      .eq('tenant_id', TENANT_ID)
+      .order('created_at', { ascending: false }),
+    supabase.from('karyawan').select('id, nama').eq('tenant_id', TENANT_ID),
+    supabase.from('standar_pemakaian_bahan').select('model_id, size, rate_per_pcs').eq('tenant_id', TENANT_ID),
   ]);
+  if (mainRes.error) throw new Error(`Gagal memuat pemakaian bahan: ${mainRes.error.message}`);
   if (karyRes.error) throw new Error(karyRes.error.message);
   if (standarRes.error) throw new Error(standarRes.error.message);
+
+  const raws = (mainRes.data ?? []) as any[];
   const karyawan = new Map<string, string>((karyRes.data ?? []).map((k: any) => [k.id, k.nama]));
   const standar = new Map<string, number>(
     (standarRes.data ?? []).map((s: any) => [`${s.model_id}|${s.size}`, Number(s.rate_per_pcs)]));

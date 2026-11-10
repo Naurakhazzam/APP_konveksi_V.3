@@ -1,13 +1,14 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
+import { getUserFromClaims } from '@/lib/auth/session';
 import { getCurrentUserProfile } from '@/lib/auth/permissions';
 
 const TENANT_ID = 'STX-001';
 
 async function resolveUserId() {
   const supabase = await createClient();
-  const { data: { user }, error } = await supabase.auth.getUser();
+  const { data: { user }, error } = await getUserFromClaims(supabase);
   if (error || !user) {
     throw new Error('User tidak terautentikasi');
   }

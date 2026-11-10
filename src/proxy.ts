@@ -31,24 +31,20 @@ export async function proxy(request: NextRequest) {
 
   // 3. Cek role restriction — DB-based check
   if (isProtected && user) {
-    const { data: profile } = await supabase
-      .from('user_profile')
-      .select('role')
-      .eq('id', user.id)
-      .single();
+    // Role user & daftar izin diambil bersamaan (1 kali tunggu, bukan 2).
+    // Aturan akses tidak berubah: izin tetap disaring per role di bawah.
+    const [{ data: profile }, { data: izin }] = await Promise.all([
+      supabase.from('user_profile').select('role').eq('id', user.id).single(),
+      supabase.from('role_permissions').select('role, path')
+        .eq('can_view', true).eq('tenant_id', 'STX-001'),
+    ]);
 
     const userRole = profile?.role as string | undefined;
 
     if (userRole && userRole !== 'owner') {
-      // Fetch semua allowed paths untuk role ini
-      const { data: allowedData } = await supabase
-        .from('role_permissions')
-        .select('path')
-        .eq('role', userRole)
-        .eq('can_view', true)
-        .eq('tenant_id', 'STX-001');
-
-      const allowedPaths = (allowedData ?? []).map((r: any) => r.path as string);
+      const allowedPaths = (izin ?? [])
+        .filter((r: { role: string }) => r.role === userRole)
+        .map((r: { path: string }) => r.path);
 
       // Cek apakah pathname cocok dengan salah satu allowed path (atau sub-path)
       const hasAccess = allowedPaths.some(p =>

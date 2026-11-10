@@ -1,6 +1,7 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
+import { getUserFromClaims } from '@/lib/auth/session';
 
 const TENANT_ID = 'STX-001';
 
@@ -78,7 +79,7 @@ export async function getBenangItems(): Promise<BenangItem[]> {
 export async function catatAmbilBenang(input: AmbilBenangInput): Promise<string> {
   const supabase = await createClient();
 
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user } } = await getUserFromClaims(supabase);
 
   const { data, error } = await supabase.rpc('catat_ambil_benang', {
     p_inventory_item_id : input.inventory_item_id,
@@ -169,7 +170,7 @@ export async function submitBenangSerahTerima(
   items: BenangSerahTerimaInput[]
 ): Promise<void> {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user } } = await getUserFromClaims(supabase);
 
   for (const item of items) {
     const { error } = await supabase.rpc('catat_benang_serah_terima', {
