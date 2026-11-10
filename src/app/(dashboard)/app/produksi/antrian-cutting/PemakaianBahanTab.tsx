@@ -109,8 +109,31 @@ function batasPeriode(p: Periode): Date | null {
 
 async function exportExcel(items: PemakaianCuttingRow[]) {
   const XLSX = await import('xlsx');
-  const HEADER = ['Nomor PO', 'Model', 'QTY order', 'Perkiraan pemakaian', 'Bahan', 'QTY cutting',
-    'Pemakaian', 'Total pemakaian', 'Total seharusnya', 'Satuan', 'Status'];
+  const HEADER = [
+    'Nomor PO', 'Model', 'Bahan', 'Satuan',
+    'Jumlah order (pcs)', 'Jumlah dipotong (pcs)',
+    'Standar per pcs', 'Total standar (kalau sesuai standar)',
+    'Terpakai per pcs', 'Total terpakai',
+    'Selisih (terpakai - standar)', 'Keterangan',
+  ];
+  const PETUNJUK = [
+    ['LAPORAN PEMAKAIAN BAHAN CUTTING'],
+    ['Cara membaca:'],
+    ['• Standar per pcs = jatah bahan untuk 1 pcs (patokan HPP).'],
+    ['• Total standar = Jumlah dipotong × Standar per pcs. Ini bahan yang SEHARUSNYA terpakai.'],
+    ['• Total terpakai = bahan yang BENAR-BENAR terpakai saat cutting.'],
+    ['• Selisih = Total terpakai - Total standar. Angka plus (+) = BOROS, angka minus (-) = IRIT.'],
+    [],
+  ];
+
+  /** Kalimat keterangan dari selisih: "Boros 1 yard (17%)" / "Irit 0,25 yard (4%)" / "Sesuai standar" */
+  const keterangan = (selisih: number | null, standar: number | null, satuan: string) => {
+    if (selisih == null || !standar) return 'Belum ada standar';
+    const s = r3(selisih);
+    if (s === 0) return 'Sesuai standar';
+    const pct = Math.abs(Math.round((s / standar) * 100));
+    return `${s > 0 ? 'Boros' : 'Irit'} ${fmtQty(Math.abs(s))} ${satuan} (${pct}%)`;
+  };
 
   // tanggal → artikel (po_item) → baris bahan utama + bahan lain
   const perTgl = new Map<string, PemakaianCuttingRow[]>();
@@ -119,17 +142,25 @@ async function exportExcel(items: PemakaianCuttingRow[]) {
     perTgl.set(k, [...(perTgl.get(k) ?? []), r]);
   }
 
-  const aoa: (string | number)[][] = [];
-  /** total = terpakai, seharusnya = QTY cutting × patokan (hanya baris yang punya patokan) */
-  type Jumlah = { qty: number; total: number; seharusnya: number };
+  const aoa: (string | number)[][] = [...PETUNJUK];
+  /** dipotong, terpakai, standar (+ terpakai yang punya standar, untuk selisih yang adil) */
+  type Jumlah = { qty: number; terpakai: number; standar: number; terpakaiBerstandar: number };
+  const kosong = (): Jumlah => ({ qty: 0, terpakai: 0, standar: 0, terpakaiBerstandar: 0 });
   const grand = new Map<string, Jumlah>();
-  const tambahTotal = (m: Map<string, Jumlah>, satuan: string, qty: number, total: number, seharusnya: number) => {
-    const t = m.get(satuan) ?? { qty: 0, total: 0, seharusnya: 0 };
-    t.qty += qty; t.total += total; t.seharusnya += seharusnya; m.set(satuan, t);
+  const tambah = (m: Map<string, Jumlah>, satuan: string, j: Partial<Jumlah>) => {
+    const t = m.get(satuan) ?? kosong();
+    t.qty += j.qty ?? 0; t.terpakai += j.terpakai ?? 0;
+    t.standar += j.standar ?? 0; t.terpakaiBerstandar += j.terpakaiBerstandar ?? 0;
+    m.set(satuan, t);
+  };
+  const barisTotal = (label: string, satuan: string, t: Jumlah) => {
+    const selisih = t.standar > 0 ? r3(t.terpakaiBerstandar - t.standar) : null;
+    return ['', label, '', satuan, '', t.qty, '', t.standar > 0 ? r3(t.standar) : '', '', r3(t.terpakai),
+      selisih ?? '', keterangan(selisih, t.standar, satuan)];
   };
 
   for (const tgl of [...perTgl.keys()].sort()) {
-    aoa.push([tglTampil(tgl)]);
+    aoa.push([`Tanggal cutting: ${tglTampil(tgl)}`]);
     aoa.push(HEADER);
     const sub = new Map<string, Jumlah>();
 
@@ -147,34 +178,52 @@ async function exportExcel(items: PemakaianCuttingRow[]) {
 
       const rsUtama = rs.filter(utama);
       if (rsUtama.length) {
-        const total = r3(rsUtama.reduce((s, r) => s + r.qty_pakai, 0));
-        const perPcs = qtyCut > 0 ? r3(total / qtyCut) : 0;
-        const st = statusPemakaian(perPcs, f.patokan);
+        const terpakai = r3(rsUtama.reduce((s, r) => s + r.qty_pakai, 0));
+        const perPcs = qtyCut > 0 ? r3(terpakai / qtyCut) : 0;
+        const standar = f.patokan != null ? r3(f.patokan * qtyCut) : null;
+        const selisih = standar != null ? r3(terpakai - standar) : null;
         const bahan = [...new Set(rsUtama.map(r => r.bahan_nama))].join(' + ');
-        const seharusnya = f.patokan != null ? r3(f.patokan * qtyCut) : null;
-        aoa.push([f.no_po, nama, f.qty_order, f.patokan ?? '', bahan, qtyCut, perPcs, total, seharusnya ?? '', f.satuan,
-          st === 'tanpa' ? '' : STATUS_LABEL[st] + (st === 'sesuai' ? '' : ` ${Math.abs(persenSelisih(perPcs, f.patokan!))}%`)]);
-        tambahTotal(sub, f.satuan, qtyCut, total, seharusnya ?? 0);
+        aoa.push([f.no_po, nama, bahan, f.satuan, f.qty_order, qtyCut,
+          f.patokan ?? '', standar ?? '', perPcs, terpakai, selisih ?? '', keterangan(selisih, standar, f.satuan)]);
+        tambah(sub, f.satuan, {
+          qty: qtyCut, terpakai, standar: standar ?? 0, terpakaiBerstandar: standar != null ? terpakai : 0,
+        });
       }
-      // Bahan lain (mis. puring) — tanpa patokan, baris sendiri
+      // Bahan lain (mis. puring) — tanpa standar, baris sendiri
       const lain = new Map<string, PemakaianCuttingRow[]>();
       for (const r of rs.filter(r => !utama(r))) lain.set(r.bahan_nama, [...(lain.get(r.bahan_nama) ?? []), r]);
       for (const [bahan, br] of lain) {
-        const total = r3(br.reduce((s, r) => s + r.qty_pakai, 0));
-        aoa.push([f.no_po, nama, f.qty_order, '', bahan, qtyCut, qtyCut > 0 ? r3(total / qtyCut) : 0, total, '', br[0].satuan, '']);
-        tambahTotal(sub, br[0].satuan, rsUtama.length ? 0 : qtyCut, total, 0);
+        const terpakai = r3(br.reduce((s, r) => s + r.qty_pakai, 0));
+        aoa.push([f.no_po, nama, bahan, br[0].satuan, f.qty_order, qtyCut,
+          '', '', qtyCut > 0 ? r3(terpakai / qtyCut) : 0, terpakai, '', 'Belum ada standar']);
+        tambah(sub, br[0].satuan, { qty: rsUtama.length ? 0 : qtyCut, terpakai });
       }
     }
     for (const [satuan, t] of sub) {
-      aoa.push(['', '', '', '', 'Subtotal', t.qty, '', r3(t.total), r3(t.seharusnya), satuan, '']);
-      tambahTotal(grand, satuan, t.qty, t.total, t.seharusnya);
+      aoa.push(barisTotal(`Subtotal ${tglTampil(tgl)}`, satuan, t));
+      tambah(grand, satuan, t);
     }
     aoa.push([]);
   }
-  for (const [satuan, t] of grand) aoa.push(['', '', '', '', 'TOTAL SEMUA', t.qty, '', r3(t.total), r3(t.seharusnya), satuan, '']);
+  for (const [satuan, t] of grand) aoa.push(barisTotal('TOTAL SEMUA', satuan, t));
+
+  // Kesimpulan satu kalimat per satuan, mudah dibaca tanpa melihat tabel
+  aoa.push([]);
+  for (const [satuan, t] of grand) {
+    if (!(t.standar > 0)) continue;
+    const selisih = r3(t.terpakaiBerstandar - t.standar);
+    const pct = Math.abs(Math.round((selisih / t.standar) * 100));
+    const hasil = selisih === 0 ? 'SESUAI STANDAR'
+      : `${selisih > 0 ? 'BOROS' : 'IRIT'} ${fmtQty(Math.abs(selisih))} ${satuan} (${pct}%)`;
+    aoa.push([`KESIMPULAN: seharusnya terpakai ${fmtQty(r3(t.standar))} ${satuan}, `
+      + `kenyataannya terpakai ${fmtQty(r3(t.terpakaiBerstandar))} ${satuan} → ${hasil}.`]);
+  }
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws['!cols'] = [{ wch: 11 }, { wch: 30 }, { wch: 10 }, { wch: 19 }, { wch: 30 }, { wch: 11 }, { wch: 11 }, { wch: 15 }, { wch: 16 }, { wch: 8 }, { wch: 12 }];
+  ws['!cols'] = [
+    { wch: 11 }, { wch: 26 }, { wch: 22 }, { wch: 7 }, { wch: 10 }, { wch: 11 },
+    { wch: 10 }, { wch: 17 }, { wch: 10 }, { wch: 11 }, { wch: 13 }, { wch: 22 },
+  ];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Pemakaian Bahan');
   XLSX.writeFile(wb, `Pemakaian_Bahan_Cutting_${tglKey(new Date().toISOString())}.xlsx`);
