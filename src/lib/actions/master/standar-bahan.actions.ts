@@ -9,7 +9,7 @@ const TENANT_ID = 'STX-001';
 export interface StandarBahanRow {
   size: string;
   rate_per_pcs: number | null;
-  sumber: 'riwayat' | 'manual' | null;
+  sumber: 'riwayat' | 'manual' | 'hpp' | null;
 }
 
 const URUTAN_SIZE = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL', '4XL', '5XL', '6XL'];

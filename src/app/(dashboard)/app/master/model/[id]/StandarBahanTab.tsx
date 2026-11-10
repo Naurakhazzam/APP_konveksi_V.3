@@ -90,7 +90,7 @@ export default function StandarBahanTab({ modelId }: { modelId: string }) {
                   />
                 </td>
                 <td className="py-2 text-xs text-[#9aa0a6]">
-                  {r.sumber === 'riwayat' ? 'dari riwayat cutting' : r.sumber === 'manual' ? 'diisi manual' : '—'}
+                  {r.sumber === 'hpp' ? 'patokan HPP' : r.sumber === 'riwayat' ? 'dari riwayat cutting' : r.sumber === 'manual' ? 'diisi manual' : '—'}
                 </td>
               </tr>
             ))}

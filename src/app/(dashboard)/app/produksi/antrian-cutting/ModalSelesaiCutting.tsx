@@ -12,10 +12,15 @@ import {
 import {
   getBundlesForSelesai,
   getBahanDefaults,
+  getPatokanArtikel,
   selesaiCuttingV2,
   type BundleSelesai,
   type SelesaiResult,
+  type PatokanArtikel,
 } from '@/lib/actions/produksi/cutting-v2.actions';
+import {
+  isBahanUtama, statusPemakaian, persenSelisih, STATUS_LABEL, STATUS_CLASS,
+} from '@/lib/produksi/patokan-bahan';
 
 interface BahanRow {
   rowId: string;
@@ -40,6 +45,7 @@ export default function ModalSelesaiCutting({ selectedBundleIds, onSuccess, onCl
   const [karyawanId, setKaryawanId] = useState('');
   const [hasil, setHasil] = useState<Record<string, number>>({});
   const [bahan, setBahan] = useState<Record<string, BahanRow[]>>({});
+  const [patokan, setPatokan] = useState<Record<string, PatokanArtikel>>({});
   const [kurangiSisa, setKurangiSisa] = useState(true);
   const [konfirmLebih, setKonfirmLebih] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -56,8 +62,10 @@ export default function ModalSelesaiCutting({ selectedBundleIds, onSuccess, onCl
           getInventoryItemsForCutting(),
           getKaryawanCutting(),
         ]);
-        const defaults = await getBahanDefaults([...new Set(b.map(x => x.po_item_id))]);
+        const poItemIds = [...new Set(b.map(x => x.po_item_id))];
+        const [defaults, pat] = await Promise.all([getBahanDefaults(poItemIds), getPatokanArtikel(poItemIds)]);
         if (batal) return;
+        setPatokan(pat);
 
         setBundles(b);
         setInventory(inv);
@@ -76,7 +84,7 @@ export default function ModalSelesaiCutting({ selectedBundleIds, onSuccess, onCl
                 rate_per_pcs: x.rate_per_pcs ?? 0,
                 sumber: [
                   x.sumber_bahan === 'riwayat' ? 'bahan: riwayat' : 'bahan: kategori+warna',
-                  x.sumber_rate === 'standar' ? 'pemakaian: standar' : null,
+                  x.sumber_rate === 'standar' ? 'pemakaian: patokan HPP' : null,
                 ].filter(Boolean).join(' · '),
               }))
             : [{ rowId: uid(), inventory_item_id: '', rate_per_pcs: 0, sumber: null }];
@@ -291,11 +299,30 @@ export default function ModalSelesaiCutting({ selectedBundleIds, onSuccess, onCl
                   {artikel.map(a => {
                     const q = qtyArtikel(a.po_item_id);
                     const rows = bahan[a.po_item_id] ?? [];
+                    const pat = patokan[a.po_item_id];
+                    // Patokan = total bahan utama per pcs (2 warna dijumlah)
+                    const totalUtama = rows
+                      .filter(r => r.inventory_item_id && isBahanUtama(inventory.find(i => i.id === r.inventory_item_id)?.nama ?? '', pat?.jenis_bahan))
+                      .reduce((sum, r) => sum + (r.rate_per_pcs || 0), 0);
+                    const st = totalUtama > 0 ? statusPemakaian(totalUtama, pat?.patokan) : null;
                     return (
                       <div key={a.po_item_id} className="rounded-lg border border-[#2A2D31] overflow-hidden">
-                        <div className="px-4 py-2.5 bg-[#16181A] border-b border-[#2A2D31] text-sm">
+                        <div className="px-4 py-2.5 bg-[#16181A] border-b border-[#2A2D31] text-sm flex flex-wrap items-center gap-x-2 gap-y-1">
                           <span className="font-bold text-[#e8eaed]">{a.nama}</span>
-                          <span className="ml-2 text-[10px] text-[#9aa0a6]">{a.bundles.length} bundle · hasil <b className="text-[#e5c17b]">{q}</b> pcs</span>
+                          <span className="text-[10px] text-[#9aa0a6]">{a.bundles.length} bundle · hasil <b className="text-[#e5c17b]">{q}</b> pcs</span>
+                          <span className="ml-auto flex items-center gap-2 text-[10px]">
+                            <span className="text-[#9aa0a6]">
+                              Patokan HPP{' '}
+                              <b className="text-[#e8eaed]">{pat?.patokan != null ? pat.patokan.toFixed(2) : '—'}</b>
+                              {totalUtama > 0 && <> · dipakai <b className="text-[#e8eaed]">{Number(totalUtama.toFixed(3))}</b></>}
+                            </span>
+                            {st && (
+                              <span className={`px-1.5 py-0.5 rounded border font-bold ${STATUS_CLASS[st]}`}>
+                                {STATUS_LABEL[st]}
+                                {(st === 'irit' || st === 'boros') && pat?.patokan ? ` ${Math.abs(persenSelisih(totalUtama, pat.patokan))}%` : ''}
+                              </span>
+                            )}
+                          </span>
                         </div>
                         <div className="px-4 py-3 space-y-2">
                           {rows.map(r => {
@@ -327,7 +354,7 @@ export default function ModalSelesaiCutting({ selectedBundleIds, onSuccess, onCl
                                 {(r.sumber || (rateKosong && r.inventory_item_id)) && (
                                   <p className="text-[10px] mt-0.5 text-[#9aa0a6]">
                                     {r.sumber && <span>otomatis — {r.sumber}</span>}
-                                    {rateKosong && r.inventory_item_id && <span className="text-orange-400"> · belum ada standar, isi manual</span>}
+                                    {rateKosong && r.inventory_item_id && <span className="text-orange-400"> · belum ada patokan, isi manual</span>}
                                   </p>
                                 )}
                               </div>

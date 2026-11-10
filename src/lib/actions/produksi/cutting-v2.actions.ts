@@ -17,6 +17,8 @@
 import { createClient } from '@/lib/supabase/server';
 import { revalidatePath } from 'next/cache';
 import type { AntrianBundle } from './antrian.actions';
+import { getCurrentUserProfile } from '@/lib/auth/permissions';
+import { isBahanUtama } from '@/lib/produksi/patokan-bahan';
 
 const TENANT_ID = 'STX-001';
 const PATH = '/app/produksi/antrian-cutting';
@@ -300,7 +302,8 @@ const normWarna = (s: string) => s.toLowerCase().replace(/\s+/g, '');
  * Bahan + pemakaian/pcs default per artikel (po_item):
  *  Bahan  : 1) bahan terakhir untuk model + warna yang sama
  *           2) jenis bahan kategori × warna produk (kombinasi "A x B" → 2 bahan)
- *  Rate   : standar pemakaian model + ukuran; kosong kalau belum ada.
+ *  Rate   : patokan HPP model + ukuran (total bahan utama per pcs), dibagi rata
+ *           ke bahan utama artikel; bahan lain (mis. puring) diisi manual.
  */
 export async function getBahanDefaults(poItemIds: string[]): Promise<Record<string, BahanDefault[]>> {
   if (!poItemIds.length) return {};
@@ -371,6 +374,16 @@ export async function getBahanDefaults(poItemIds: string[]): Promise<Record<stri
     riwayat.set(key, list);
   }
 
+  const namaInv = new Map(inv.map(i => [i.id, i.nama]));
+  /** Patokan dibagi rata ke bahan utama; bahan lain tanpa angka. */
+  const bagiPatokan = (list: BahanDefault[], patokan: number | null, jenis: string | null): BahanDefault[] => {
+    const utama = list.filter(l => isBahanUtama(namaInv.get(l.inventory_item_id) ?? '', jenis));
+    const per = patokan != null && utama.length ? Math.round((patokan / utama.length) * 1000) / 1000 : null;
+    return list.map(l => utama.includes(l)
+      ? { ...l, rate_per_pcs: per, sumber_rate: per != null ? 'standar' as const : null }
+      : { ...l, rate_per_pcs: null, sumber_rate: null });
+  };
+
   const result: Record<string, BahanDefault[]> = {};
   for (const it of items) {
     const rate = it.model_id ? standar.get(`${it.model_id}|${it.size}`) ?? null : null;
@@ -378,7 +391,9 @@ export async function getBahanDefaults(poItemIds: string[]): Promise<Record<stri
 
     const dariRiwayat = it.model_id ? riwayat.get(`${it.model_id}|${normWarna(it.warna)}`) : undefined;
     if (dariRiwayat?.length) {
-      result[it.id] = dariRiwayat.map(id => ({ inventory_item_id: id, rate_per_pcs: rate, sumber_bahan: 'riwayat', sumber_rate }));
+      result[it.id] = bagiPatokan(
+        dariRiwayat.map(id => ({ inventory_item_id: id, rate_per_pcs: rate, sumber_bahan: 'riwayat' as const, sumber_rate })),
+        rate, it.jenis_bahan);
       continue;
     }
 
@@ -395,9 +410,45 @@ export async function getBahanDefaults(poItemIds: string[]): Promise<Record<stri
         }
       }
     }
-    result[it.id] = list;
+    result[it.id] = bagiPatokan(list, rate, it.jenis_bahan);
   }
   return result;
+}
+
+export interface PatokanArtikel {
+  /** Patokan HPP total bahan utama per pcs; null = belum ada */
+  patokan: number | null;
+  jenis_bahan: string | null;
+}
+
+/** Patokan HPP per artikel (po_item) untuk modal Selesai Cutting. */
+export async function getPatokanArtikel(poItemIds: string[]): Promise<Record<string, PatokanArtikel>> {
+  if (!poItemIds.length) return {};
+  const supabase = await createClient();
+  const { data, error } = await supabase.from('po_item')
+    .select('id, size, produk:produk_id ( model_id, model:model_id ( kategori:kategori_id ( jenis_bahan ) ) )')
+    .in('id', poItemIds);
+  if (error) throw new Error(error.message);
+
+  const items = (data ?? []).map((it: any) => {
+    const produk = one<any>(it.produk);
+    return {
+      id: it.id as string, size: it.size as string, model_id: (produk?.model_id ?? null) as string | null,
+      jenis_bahan: (one<any>(one<any>(produk?.model)?.kategori)?.jenis_bahan ?? null) as string | null,
+    };
+  });
+  const modelIds = [...new Set(items.map(i => i.model_id).filter(Boolean))] as string[];
+  const { data: std, error: e2 } = modelIds.length
+    ? await supabase.from('standar_pemakaian_bahan').select('model_id, size, rate_per_pcs')
+        .eq('tenant_id', TENANT_ID).in('model_id', modelIds)
+    : { data: [], error: null };
+  if (e2) throw new Error(e2.message);
+  const standar = new Map<string, number>((std ?? []).map((s: any) => [`${s.model_id}|${s.size}`, Number(s.rate_per_pcs)]));
+
+  return Object.fromEntries(items.map(it => [it.id, {
+    patokan: it.model_id ? standar.get(`${it.model_id}|${it.size}`) ?? null : null,
+    jenis_bahan: it.jenis_bahan,
+  }]));
 }
 
 // ─── Data cetak (tiket / SPK / label / kartu) ──────────────────────────────
@@ -470,6 +521,8 @@ export async function batalMulaiCutting(
 export interface PemakaianCuttingRow {
   id: string;
   bundle_id: string;
+  po_item_id: string;
+  inventory_item_id: string;
   barcode: string;
   po_id: string;
   no_po: string;
@@ -478,13 +531,16 @@ export interface PemakaianCuttingRow {
   produk_nama: string;
   warna: string;
   size: string;
+  qty_order: number;
+  /** Awalan nama bahan utama kategori — untuk memisah bahan utama vs lain */
+  jenis_bahan: string | null;
   /** Hasil potong asli bundle (fallback isi bundle) */
   qty_potong: number;
   bahan_nama: string;
   satuan: string;
   rate_per_pcs: number;
-  /** Standar pemakaian model + ukuran (null = belum ada standar) */
-  rate_standar: number | null;
+  /** Patokan HPP model + ukuran: total bahan utama per pcs (null = belum ada) */
+  patokan: number | null;
   qty_pakai: number;
   harga_pakai: number;
   karyawan_nama: string | null;
@@ -500,9 +556,9 @@ export async function getPemakaianCutting(): Promise<PemakaianCuttingRow[]> {
       bundle:bundle_id ( barcode, qty_rencana, status_tahap ),
       inventory_item:inventory_item_id ( nama, satuan ),
       po_item:po_item_id (
-        warna, size,
+        warna, size, qty_order,
         po:po_id ( id, no_po, klien:klien_id ( nama ) ),
-        produk:produk_id ( nama, model_id, model:model_id ( nama ) )
+        produk:produk_id ( nama, model_id, model:model_id ( nama, kategori:kategori_id ( jenis_bahan ) ) )
       )
     `)
     .eq('tenant_id', TENANT_ID)
@@ -546,6 +602,8 @@ export async function getPemakaianCutting(): Promise<PemakaianCuttingRow[]> {
     return {
       id: r.id as string,
       bundle_id: r.bundle_id as string,
+      po_item_id: r.po_item_id as string,
+      inventory_item_id: r.inventory_item_id as string,
       barcode: (b?.barcode ?? '-') as string,
       po_id: (po?.id ?? '') as string,
       no_po: (po?.no_po ?? '-') as string,
@@ -554,15 +612,50 @@ export async function getPemakaianCutting(): Promise<PemakaianCuttingRow[]> {
       produk_nama: (produk?.nama ?? '-') as string,
       warna: (pi?.warna ?? '-') as string,
       size: (pi?.size ?? '-') as string,
+      qty_order: Number(pi?.qty_order ?? 0),
+      jenis_bahan: (one<any>(one<any>(produk?.model)?.kategori)?.jenis_bahan ?? null) as string | null,
       qty_potong: Number(cutting?.qty_aktual ?? b?.qty_rencana ?? 0),
       bahan_nama: (inv?.nama ?? '-') as string,
       satuan: (inv?.satuan ?? '-') as string,
       rate_per_pcs: Number(r.rate_per_pcs ?? 0),
-      rate_standar: modelId ? standar.get(`${modelId}|${pi?.size}`) ?? null : null,
+      patokan: modelId ? standar.get(`${modelId}|${pi?.size}`) ?? null : null,
       qty_pakai: Number(r.qty_pakai ?? 0),
       harga_pakai: Number(r.harga_pakai ?? 0),
       karyawan_nama: cutting?.karyawan_id ? karyawan.get(cutting.karyawan_id) ?? null : null,
       tanggal: r.created_at as string,
     };
   });
+}
+
+// ─── Koreksi pemakaian bahan ───────────────────────────────────────────────
+
+/**
+ * Ubah bahan / pemakaian per pcs catatan hasil cutting. Stok & LOT ikut
+ * disesuaikan oleh RPC koreksi_pemakaian_bahan; rate 0 = hapus catatan.
+ * Hanya owner.
+ */
+export async function koreksiPemakaianBahan(
+  items: { id: string; inventory_item_id: string; rate_per_pcs: number }[],
+  alasan: string,
+): Promise<{ success: boolean; diubah: number; dihapus: number; error?: string }> {
+  try {
+    const profile = await getCurrentUserProfile();
+    if (!profile || profile.role !== 'owner') {
+      return { success: false, diubah: 0, dihapus: 0, error: 'Hanya owner yang boleh mengoreksi pemakaian bahan' };
+    }
+    if (!alasan.trim()) return { success: false, diubah: 0, dihapus: 0, error: 'Alasan koreksi wajib diisi' };
+    if (!items.length) return { success: false, diubah: 0, dihapus: 0, error: 'Tidak ada perubahan' };
+
+    const user_id = await resolveUserId();
+    const supabase = await createClient();
+    const { data, error } = await supabase.rpc('koreksi_pemakaian_bahan', {
+      p_items: items, p_alasan: alasan.trim(), p_user_id: user_id, p_tenant_id: TENANT_ID,
+    });
+    if (error) return { success: false, diubah: 0, dihapus: 0, error: error.message };
+    revalidatePath(PATH);
+    const r = (data ?? {}) as { diubah?: number; dihapus?: number };
+    return { success: true, diubah: r.diubah ?? 0, dihapus: r.dihapus ?? 0 };
+  } catch (e: any) {
+    return { success: false, diubah: 0, dihapus: 0, error: e?.message ?? 'Terjadi kesalahan' };
+  }
 }

@@ -319,7 +319,7 @@ export default function AntrianCuttingClient({ poList, pemakaian, role }: Props)
 
       {/* Tabel */}
       {tab === 'pemakaian' ? (
-        <div className="print:hidden"><PemakaianBahanTab rows={pemakaian} /></div>
+        <div className="print:hidden"><PemakaianBahanTab rows={pemakaian} isOwner={isOwner} onChanged={() => router.refresh()} /></div>
       ) : (
       <div className="print:hidden rounded-xl border border-[#2A2D31] bg-[#1A1D1F] overflow-hidden">
         <div className="overflow-auto max-h-[65vh]">
