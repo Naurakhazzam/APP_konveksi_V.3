@@ -10,7 +10,7 @@ import { toast } from 'sonner';
 import { deleteBundleMenunggu } from '@/lib/actions/produksi/cutting.actions';
 import {
   getCuttingBundles, mulaiCuttingV2, getPrintBundlesByIds, batalMulaiCutting,
-  type CuttingRow, type CuttingBundle, type CuttingStatus,
+  type CuttingRow, type CuttingBundle, type CuttingStatus, type PemakaianCuttingRow,
 } from '@/lib/actions/produksi/cutting-v2.actions';
 import type { AntrianBundle } from '@/lib/actions/produksi/antrian.actions';
 import { getAksesoriForKartuKerja } from '@/lib/actions/produksi/model-aksesori.actions';
@@ -23,18 +23,24 @@ import ModalMulaiCutting from './ModalMulaiCutting';
 import ModalTutupDataLama, { type BundleUntukDitutup } from '@/components/produksi/ModalTutupDataLama';
 import TombolDataDitutup from '@/components/produksi/TombolDataDitutup';
 import ModalSelesaiCutting from './ModalSelesaiCutting';
+import PemakaianBahanTab from './PemakaianBahanTab';
 
 interface Props {
   poList: CuttingRow[];
+  pemakaian: PemakaianCuttingRow[];
   role: string;
 }
 
 type PrintMode = 'tiket' | 'spk' | 'label' | 'kartu';
 
-const TABS: { key: CuttingStatus; label: string }[] = [
-  { key: 'menunggu', label: 'Menunggu' },
-  { key: 'progress', label: 'Sedang Dipotong' },
-  { key: 'selesai',  label: 'Selesai' },
+/** Tab tahap cutting + tab laporan pemakaian bahan */
+type TabKey = CuttingStatus | 'pemakaian';
+
+const TABS: { key: TabKey; label: string }[] = [
+  { key: 'menunggu',  label: 'Menunggu' },
+  { key: 'progress',  label: 'Sedang Dipotong' },
+  { key: 'selesai',   label: 'Selesai' },
+  { key: 'pemakaian', label: 'Pemakaian Bahan' },
 ];
 
 function formatTime(iso: string | null): string {
@@ -44,11 +50,11 @@ function formatTime(iso: string | null): string {
   });
 }
 
-export default function AntrianCuttingClient({ poList, role }: Props) {
+export default function AntrianCuttingClient({ poList, pemakaian, role }: Props) {
   const router = useRouter();
   const isOwner = role === 'owner';
 
-  const [tab, setTab] = useState<CuttingStatus>('menunggu');
+  const [tab, setTab] = useState<TabKey>('menunggu');
   const [expanded, setExpanded] = useState<string | null>(null);
   const [cache, setCache] = useState<Record<string, CuttingBundle[]>>({});
   const [loadingRow, setLoadingRow] = useState<string | null>(null);
@@ -67,8 +73,10 @@ export default function AntrianCuttingClient({ poList, role }: Props) {
   const [kartuBundles, setKartuBundles] = useState<KartuBundle[]>([]);
 
   const rows = useMemo(() => poList.filter(r => r.status === tab), [poList, tab]);
-  const counts = useMemo(() => Object.fromEntries(
-    TABS.map(t => [t.key, poList.filter(r => r.status === t.key).length])) as Record<CuttingStatus, number>, [poList]);
+  const counts = useMemo(() => ({
+    ...Object.fromEntries(TABS.map(t => [t.key, poList.filter(r => r.status === t.key).length])),
+    pemakaian: new Set(pemakaian.map(p => `${p.po_id}::${p.model_nama ?? ''}`)).size,
+  }) as Record<TabKey, number>, [poList, pemakaian]);
 
   // Data server berubah (router.refresh) → buang cache & pilihan
   const [listSebelumnya, setListSebelumnya] = useState(poList);
@@ -77,7 +85,7 @@ export default function AntrianCuttingClient({ poList, role }: Props) {
     setCache({}); setPilih({}); setExpanded(null);
   }
 
-  const gantiTab = (t: CuttingStatus) => { setTab(t); setPilih({}); setExpanded(null); };
+  const gantiTab = (t: TabKey) => { setTab(t); setPilih({}); setExpanded(null); };
 
   // Cetak: buka dialog print setelah layout ter-render
   useEffect(() => {
@@ -251,7 +259,7 @@ export default function AntrianCuttingClient({ poList, role }: Props) {
             ))}
           </div>
 
-          <div className="flex items-center gap-2 flex-wrap">
+          {tab !== 'pemakaian' && <div className="flex items-center gap-2 flex-wrap">
             <TombolDataDitutup onBerubah={() => router.refresh()} />
             {tab !== 'selesai' && (
               <button disabled={!ada || !!busy} onClick={() => setShowTutup(true)}
@@ -299,7 +307,7 @@ export default function AntrianCuttingClient({ poList, role }: Props) {
             <button disabled={!ada || !!busy} onClick={() => cetak('label')} className={btnSecondary}>
               <BarcodeIcon className="w-4 h-4" /> Label
             </button>
-          </div>
+          </div>}
         </div>
         {ada && (
           <p className="text-xs text-[#9aa0a6]">
@@ -310,6 +318,9 @@ export default function AntrianCuttingClient({ poList, role }: Props) {
       </div>
 
       {/* Tabel */}
+      {tab === 'pemakaian' ? (
+        <div className="print:hidden"><PemakaianBahanTab rows={pemakaian} /></div>
+      ) : (
       <div className="print:hidden rounded-xl border border-[#2A2D31] bg-[#1A1D1F] overflow-hidden">
         <div className="overflow-auto max-h-[65vh]">
           <table className="w-full text-sm border-separate border-spacing-0">
@@ -415,6 +426,7 @@ export default function AntrianCuttingClient({ poList, role }: Props) {
           </table>
         </div>
       </div>
+      )}
 
       {/* Konfirmasi hapus */}
       {showHapus && (

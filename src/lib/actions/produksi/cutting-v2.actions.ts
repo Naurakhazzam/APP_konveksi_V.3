@@ -463,3 +463,106 @@ export async function batalMulaiCutting(
     return { success: false, jumlah_bundle: 0, sisa_digabung: 0, error: e?.message ?? 'Terjadi kesalahan' };
   }
 }
+
+// ─── Pemakaian bahan hasil cutting ─────────────────────────────────────────
+
+/** Satu catatan pemakaian: satu bundle × satu bahan. */
+export interface PemakaianCuttingRow {
+  id: string;
+  bundle_id: string;
+  barcode: string;
+  po_id: string;
+  no_po: string;
+  klien_nama: string;
+  model_nama: string | null;
+  produk_nama: string;
+  warna: string;
+  size: string;
+  /** Hasil potong asli bundle (fallback isi bundle) */
+  qty_potong: number;
+  bahan_nama: string;
+  satuan: string;
+  rate_per_pcs: number;
+  /** Standar pemakaian model + ukuran (null = belum ada standar) */
+  rate_standar: number | null;
+  qty_pakai: number;
+  harga_pakai: number;
+  karyawan_nama: string | null;
+  tanggal: string;
+}
+
+export async function getPemakaianCutting(): Promise<PemakaianCuttingRow[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('pemakaian_bahan')
+    .select(`
+      id, bundle_id, po_item_id, inventory_item_id, qty_pakai, rate_per_pcs, harga_pakai, created_at,
+      bundle:bundle_id ( barcode, qty_rencana, status_tahap ),
+      inventory_item:inventory_item_id ( nama, satuan ),
+      po_item:po_item_id (
+        warna, size,
+        po:po_id ( id, no_po, klien:klien_id ( nama ) ),
+        produk:produk_id ( nama, model_id, model:model_id ( nama ) )
+      )
+    `)
+    .eq('tenant_id', TENANT_ID)
+    .order('created_at', { ascending: false });
+  if (error) throw new Error(`Gagal memuat pemakaian bahan: ${error.message}`);
+
+  const raws = (data ?? []) as any[];
+
+  // Nama tukang potong & standar pemakaian diambil sekali untuk semua baris
+  const karyawanIds = new Set<string>();
+  const modelIds = new Set<string>();
+  for (const r of raws) {
+    const kid = one<any>(r.bundle)?.status_tahap?.cutting?.karyawan_id;
+    if (kid) karyawanIds.add(kid);
+    const mid = one<any>(one<any>(r.po_item)?.produk)?.model_id;
+    if (mid) modelIds.add(mid);
+  }
+  const [karyRes, standarRes] = await Promise.all([
+    karyawanIds.size
+      ? supabase.from('karyawan').select('id, nama').in('id', [...karyawanIds])
+      : Promise.resolve({ data: [], error: null }),
+    modelIds.size
+      ? supabase.from('standar_pemakaian_bahan').select('model_id, size, rate_per_pcs')
+          .eq('tenant_id', TENANT_ID).in('model_id', [...modelIds])
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+  if (karyRes.error) throw new Error(karyRes.error.message);
+  if (standarRes.error) throw new Error(standarRes.error.message);
+  const karyawan = new Map<string, string>((karyRes.data ?? []).map((k: any) => [k.id, k.nama]));
+  const standar = new Map<string, number>(
+    (standarRes.data ?? []).map((s: any) => [`${s.model_id}|${s.size}`, Number(s.rate_per_pcs)]));
+
+  return raws.map(r => {
+    const b = one<any>(r.bundle);
+    const cutting = b?.status_tahap?.cutting ?? null;
+    const pi = one<any>(r.po_item);
+    const po = one<any>(pi?.po);
+    const produk = one<any>(pi?.produk);
+    const inv = one<any>(r.inventory_item);
+    const modelId = produk?.model_id ?? null;
+    return {
+      id: r.id as string,
+      bundle_id: r.bundle_id as string,
+      barcode: (b?.barcode ?? '-') as string,
+      po_id: (po?.id ?? '') as string,
+      no_po: (po?.no_po ?? '-') as string,
+      klien_nama: (one<any>(po?.klien)?.nama ?? '-') as string,
+      model_nama: (one<any>(produk?.model)?.nama ?? null) as string | null,
+      produk_nama: (produk?.nama ?? '-') as string,
+      warna: (pi?.warna ?? '-') as string,
+      size: (pi?.size ?? '-') as string,
+      qty_potong: Number(cutting?.qty_aktual ?? b?.qty_rencana ?? 0),
+      bahan_nama: (inv?.nama ?? '-') as string,
+      satuan: (inv?.satuan ?? '-') as string,
+      rate_per_pcs: Number(r.rate_per_pcs ?? 0),
+      rate_standar: modelId ? standar.get(`${modelId}|${pi?.size}`) ?? null : null,
+      qty_pakai: Number(r.qty_pakai ?? 0),
+      harga_pakai: Number(r.harga_pakai ?? 0),
+      karyawan_nama: cutting?.karyawan_id ? karyawan.get(cutting.karyawan_id) ?? null : null,
+      tanggal: r.created_at as string,
+    };
+  });
+}
