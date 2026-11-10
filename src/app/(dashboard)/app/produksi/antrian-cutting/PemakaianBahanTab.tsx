@@ -110,7 +110,7 @@ function batasPeriode(p: Periode): Date | null {
 async function exportExcel(items: PemakaianCuttingRow[]) {
   const XLSX = await import('xlsx');
   const HEADER = ['Nomor PO', 'Model', 'QTY order', 'Perkiraan pemakaian', 'Bahan', 'QTY cutting',
-    'Pemakaian', 'Total pemakaian', 'Satuan', 'Status'];
+    'Pemakaian', 'Total pemakaian', 'Total seharusnya', 'Satuan', 'Status'];
 
   // tanggal → artikel (po_item) → baris bahan utama + bahan lain
   const perTgl = new Map<string, PemakaianCuttingRow[]>();
@@ -120,16 +120,18 @@ async function exportExcel(items: PemakaianCuttingRow[]) {
   }
 
   const aoa: (string | number)[][] = [];
-  const grand = new Map<string, { qty: number; total: number }>();
-  const tambahTotal = (m: Map<string, { qty: number; total: number }>, satuan: string, qty: number, total: number) => {
-    const t = m.get(satuan) ?? { qty: 0, total: 0 };
-    t.qty += qty; t.total += total; m.set(satuan, t);
+  /** total = terpakai, seharusnya = QTY cutting × patokan (hanya baris yang punya patokan) */
+  type Jumlah = { qty: number; total: number; seharusnya: number };
+  const grand = new Map<string, Jumlah>();
+  const tambahTotal = (m: Map<string, Jumlah>, satuan: string, qty: number, total: number, seharusnya: number) => {
+    const t = m.get(satuan) ?? { qty: 0, total: 0, seharusnya: 0 };
+    t.qty += qty; t.total += total; t.seharusnya += seharusnya; m.set(satuan, t);
   };
 
   for (const tgl of [...perTgl.keys()].sort()) {
     aoa.push([tglTampil(tgl)]);
     aoa.push(HEADER);
-    const sub = new Map<string, { qty: number; total: number }>();
+    const sub = new Map<string, Jumlah>();
 
     const perArtikel = new Map<string, PemakaianCuttingRow[]>();
     for (const r of perTgl.get(tgl)!) perArtikel.set(r.po_item_id, [...(perArtikel.get(r.po_item_id) ?? []), r]);
@@ -149,29 +151,30 @@ async function exportExcel(items: PemakaianCuttingRow[]) {
         const perPcs = qtyCut > 0 ? r3(total / qtyCut) : 0;
         const st = statusPemakaian(perPcs, f.patokan);
         const bahan = [...new Set(rsUtama.map(r => r.bahan_nama))].join(' + ');
-        aoa.push([f.no_po, nama, f.qty_order, f.patokan ?? '', bahan, qtyCut, perPcs, total, f.satuan,
+        const seharusnya = f.patokan != null ? r3(f.patokan * qtyCut) : null;
+        aoa.push([f.no_po, nama, f.qty_order, f.patokan ?? '', bahan, qtyCut, perPcs, total, seharusnya ?? '', f.satuan,
           st === 'tanpa' ? '' : STATUS_LABEL[st] + (st === 'sesuai' ? '' : ` ${Math.abs(persenSelisih(perPcs, f.patokan!))}%`)]);
-        tambahTotal(sub, f.satuan, qtyCut, total);
+        tambahTotal(sub, f.satuan, qtyCut, total, seharusnya ?? 0);
       }
       // Bahan lain (mis. puring) — tanpa patokan, baris sendiri
       const lain = new Map<string, PemakaianCuttingRow[]>();
       for (const r of rs.filter(r => !utama(r))) lain.set(r.bahan_nama, [...(lain.get(r.bahan_nama) ?? []), r]);
       for (const [bahan, br] of lain) {
         const total = r3(br.reduce((s, r) => s + r.qty_pakai, 0));
-        aoa.push([f.no_po, nama, f.qty_order, '', bahan, qtyCut, qtyCut > 0 ? r3(total / qtyCut) : 0, total, br[0].satuan, '']);
-        tambahTotal(sub, br[0].satuan, rsUtama.length ? 0 : qtyCut, total);
+        aoa.push([f.no_po, nama, f.qty_order, '', bahan, qtyCut, qtyCut > 0 ? r3(total / qtyCut) : 0, total, '', br[0].satuan, '']);
+        tambahTotal(sub, br[0].satuan, rsUtama.length ? 0 : qtyCut, total, 0);
       }
     }
     for (const [satuan, t] of sub) {
-      aoa.push(['', '', '', '', 'Subtotal', t.qty, '', r3(t.total), satuan, '']);
-      tambahTotal(grand, satuan, t.qty, t.total);
+      aoa.push(['', '', '', '', 'Subtotal', t.qty, '', r3(t.total), r3(t.seharusnya), satuan, '']);
+      tambahTotal(grand, satuan, t.qty, t.total, t.seharusnya);
     }
     aoa.push([]);
   }
-  for (const [satuan, t] of grand) aoa.push(['', '', '', '', 'TOTAL SEMUA', t.qty, '', r3(t.total), satuan, '']);
+  for (const [satuan, t] of grand) aoa.push(['', '', '', '', 'TOTAL SEMUA', t.qty, '', r3(t.total), r3(t.seharusnya), satuan, '']);
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws['!cols'] = [{ wch: 11 }, { wch: 30 }, { wch: 10 }, { wch: 19 }, { wch: 30 }, { wch: 11 }, { wch: 11 }, { wch: 15 }, { wch: 8 }, { wch: 12 }];
+  ws['!cols'] = [{ wch: 11 }, { wch: 30 }, { wch: 10 }, { wch: 19 }, { wch: 30 }, { wch: 11 }, { wch: 11 }, { wch: 15 }, { wch: 16 }, { wch: 8 }, { wch: 12 }];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Pemakaian Bahan');
   XLSX.writeFile(wb, `Pemakaian_Bahan_Cutting_${tglKey(new Date().toISOString())}.xlsx`);
