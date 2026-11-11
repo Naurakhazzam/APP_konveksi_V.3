@@ -147,6 +147,20 @@ async function exportExcel(items: PemakaianCuttingRow[]) {
   type Jumlah = { qty: number; terpakai: number; standar: number; terpakaiBerstandar: number };
   const kosong = (): Jumlah => ({ qty: 0, terpakai: 0, standar: 0, terpakaiBerstandar: 0 });
   const grand = new Map<string, Jumlah>();
+  /** Ringkasan per bahan (per warna kain) untuk bagian bawah file */
+  type PerBahan = { satuan: string; standar: number; terpakaiBerstandar: number; terpakai: number; irit: number; boros: number };
+  const perBahan = new Map<string, PerBahan>();
+  const catatBahan = (nama: string, satuan: string, terpakai: number, standar: number | null) => {
+    const b = perBahan.get(nama) ?? { satuan, standar: 0, terpakaiBerstandar: 0, terpakai: 0, irit: 0, boros: 0 };
+    b.terpakai += terpakai;
+    if (standar != null) {
+      b.standar += standar;
+      b.terpakaiBerstandar += terpakai;
+      const sel = r3(terpakai - standar);
+      if (sel > 0) b.boros += sel; else b.irit += -sel;
+    }
+    perBahan.set(nama, b);
+  };
   const tambah = (m: Map<string, Jumlah>, satuan: string, j: Partial<Jumlah>) => {
     const t = m.get(satuan) ?? kosong();
     t.qty += j.qty ?? 0; t.terpakai += j.terpakai ?? 0;
@@ -188,6 +202,12 @@ async function exportExcel(items: PemakaianCuttingRow[]) {
         tambah(sub, f.satuan, {
           qty: qtyCut, terpakai, standar: standar ?? 0, terpakaiBerstandar: standar != null ? terpakai : 0,
         });
+        const namaUtama = [...new Set(rsUtama.map(r => r.bahan_nama))];
+        for (const nb of namaUtama) {
+          const rb = rsUtama.filter(r => r.bahan_nama === nb);
+          catatBahan(nb, rb[0].satuan, r3(rb.reduce((sum, r) => sum + r.qty_pakai, 0)),
+            standar != null ? r3(standar / namaUtama.length) : null);
+        }
       }
       // Bahan lain (mis. puring) — tanpa standar, baris sendiri
       const lain = new Map<string, PemakaianCuttingRow[]>();
@@ -197,6 +217,7 @@ async function exportExcel(items: PemakaianCuttingRow[]) {
         aoa.push([f.no_po, nama, bahan, br[0].satuan, f.qty_order, qtyCut,
           '', '', qtyCut > 0 ? r3(terpakai / qtyCut) : 0, terpakai, '', 'Belum ada standar']);
         tambah(sub, br[0].satuan, { qty: rsUtama.length ? 0 : qtyCut, terpakai });
+        catatBahan(bahan, br[0].satuan, terpakai, null);
       }
     }
     for (const [satuan, t] of sub) {
@@ -217,6 +238,23 @@ async function exportExcel(items: PemakaianCuttingRow[]) {
       : `${selisih > 0 ? 'BOROS' : 'IRIT'} ${fmtQty(Math.abs(selisih))} ${satuan} (${pct}%)`;
     aoa.push([`KESIMPULAN: seharusnya terpakai ${fmtQty(r3(t.standar))} ${satuan}, `
       + `kenyataannya terpakai ${fmtQty(r3(t.terpakaiBerstandar))} ${satuan} → ${hasil}.`]);
+  }
+
+  // Ringkasan per bahan: seharusnya vs kenyataan, irit & boros dipisah
+  if (perBahan.size) {
+    aoa.push([]);
+    aoa.push(['', 'RINGKASAN PER BAHAN']);
+    aoa.push(['', 'Bahan', 'Satuan', '', '', '', 'Seharusnya terpakai', 'Kenyataan terpakai',
+      'Total irit', 'Total boros', 'Selisih bersih', 'Keterangan']);
+    for (const [nama, b] of [...perBahan].sort((x, y) => x[0].localeCompare(y[0]))) {
+      const bersih = b.standar > 0 ? r3(b.terpakaiBerstandar - b.standar) : null;
+      aoa.push(['', nama, b.satuan, '', '', '',
+        b.standar > 0 ? r3(b.standar) : '', r3(b.terpakai),
+        b.standar > 0 ? r3(b.irit) : '', b.standar > 0 ? r3(b.boros) : '',
+        bersih ?? '', keterangan(bersih, b.standar, b.satuan)]);
+    }
+    aoa.push(['', 'Catatan: Total irit = jumlah semua ukuran yang lebih hemat; Total boros = jumlah semua ukuran yang lebih banyak.']);
+    aoa.push(['', 'Selisih bersih = Total boros - Total irit. Artikel dua warna: jatah standarnya dibagi rata ke kedua bahan.']);
   }
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
