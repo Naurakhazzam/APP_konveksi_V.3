@@ -295,6 +295,8 @@ export interface BahanDefault {
   sumber_bahan: 'riwayat' | 'kategori';
   /** Asal angka pemakaian — null berarti belum ada, wajib diisi */
   sumber_rate: 'standar' | null;
+  /** Bahan warna kedua artikel "A x B" — pemakaian boleh dikosongkan */
+  warna_kedua?: boolean;
 }
 
 const normWarna = (s: string) => s.toLowerCase().replace(/\s+/g, '');
@@ -303,8 +305,10 @@ const normWarna = (s: string) => s.toLowerCase().replace(/\s+/g, '');
  * Bahan + pemakaian/pcs default per artikel (po_item):
  *  Bahan  : 1) bahan terakhir untuk model + warna yang sama
  *           2) jenis bahan kategori × warna produk (kombinasi "A x B" → 2 bahan)
- *  Rate   : patokan HPP model + ukuran (total bahan utama per pcs), dibagi rata
- *           ke bahan utama artikel; bahan lain (mis. puring) diisi manual.
+ *  Rate   : patokan HPP model + ukuran (total bahan utama per pcs), seluruhnya
+ *           di bahan warna PALING DEPAN ("Black x Dark Grey" → Black). Bahan
+ *           warna kedua tetap muncul tapi kosong (boleh dibiarkan kosong);
+ *           bahan lain (mis. puring) diisi manual.
  */
 export async function getBahanDefaults(poItemIds: string[]): Promise<Record<string, BahanDefault[]>> {
   if (!poItemIds.length) return {};
@@ -376,13 +380,29 @@ export async function getBahanDefaults(poItemIds: string[]): Promise<Record<stri
   }
 
   const namaInv = new Map(inv.map(i => [i.id, i.nama]));
-  /** Patokan dibagi rata ke bahan utama; bahan lain tanpa angka. */
-  const bagiPatokan = (list: BahanDefault[], patokan: number | null, jenis: string | null): BahanDefault[] => {
-    const utama = list.filter(l => isBahanUtama(namaInv.get(l.inventory_item_id) ?? '', jenis));
-    const per = patokan != null && utama.length ? Math.round((patokan / utama.length) * 1000) / 1000 : null;
-    return list.map(l => utama.includes(l)
-      ? { ...l, rate_per_pcs: per, sumber_rate: per != null ? 'standar' as const : null }
-      : { ...l, rate_per_pcs: null, sumber_rate: null });
+  /**
+   * Patokan seluruhnya ke bahan utama warna paling depan; bahan utama warna
+   * berikutnya kosong (warna_kedua), bahan lain tanpa angka.
+   */
+  const bagiPatokan = (
+    list: BahanDefault[], patokan: number | null, jenis: string | null, warnaProduk: string,
+  ): BahanDefault[] => {
+    const parts = warnaProduk.split(/\s+x\s+/i).map(normWarna);
+    const urutan = (id: string) => {
+      const w = warnaInv.get(id);
+      const i = w ? parts.findIndex(p => w === p || w.endsWith(p)) : -1;
+      return i < 0 ? 99 : i;
+    };
+    const utama = list
+      .filter(l => isBahanUtama(namaInv.get(l.inventory_item_id) ?? '', jenis))
+      .sort((a, b) => urutan(a.inventory_item_id) - urutan(b.inventory_item_id));
+    const lain = list.filter(l => !utama.includes(l));
+    return [
+      ...utama.map((l, i) => i === 0
+        ? { ...l, rate_per_pcs: patokan, sumber_rate: patokan != null ? 'standar' as const : null }
+        : { ...l, rate_per_pcs: null, sumber_rate: null, warna_kedua: true }),
+      ...lain.map(l => ({ ...l, rate_per_pcs: null, sumber_rate: null })),
+    ];
   };
 
   const result: Record<string, BahanDefault[]> = {};
@@ -394,7 +414,7 @@ export async function getBahanDefaults(poItemIds: string[]): Promise<Record<stri
     if (dariRiwayat?.length) {
       result[it.id] = bagiPatokan(
         dariRiwayat.map(id => ({ inventory_item_id: id, rate_per_pcs: rate, sumber_bahan: 'riwayat' as const, sumber_rate })),
-        rate, it.jenis_bahan);
+        rate, it.jenis_bahan, it.warna);
       continue;
     }
 
@@ -411,7 +431,7 @@ export async function getBahanDefaults(poItemIds: string[]): Promise<Record<stri
         }
       }
     }
-    result[it.id] = bagiPatokan(list, rate, it.jenis_bahan);
+    result[it.id] = bagiPatokan(list, rate, it.jenis_bahan, it.warna);
   }
   return result;
 }

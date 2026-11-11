@@ -82,10 +82,12 @@ export default function ModalSelesaiCutting({ selectedBundleIds, onSuccess, onCl
                 rowId: uid(),
                 inventory_item_id: x.inventory_item_id,
                 rate_per_pcs: x.rate_per_pcs ?? 0,
-                sumber: [
-                  x.sumber_bahan === 'riwayat' ? 'bahan: riwayat' : 'bahan: kategori+warna',
-                  x.sumber_rate === 'standar' ? 'pemakaian: patokan HPP' : null,
-                ].filter(Boolean).join(' · '),
+                sumber: x.warna_kedua
+                  ? 'warna kedua — pemakaian boleh dikosongkan'
+                  : [
+                      x.sumber_bahan === 'riwayat' ? 'bahan: riwayat' : 'bahan: kategori+warna',
+                      x.sumber_rate === 'standar' ? 'pemakaian: patokan HPP' : null,
+                    ].filter(Boolean).join(' · '),
               }))
             : [{ rowId: uid(), inventory_item_id: '', rate_per_pcs: 0, sumber: null }];
         }
@@ -153,9 +155,10 @@ export default function ModalSelesaiCutting({ selectedBundleIds, onSuccess, onCl
       if (qtyArtikel(a.po_item_id) === 0) continue;
       const rows = (bahan[a.po_item_id] ?? []).filter(r => r.inventory_item_id);
       if (!rows.length) return `${a.nama}: pilih minimal 1 bahan`;
+      // Cukup 1 bahan terisi (warna paling depan); bahan lain boleh kosong → tidak dicatat
+      if (!rows.some(r => r.rate_per_pcs > 0)) return `${a.nama}: isi pemakaian per pcs minimal untuk 1 bahan`;
       for (const r of rows) {
         const item = inventory.find(i => i.id === r.inventory_item_id);
-        if (!(r.rate_per_pcs > 0)) return `${a.nama}: isi pemakaian per pcs untuk ${item?.nama ?? 'bahan'}`;
         if (r.rate_per_pcs > 3) return `${a.nama}: pemakaian ${item?.nama} ${r.rate_per_pcs} ${item?.satuan}/pcs melebihi batas 3 — periksa lagi`;
       }
     }
@@ -328,6 +331,8 @@ export default function ModalSelesaiCutting({ selectedBundleIds, onSuccess, onCl
                           {rows.map(r => {
                             const item = inventory.find(i => i.id === r.inventory_item_id);
                             const rateKosong = !(r.rate_per_pcs > 0);
+                            // Kosong boleh kalau bahan lain di artikel ini sudah terisi
+                            const bolehKosong = rows.some(o => o.rowId !== r.rowId && o.inventory_item_id && o.rate_per_pcs > 0);
                             return (
                               <div key={r.rowId}>
                                 <div className="grid grid-cols-[1fr_110px_90px_32px] gap-2 items-center">
@@ -340,7 +345,7 @@ export default function ModalSelesaiCutting({ selectedBundleIds, onSuccess, onCl
                                     <input type="number" min={0} step={0.01} placeholder="isi"
                                       value={r.rate_per_pcs || ''}
                                       onChange={e => ubahBahan(a.po_item_id, r.rowId, { rate_per_pcs: parseFloat(e.target.value) || 0 })}
-                                      className={`${inputCls} w-full text-center ${rateKosong && r.inventory_item_id ? 'border-orange-500/60' : ''}`} />
+                                      className={`${inputCls} w-full text-center ${rateKosong && r.inventory_item_id && !bolehKosong ? 'border-orange-500/60' : ''}`} />
                                     <span className="text-[10px] text-[#9aa0a6]">{item?.satuan ?? ''}</span>
                                   </div>
                                   <div className="text-center text-xs font-bold text-[#e5c17b]">
@@ -354,7 +359,9 @@ export default function ModalSelesaiCutting({ selectedBundleIds, onSuccess, onCl
                                 {(r.sumber || (rateKosong && r.inventory_item_id)) && (
                                   <p className="text-[10px] mt-0.5 text-[#9aa0a6]">
                                     {r.sumber && <span>otomatis — {r.sumber}</span>}
-                                    {rateKosong && r.inventory_item_id && <span className="text-orange-400"> · belum ada patokan, isi manual</span>}
+                                    {rateKosong && r.inventory_item_id && (bolehKosong
+                                      ? <span> · kosong = tidak dicatat & stok tidak dikurangi</span>
+                                      : <span className="text-orange-400"> · belum ada patokan, isi manual</span>)}
                                   </p>
                                 )}
                               </div>
