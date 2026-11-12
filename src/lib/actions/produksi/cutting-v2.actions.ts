@@ -304,7 +304,8 @@ const normWarna = (s: string) => s.toLowerCase().replace(/\s+/g, '');
 /**
  * Bahan + pemakaian/pcs default per artikel (po_item):
  *  Bahan  : 1) bahan terakhir untuk model + warna yang sama
- *           2) jenis bahan kategori × warna produk (kombinasi "A x B" → 2 bahan)
+ *           2) jenis bahan kategori × warna produk (kombinasi "A x B" → 2 bahan);
+ *              warna yang cocok ke >1 bahan diputus lewat tabel bahan_warna_default
  *  Rate   : patokan HPP model + ukuran (total bahan utama per pcs), seluruhnya
  *           di bahan warna PALING DEPAN ("Black x Dark Grey" → Black). Bahan
  *           warna kedua tetap muncul tapi kosong (boleh dibiarkan kosong);
@@ -341,13 +342,22 @@ export async function getBahanDefaults(poItemIds: string[]): Promise<Record<stri
   });
 
   const modelIds = [...new Set(items.map(i => i.model_id).filter(Boolean))] as string[];
-  const standarRes = modelIds.length
-    ? await supabase.from('standar_pemakaian_bahan')
-        .select('model_id, size, rate_per_pcs').eq('tenant_id', TENANT_ID).in('model_id', modelIds)
-    : { data: [], error: null };
+  const [standarRes, warnaDefaultRes] = modelIds.length
+    ? await Promise.all([
+        supabase.from('standar_pemakaian_bahan')
+          .select('model_id, size, rate_per_pcs').eq('tenant_id', TENANT_ID).in('model_id', modelIds),
+        supabase.from('bahan_warna_default')
+          .select('model_id, warna, inventory_item_id').eq('tenant_id', TENANT_ID).in('model_id', modelIds),
+      ])
+    : [{ data: [], error: null }, { data: [], error: null }];
   if (standarRes.error) throw new Error(standarRes.error.message);
+  if (warnaDefaultRes.error) throw new Error(warnaDefaultRes.error.message);
   const standar = new Map<string, number>(
     (standarRes.data ?? []).map((s: any) => [`${s.model_id}|${s.size}`, Number(s.rate_per_pcs)]));
+  // Pilihan bahan bila satu warna cocok ke >1 bahan ("Grey" → Dark grey / Light grey)
+  const warnaDefault = new Map<string, string>(
+    (warnaDefaultRes.data ?? []).map((d: any) =>
+      [`${d.model_id}|${normWarna(String(d.warna))}`, d.inventory_item_id as string]));
 
   const inv = (invRes.data ?? []).map((i: any) => ({
     id: i.id as string, nama: String(i.nama), warna: one<any>(i.warna)?.nama as string | undefined,
@@ -425,7 +435,11 @@ export async function getBahanDefaults(poItemIds: string[]): Promise<Record<stri
       const kandidat = inv.filter(i => i.nama.toLowerCase().startsWith(prefix) && i.warna);
       for (const part of it.warna.split(/\s+x\s+/i).map(normWarna)) {
         const persis = kandidat.filter(i => normWarna(i.warna!) === part);
-        const cocok = persis.length ? persis : kandidat.filter(i => normWarna(i.warna!).endsWith(part));
+        let cocok = persis.length ? persis : kandidat.filter(i => normWarna(i.warna!).endsWith(part));
+        if (cocok.length > 1 && it.model_id) {
+          const pilihan = warnaDefault.get(`${it.model_id}|${part}`);
+          cocok = cocok.filter(i => i.id === pilihan);
+        }
         if (cocok.length === 1 && !list.some(l => l.inventory_item_id === cocok[0].id)) {
           list.push({ inventory_item_id: cocok[0].id, rate_per_pcs: rate, sumber_bahan: 'kategori', sumber_rate });
         }
