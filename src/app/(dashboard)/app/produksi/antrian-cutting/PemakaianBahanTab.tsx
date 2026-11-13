@@ -83,7 +83,7 @@ function BadgeStatus({ status, persen, selisih, satuan }: { status: StatusPemaka
   );
 }
 
-/** Satu baris tabel = PO + artikel (model); isinya semua bundle & bahan yang dipakai. */
+/** Satu baris tabel = PO + artikel (model) + tanggal selesai cutting; isinya semua bundle & bahan yang dipakai hari itu. */
 interface Grup {
   key: string;
   no_po: string;
@@ -293,7 +293,9 @@ export default function PemakaianBahanTab({ rows, isOwner, onChanged }: Props) {
     const map = new Map<string, Omit<Grup, 'status'>>();
     const bundleTerhitung = new Set<string>();
     for (const r of tersaring) {
-      const key = `${r.po_id}::${r.model_nama ?? ''}`;
+      // Dipisah per tanggal selesai cutting (WIB): artikel yang sama tapi
+      // dipotong di hari berbeda tampil sebagai baris terpisah.
+      const key = `${r.po_id}::${r.model_nama ?? ''}::${tglKey(r.tanggal)}`;
       let g = map.get(key);
       if (!g) {
         g = {
