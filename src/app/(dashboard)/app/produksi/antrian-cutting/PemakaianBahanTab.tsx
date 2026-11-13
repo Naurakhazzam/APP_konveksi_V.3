@@ -46,41 +46,68 @@ const r3 = (n: number) => Math.round(n * 1000) / 1000;
 const utama = (r: PemakaianCuttingRow) => isBahanUtama(r.bahan_nama, r.jenis_bahan);
 
 /** Pemakaian bahan utama per bundle, untuk dibandingkan dengan patokan. */
-interface BundleNilai { rate: number; patokan: number | null; qty: number; satuan: string }
+interface BundleNilai {
+  rate: number; patokan: number | null; qty: number; satuan: string;
+  /** Total harga & qty bahan utama bundle ini — untuk harga per satuan */
+  harga: number; pakai: number;
+}
 
 function nilaiPerBundle(items: PemakaianCuttingRow[]): Map<string, BundleNilai> {
   const m = new Map<string, BundleNilai>();
   for (const r of items) {
     if (!utama(r)) continue;
-    const b = m.get(r.bundle_id) ?? { rate: 0, patokan: r.patokan, qty: r.qty_potong, satuan: r.satuan };
+    const b = m.get(r.bundle_id) ?? { rate: 0, patokan: r.patokan, qty: r.qty_potong, satuan: r.satuan, harga: 0, pakai: 0 };
     b.rate += r.rate_per_pcs;
+    b.harga += r.harga_pakai;
+    b.pakai += r.qty_pakai;
     m.set(r.bundle_id, b);
   }
   return m;
 }
 
-/** Ringkas status sekumpulan bundle: total pakai vs total patokan. */
+/**
+ * Ringkas status sekumpulan bundle: total pakai vs total patokan.
+ * `hemat` & `nilai` bertanda: + = irit (bahan/uang yang dihemat), − = boros.
+ */
 function statusKumpulan(bundles: BundleNilai[]) {
-  let aktual = 0, target = 0, satuan = '';
+  let aktual = 0, target = 0, nilai = 0, rpStandar = 0, rpAktual = 0, satuan = '';
   for (const b of bundles) {
     if (b.patokan == null) continue;
-    aktual += b.rate * b.qty;
-    target += b.patokan * b.qty;
+    const pakaiB = b.rate * b.qty, targetB = b.patokan * b.qty;
+    aktual += pakaiB;
+    target += targetB;
+    const hargaSatuan = b.pakai > 0 ? b.harga / b.pakai : 0;
+    nilai += (targetB - pakaiB) * hargaSatuan;
+    rpStandar += targetB * hargaSatuan;
+    rpAktual += pakaiB * hargaSatuan;
     satuan = b.satuan;
   }
   const status: StatusPemakaian = target > 0 ? statusPemakaian(aktual, target) : 'tanpa';
-  return { status, selisih: r3(aktual - target), persen: target > 0 ? persenSelisih(aktual, target) : 0, satuan };
+  return {
+    status, hemat: r3(target - aktual), nilai: Math.round(nilai),
+    rpStandar: Math.round(rpStandar), rpAktual: Math.round(rpAktual),
+    persen: target > 0 ? persenSelisih(aktual, target) : 0, satuan,
+  };
 }
 
-function BadgeStatus({ status, persen, selisih, satuan }: { status: StatusPemakaian; persen?: number; selisih?: number; satuan?: string }) {
+/** + untuk irit, − untuk boros */
+const bertanda = (n: number, fmt: (v: number) => string) =>
+  n > 0 ? `+${fmt(n)}` : n < 0 ? `−${fmt(-n)}` : fmt(0);
+
+function BadgeStatus({ status, persen, hemat, satuan }: { status: StatusPemakaian; persen?: number; hemat?: number; satuan?: string }) {
   const ber = status === 'irit' || status === 'boros';
   return (
     <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] font-bold whitespace-nowrap ${STATUS_CLASS[status]}`}>
       {STATUS_LABEL[status]}
       {ber && persen != null && ` ${Math.abs(persen)}%`}
-      {ber && selisih != null && <span className="font-normal opacity-80">({selisih > 0 ? '+' : ''}{fmtQty(selisih)} {satuan})</span>}
+      {ber && hemat != null && <span className="font-normal opacity-80">({bertanda(hemat, fmtQty)} {satuan})</span>}
     </span>
   );
+}
+
+function NilaiSelisih({ status, nilai }: { status: StatusPemakaian; nilai: number }) {
+  if ((status !== 'irit' && status !== 'boros') || nilai === 0) return <span className="text-[#9aa0a6]">-</span>;
+  return <span className={nilai > 0 ? 'text-green-400' : 'text-red-400'}>{bertanda(nilai, fmtRp)}</span>;
 }
 
 /** Satu baris tabel = PO + artikel (model) + tanggal selesai cutting; isinya semua bundle & bahan yang dipakai hari itu. */
@@ -114,7 +141,7 @@ async function exportExcel(items: PemakaianCuttingRow[]) {
     'Jumlah order (pcs)', 'Jumlah dipotong (pcs)',
     'Standar per pcs', 'Total standar (kalau sesuai standar)',
     'Terpakai per pcs', 'Total terpakai',
-    'Selisih (terpakai - standar)', 'Keterangan',
+    'Selisih (standar - terpakai)', 'Nilai irit/boros (Rp)', 'Keterangan',
   ];
   const PETUNJUK = [
     ['LAPORAN PEMAKAIAN BAHAN CUTTING'],
@@ -122,9 +149,16 @@ async function exportExcel(items: PemakaianCuttingRow[]) {
     ['• Standar per pcs = jatah bahan untuk 1 pcs (patokan HPP).'],
     ['• Total standar = Jumlah dipotong × Standar per pcs. Ini bahan yang SEHARUSNYA terpakai.'],
     ['• Total terpakai = bahan yang BENAR-BENAR terpakai saat cutting.'],
-    ['• Selisih = Total terpakai - Total standar. Angka plus (+) = BOROS, angka minus (-) = IRIT.'],
+    ['• Selisih = Total standar - Total terpakai. Angka plus (+) = IRIT, angka minus (-) = BOROS.'],
+    ['• Nilai irit/boros = Selisih × harga bahan per satuan. Plus (+) = uang yang dihemat, minus (-) = kerugian karena boros.'],
     [],
   ];
+  /** Untuk kolom tampilan: + = irit, − = boros (kebalikan selisih internal terpakai - standar) */
+  const balik = (s: number | null) => (s == null ? '' : s === 0 ? 0 : r3(-s));
+  /** Nilai Rp bertanda: (standar - terpakai) × harga per satuan */
+  const nilaiRp = (standar: number | null, terpakai: number, hargaSatuan: number) =>
+    standar == null || hargaSatuan <= 0 ? null : Math.round((standar - terpakai) * hargaSatuan);
+  let totalIritRp = 0, totalBorosRp = 0, rpStandarTot = 0, rpAktualTot = 0;
 
   /** Kalimat keterangan dari selisih: "Boros 1 yard (17%)" / "Irit 0,25 yard (4%)" / "Sesuai standar" */
   const keterangan = (selisih: number | null, standar: number | null, satuan: string) => {
@@ -144,20 +178,26 @@ async function exportExcel(items: PemakaianCuttingRow[]) {
 
   const aoa: (string | number)[][] = [...PETUNJUK];
   /** dipotong, terpakai, standar (+ terpakai yang punya standar, untuk selisih yang adil) */
-  type Jumlah = { qty: number; terpakai: number; standar: number; terpakaiBerstandar: number };
-  const kosong = (): Jumlah => ({ qty: 0, terpakai: 0, standar: 0, terpakaiBerstandar: 0 });
+  type Jumlah = { qty: number; terpakai: number; standar: number; terpakaiBerstandar: number; nilai: number };
+  const kosong = (): Jumlah => ({ qty: 0, terpakai: 0, standar: 0, terpakaiBerstandar: 0, nilai: 0 });
   const grand = new Map<string, Jumlah>();
   /** Ringkasan per bahan (per warna kain) untuk bagian bawah file */
-  type PerBahan = { satuan: string; standar: number; terpakaiBerstandar: number; terpakai: number; irit: number; boros: number };
+  type PerBahan = {
+    satuan: string; standar: number; terpakaiBerstandar: number; terpakai: number;
+    irit: number; boros: number; iritRp: number; borosRp: number;
+  };
   const perBahan = new Map<string, PerBahan>();
-  const catatBahan = (nama: string, satuan: string, terpakai: number, standar: number | null) => {
-    const b = perBahan.get(nama) ?? { satuan, standar: 0, terpakaiBerstandar: 0, terpakai: 0, irit: 0, boros: 0 };
+  const catatBahan = (nama: string, satuan: string, terpakai: number, standar: number | null, hargaSatuan = 0) => {
+    const b = perBahan.get(nama) ?? {
+      satuan, standar: 0, terpakaiBerstandar: 0, terpakai: 0, irit: 0, boros: 0, iritRp: 0, borosRp: 0,
+    };
     b.terpakai += terpakai;
     if (standar != null) {
       b.standar += standar;
       b.terpakaiBerstandar += terpakai;
       const sel = r3(terpakai - standar);
-      if (sel > 0) b.boros += sel; else b.irit += -sel;
+      const rp = Math.round(-sel * hargaSatuan);
+      if (sel > 0) { b.boros += sel; b.borosRp += rp; } else { b.irit += -sel; b.iritRp += rp; }
     }
     perBahan.set(nama, b);
   };
@@ -165,12 +205,13 @@ async function exportExcel(items: PemakaianCuttingRow[]) {
     const t = m.get(satuan) ?? kosong();
     t.qty += j.qty ?? 0; t.terpakai += j.terpakai ?? 0;
     t.standar += j.standar ?? 0; t.terpakaiBerstandar += j.terpakaiBerstandar ?? 0;
+    t.nilai += j.nilai ?? 0;
     m.set(satuan, t);
   };
   const barisTotal = (label: string, satuan: string, t: Jumlah) => {
     const selisih = t.standar > 0 ? r3(t.terpakaiBerstandar - t.standar) : null;
     return ['', label, '', satuan, '', t.qty, '', t.standar > 0 ? r3(t.standar) : '', '', r3(t.terpakai),
-      selisih ?? '', keterangan(selisih, t.standar, satuan)];
+      balik(selisih), t.standar > 0 ? Math.round(t.nilai) : '', keterangan(selisih, t.standar, satuan)];
   };
 
   for (const tgl of [...perTgl.keys()].sort()) {
@@ -196,17 +237,29 @@ async function exportExcel(items: PemakaianCuttingRow[]) {
         const perPcs = qtyCut > 0 ? r3(terpakai / qtyCut) : 0;
         const standar = f.patokan != null ? r3(f.patokan * qtyCut) : null;
         const selisih = standar != null ? r3(terpakai - standar) : null;
+        const hargaTotal = rsUtama.reduce((s, r) => s + r.harga_pakai, 0);
+        const hargaSatuan = terpakai > 0 ? hargaTotal / terpakai : 0;
+        const nilai = nilaiRp(standar, terpakai, hargaSatuan);
+        if (nilai != null) {
+          if (nilai > 0) totalIritRp += nilai; else totalBorosRp += nilai;
+          rpStandarTot += standar! * hargaSatuan;
+          rpAktualTot += terpakai * hargaSatuan;
+        }
         const bahan = [...new Set(rsUtama.map(r => r.bahan_nama))].join(' + ');
         aoa.push([f.no_po, nama, bahan, f.satuan, f.qty_order, qtyCut,
-          f.patokan ?? '', standar ?? '', perPcs, terpakai, selisih ?? '', keterangan(selisih, standar, f.satuan)]);
+          f.patokan ?? '', standar ?? '', perPcs, terpakai, balik(selisih), nilai ?? '',
+          keterangan(selisih, standar, f.satuan)]);
         tambah(sub, f.satuan, {
           qty: qtyCut, terpakai, standar: standar ?? 0, terpakaiBerstandar: standar != null ? terpakai : 0,
+          nilai: nilai ?? 0,
         });
         const namaUtama = [...new Set(rsUtama.map(r => r.bahan_nama))];
         for (const nb of namaUtama) {
           const rb = rsUtama.filter(r => r.bahan_nama === nb);
-          catatBahan(nb, rb[0].satuan, r3(rb.reduce((sum, r) => sum + r.qty_pakai, 0)),
-            standar != null ? r3(standar / namaUtama.length) : null);
+          const pakaiNb = r3(rb.reduce((sum, r) => sum + r.qty_pakai, 0));
+          const hargaNb = pakaiNb > 0 ? rb.reduce((sum, r) => sum + r.harga_pakai, 0) / pakaiNb : 0;
+          catatBahan(nb, rb[0].satuan, pakaiNb,
+            standar != null ? r3(standar / namaUtama.length) : null, hargaNb);
         }
       }
       // Bahan lain (mis. puring) — tanpa standar, baris sendiri
@@ -215,7 +268,7 @@ async function exportExcel(items: PemakaianCuttingRow[]) {
       for (const [bahan, br] of lain) {
         const terpakai = r3(br.reduce((s, r) => s + r.qty_pakai, 0));
         aoa.push([f.no_po, nama, bahan, br[0].satuan, f.qty_order, qtyCut,
-          '', '', qtyCut > 0 ? r3(terpakai / qtyCut) : 0, terpakai, '', 'Belum ada standar']);
+          '', '', qtyCut > 0 ? r3(terpakai / qtyCut) : 0, terpakai, '', '', 'Belum ada standar']);
         tambah(sub, br[0].satuan, { qty: rsUtama.length ? 0 : qtyCut, terpakai });
         catatBahan(bahan, br[0].satuan, terpakai, null);
       }
@@ -237,30 +290,59 @@ async function exportExcel(items: PemakaianCuttingRow[]) {
     const hasil = selisih === 0 ? 'SESUAI STANDAR'
       : `${selisih > 0 ? 'BOROS' : 'IRIT'} ${fmtQty(Math.abs(selisih))} ${satuan} (${pct}%)`;
     aoa.push([`KESIMPULAN: seharusnya terpakai ${fmtQty(r3(t.standar))} ${satuan}, `
-      + `kenyataannya terpakai ${fmtQty(r3(t.terpakaiBerstandar))} ${satuan} → ${hasil}.`]);
+      + `kenyataannya terpakai ${fmtQty(r3(t.terpakaiBerstandar))} ${satuan} → ${hasil}`
+      + ` (nilai ${bertanda(Math.round(t.nilai), fmtRp)}).`]);
+  }
+  if (totalIritRp !== 0 || totalBorosRp !== 0) {
+    const bersihRp = totalIritRp + totalBorosRp;
+    aoa.push([`TOTAL NILAI IRIT: ${bertanda(totalIritRp, fmtRp)}`]);
+    aoa.push([`TOTAL NILAI BOROS: ${bertanda(totalBorosRp, fmtRp)}`]);
+    aoa.push([`NILAI BERSIH: ${bertanda(bersihRp, fmtRp)} (${bersihRp > 0 ? 'lebih hemat' : bersihRp < 0 ? 'lebih boros' : 'impas'} dibanding standar)`]);
   }
 
   // Ringkasan per bahan: seharusnya vs kenyataan, irit & boros dipisah
   if (perBahan.size) {
     aoa.push([]);
     aoa.push(['', 'RINGKASAN PER BAHAN']);
-    aoa.push(['', 'Bahan', 'Satuan', '', '', '', 'Seharusnya terpakai', 'Kenyataan terpakai',
-      'Total irit', 'Total boros', 'Selisih bersih', 'Keterangan']);
+    aoa.push(['', 'Bahan', 'Satuan', '', 'Nilai irit (Rp)', 'Nilai boros (Rp)', 'Seharusnya terpakai', 'Kenyataan terpakai',
+      'Total irit', 'Total boros', 'Selisih bersih', 'Nilai bersih (Rp)', 'Keterangan']);
     for (const [nama, b] of [...perBahan].sort((x, y) => x[0].localeCompare(y[0]))) {
       const bersih = b.standar > 0 ? r3(b.terpakaiBerstandar - b.standar) : null;
-      aoa.push(['', nama, b.satuan, '', '', '',
-        b.standar > 0 ? r3(b.standar) : '', r3(b.terpakai),
-        b.standar > 0 ? r3(b.irit) : '', b.standar > 0 ? r3(b.boros) : '',
-        bersih ?? '', keterangan(bersih, b.standar, b.satuan)]);
+      const ada = b.standar > 0;
+      aoa.push(['', nama, b.satuan, '',
+        ada ? b.iritRp : '', ada ? b.borosRp : '',
+        ada ? r3(b.standar) : '', r3(b.terpakai),
+        ada ? r3(b.irit) : '', ada ? r3(-b.boros) : '',
+        balik(bersih), ada ? b.iritRp + b.borosRp : '', keterangan(bersih, b.standar, b.satuan)]);
     }
-    aoa.push(['', 'Catatan: Total irit = jumlah semua ukuran yang lebih hemat; Total boros = jumlah semua ukuran yang lebih banyak.']);
-    aoa.push(['', 'Selisih bersih = Total boros - Total irit. Artikel dua warna: jatah standarnya dibagi rata ke kedua bahan.']);
+    aoa.push(['', 'Catatan: Total irit = jumlah semua ukuran yang lebih hemat (+); Total boros = jumlah semua ukuran yang lebih banyak (-).']);
+    aoa.push(['', 'Selisih bersih = Total irit + Total boros. Artikel dua warna: jatah standarnya dibagi rata ke kedua bahan.']);
+  }
+
+  // Kesimpulan rupiah di PALING ATAS file — supaya langsung terbaca orang awam
+  if (rpStandarTot > 0) {
+    const std = Math.round(rpStandarTot), akt = Math.round(rpAktualTot), bersih = std - akt;
+    const kalimat = bersih > 0
+      ? `Bahan yang dipakai LEBIH SEDIKIT dari patokan → HEMAT ${fmtRp(bersih)}.`
+      : bersih < 0
+        ? `Bahan yang dipakai LEBIH BANYAK dari patokan → BOROS ${fmtRp(-bersih)} (kelebihan biaya).`
+        : 'Pemakaian bahan pas sesuai patokan.';
+    aoa.splice(PETUNJUK.length, 0,
+      ['KESIMPULAN (dalam rupiah)'],
+      ['Seharusnya (kalau sesuai patokan)', '', '', '', '', '', '', '', '', '', '', std],
+      ['Kenyataan bahan terpakai', '', '', '', '', '', '', '', '', '', '', akt],
+      [`Hasil keseluruhan (${bersih > 0 ? 'HEMAT' : bersih < 0 ? 'BOROS' : 'SESUAI'})`, '', '', '', '', '', '', '', '', '', '', bersih],
+      [kalimat],
+      [`Rincian: artikel yang irit menghemat ${bertanda(totalIritRp, fmtRp)}, artikel yang boros menambah biaya ${bertanda(totalBorosRp, fmtRp)}.`],
+      ['Dihitung dari bahan utama yang sudah punya patokan HPP dan harga bahan.'],
+      [],
+    );
   }
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   ws['!cols'] = [
     { wch: 11 }, { wch: 26 }, { wch: 22 }, { wch: 7 }, { wch: 10 }, { wch: 11 },
-    { wch: 10 }, { wch: 17 }, { wch: 10 }, { wch: 11 }, { wch: 13 }, { wch: 22 },
+    { wch: 10 }, { wch: 17 }, { wch: 10 }, { wch: 11 }, { wch: 13 }, { wch: 16 }, { wch: 22 },
   ];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Pemakaian Bahan');
@@ -329,15 +411,21 @@ export default function PemakaianBahanTab({ rows, isOwner, onChanged }: Props) {
     const bundles = new Set<string>();
     let pcs = 0;
     const perSatuan = new Map<string, number>();
-    const st = { irit: { n: 0, sel: 0 }, sesuai: { n: 0, sel: 0 }, boros: { n: 0, sel: 0 }, tanpa: { n: 0, sel: 0 } };
+    const kosong = () => ({ n: 0, sel: 0, rp: 0 });
+    const st = { irit: kosong(), sesuai: kosong(), boros: kosong(), tanpa: kosong() };
+    /** Nilai rupiah bahan utama yang punya patokan & harga */
+    const rp = { standar: 0, aktual: 0 };
     for (const g of grup) {
+      rp.standar += g.status.rpStandar;
+      rp.aktual += g.status.rpAktual;
       g.bundle_ids.forEach(id => bundles.add(id));
       pcs += g.qty_potong;
       for (const v of g.bahan.values()) perSatuan.set(v.satuan, (perSatuan.get(v.satuan) ?? 0) + v.qty);
       st[g.status.status].n += 1;
-      st[g.status.status].sel += g.status.selisih;
+      st[g.status.status].sel += g.status.hemat;
+      st[g.status.status].rp += g.status.nilai;
     }
-    return { bundles: bundles.size, pcs, perSatuan, st };
+    return { bundles: bundles.size, pcs, perSatuan, st, rp };
   }, [grup]);
 
   const togglePilih = (key: string) => setPilih(p => {
@@ -419,7 +507,8 @@ export default function PemakaianBahanTab({ rows, isOwner, onChanged }: Props) {
           <div className={`${ikon} bg-green-500/10 border-green-500/30`}><TrendingDown className="w-4 h-4 text-green-400" /></div>
           <div>
             <p className="text-lg font-bold leading-none text-green-400">{ringkasan.st.irit.n} <span className="text-xs font-medium text-[#9aa0a6]">artikel</span></p>
-            <p className="text-[11px] text-[#9aa0a6] mt-1">Irit {ringkasan.st.irit.n ? `(${fmtQty(ringkasan.st.irit.sel)} ${satuanUtama})` : ''}</p>
+            <p className="text-[11px] text-[#9aa0a6] mt-1">Irit {ringkasan.st.irit.n ? `(${bertanda(r3(ringkasan.st.irit.sel), fmtQty)} ${satuanUtama})` : ''}</p>
+            {ringkasan.st.irit.rp !== 0 && <p className="text-[11px] font-mono font-semibold text-green-400">{bertanda(ringkasan.st.irit.rp, fmtRp)}</p>}
           </div>
         </div>
         <div className={card}>
@@ -433,7 +522,8 @@ export default function PemakaianBahanTab({ rows, isOwner, onChanged }: Props) {
           <div className={`${ikon} bg-red-500/10 border-red-500/30`}><TrendingUp className="w-4 h-4 text-red-400" /></div>
           <div>
             <p className="text-lg font-bold leading-none text-red-400">{ringkasan.st.boros.n} <span className="text-xs font-medium text-[#9aa0a6]">artikel</span></p>
-            <p className="text-[11px] text-[#9aa0a6] mt-1">Boros {ringkasan.st.boros.n ? `(+${fmtQty(ringkasan.st.boros.sel)} ${satuanUtama})` : ''}</p>
+            <p className="text-[11px] text-[#9aa0a6] mt-1">Boros {ringkasan.st.boros.n ? `(${bertanda(r3(ringkasan.st.boros.sel), fmtQty)} ${satuanUtama})` : ''}</p>
+            {ringkasan.st.boros.rp !== 0 && <p className="text-[11px] font-mono font-semibold text-red-400">{bertanda(ringkasan.st.boros.rp, fmtRp)}</p>}
           </div>
         </div>
         <div className={card}>
@@ -444,6 +534,48 @@ export default function PemakaianBahanTab({ rows, isOwner, onChanged }: Props) {
           </div>
         </div>
       </div>
+
+      {/* Kesimpulan rupiah — bahasa sederhana */}
+      {ringkasan.rp.standar > 0 && (() => {
+        const bersih = ringkasan.rp.standar - ringkasan.rp.aktual;
+        const hemat = bersih > 0, boros = bersih < 0;
+        const warna = hemat ? 'text-green-400' : boros ? 'text-red-400' : 'text-sky-300';
+        const kotak = 'rounded-lg bg-[#0D0E10] border border-[#2A2D31] px-4 py-3';
+        return (
+          <div className="rounded-xl border border-[#2A2D31] bg-[#1A1D1F] p-4 space-y-3">
+            <p className="text-sm font-semibold text-[#e8eaed]">
+              Kesimpulan <span className="font-normal text-[#9aa0a6]">— {PERIODE.find(p => p.key === periode)?.label.toLowerCase()}{q.trim() ? ', sesuai pencarian' : ''}</span>
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className={kotak}>
+                <p className="text-[11px] text-[#9aa0a6]">Seharusnya (kalau sesuai patokan)</p>
+                <p className="text-lg font-bold font-mono text-[#e8eaed]">{fmtRp(ringkasan.rp.standar)}</p>
+              </div>
+              <div className={kotak}>
+                <p className="text-[11px] text-[#9aa0a6]">Kenyataan bahan terpakai</p>
+                <p className="text-lg font-bold font-mono text-[#e8eaed]">{fmtRp(ringkasan.rp.aktual)}</p>
+              </div>
+              <div className={`${kotak} ${hemat ? 'border-green-500/40' : boros ? 'border-red-500/40' : ''}`}>
+                <p className="text-[11px] text-[#9aa0a6]">Hasil keseluruhan</p>
+                <p className={`text-lg font-bold font-mono ${warna}`}>
+                  {hemat ? 'HEMAT ' : boros ? 'BOROS ' : 'SESUAI '}{bertanda(bersih, fmtRp)}
+                </p>
+              </div>
+            </div>
+            <p className="text-sm text-[#e8eaed]">
+              {hemat && <>Bahan yang dipakai <b className="text-green-400">lebih sedikit</b> dari patokan, jadi menghemat <b className="text-green-400">{fmtRp(bersih)}</b>.</>}
+              {boros && <>Bahan yang dipakai <b className="text-red-400">lebih banyak</b> dari patokan, jadi ada kelebihan biaya <b className="text-red-400">{fmtRp(-bersih)}</b>.</>}
+              {!hemat && !boros && <>Pemakaian bahan pas sesuai patokan.</>}
+              {' '}Rinciannya: artikel yang irit menghemat <b className="text-green-400">{bertanda(ringkasan.st.irit.rp, fmtRp)}</b>,
+              artikel yang boros menambah biaya <b className="text-red-400">{bertanda(ringkasan.st.boros.rp, fmtRp)}</b>
+              {ringkasan.st.sesuai.rp !== 0 && <>, artikel yang sesuai patokan (selisih kecil) <b>{bertanda(ringkasan.st.sesuai.rp, fmtRp)}</b></>}.
+            </p>
+            <p className="text-[11px] text-[#9aa0a6]">
+              Dihitung dari bahan utama yang sudah punya patokan HPP dan harga bahan. Artikel tanpa patokan atau tanpa harga tidak ikut dihitung.
+            </p>
+          </div>
+        );
+      })()}
 
       {/* Tabel */}
       <div className="rounded-xl border border-[#2A2D31] bg-[#1A1D1F] overflow-hidden">
@@ -465,13 +597,14 @@ export default function PemakaianBahanTab({ rows, isOwner, onChanged }: Props) {
                 <th className={`${th} text-left`}>Bahan Terpakai</th>
                 <th className={`${th} text-left`}>Patokan HPP</th>
                 <th className={`${th} text-right`}>Nilai</th>
+                <th className={`${th} text-right`} title="+ = irit (hemat), − = boros">Nilai Irit/Boros</th>
                 <th className={`${th} text-left`}>Terakhir</th>
                 <th className={`${th} w-20`} />
               </tr>
             </thead>
             <tbody>
               {grup.length === 0 ? (
-                <tr><td colSpan={11} className="px-4 py-12 text-center text-[#9aa0a6] text-sm">Belum ada pemakaian bahan pada periode ini</td></tr>
+                <tr><td colSpan={12} className="px-4 py-12 text-center text-[#9aa0a6] text-sm">Belum ada pemakaian bahan pada periode ini</td></tr>
               ) : grup.map(g => {
                 const perBundle = nilaiPerBundle(g.items);
                 return (
@@ -500,10 +633,13 @@ export default function PemakaianBahanTab({ rows, isOwner, onChanged }: Props) {
                         </div>
                       </td>
                       <td className="px-4 py-3 border-b border-[#2A2D31]">
-                        <BadgeStatus status={g.status.status} persen={g.status.persen} selisih={g.status.selisih} satuan={g.status.satuan} />
+                        <BadgeStatus status={g.status.status} persen={g.status.persen} hemat={g.status.hemat} satuan={g.status.satuan} />
                       </td>
                       <td className="px-4 py-3 text-right font-mono text-[#e8eaed] border-b border-[#2A2D31]">
                         {g.harga > 0 ? fmtRp(g.harga) : <span className="text-[#9aa0a6]">-</span>}
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono font-semibold border-b border-[#2A2D31]">
+                        <NilaiSelisih status={g.status.status} nilai={g.status.nilai} />
                       </td>
                       <td className="px-4 py-3 text-xs text-[#9aa0a6] border-b border-[#2A2D31]">
                         <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{fmtTime(g.tanggal)}</span>
@@ -523,7 +659,7 @@ export default function PemakaianBahanTab({ rows, isOwner, onChanged }: Props) {
 
                     {expanded === g.key && (
                       <tr>
-                        <td colSpan={11} className="bg-[#16181A] px-4 py-3 border-b border-[#2A2D31]">
+                        <td colSpan={12} className="bg-[#16181A] px-4 py-3 border-b border-[#2A2D31]">
                           <table className="w-full text-xs">
                             <thead>
                               <tr className="border-b border-[#2A2D31] text-[#9aa0a6] uppercase tracking-wider">
