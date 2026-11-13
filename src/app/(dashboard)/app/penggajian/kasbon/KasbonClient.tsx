@@ -27,6 +27,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Plus, CheckCircle, XCircle, Search, User, CreditCard } from 'lucide-react';
 import { toast } from 'sonner';
+import { tanggalWIB } from '@/lib/waktu';
 
 interface Props {
   initialData: KasbonItem[];
@@ -252,7 +253,7 @@ export default function KasbonClient({ initialData, karyawanList }: Props) {
                   name="tanggal"
                   type="date"
                   required
-                  defaultValue={new Date().toISOString().split('T')[0]}
+                  defaultValue={tanggalWIB()}
                   className="bg-[#16181A] border-[#2A2D31] focus:ring-[#e5c17b]"
                 />
               </div>

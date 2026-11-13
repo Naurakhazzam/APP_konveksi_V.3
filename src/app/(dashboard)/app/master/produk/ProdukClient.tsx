@@ -12,6 +12,7 @@ import { ImportCSVModal } from './ImportCSVModal';
 import { getProduk } from '@/lib/actions/master/produk.actions';
 import { getProdukForExport } from '@/lib/actions/master/produk-csv.actions';
 import { permissions } from '@/lib/auth/permissions';
+import { tanggalWIB } from '@/lib/waktu';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types (plain objects dari Server Component — tidak boleh ada method/class)
@@ -154,7 +155,7 @@ export function ProdukClient({
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `produk-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.download = `produk-${tanggalWIB()}.csv`;
       document.body.appendChild(a); a.click();
       document.body.removeChild(a); URL.revokeObjectURL(url);
     } catch (err: any) { alert('Gagal export: ' + err.message); }

@@ -47,6 +47,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { tanggalWIB } from '@/lib/waktu';
 
 interface Props {
   items: InventoryOverviewItem[];
@@ -582,7 +583,7 @@ export default function InventoryOverviewClient({ items, kategoriTrxList, warnaL
                   id="tanggal_masuk" 
                   name="tanggal_masuk" 
                   type="date" 
-                  defaultValue={new Date().toISOString().split('T')[0]} 
+                  defaultValue={tanggalWIB()} 
                   required 
                   className="bg-[#16181A] border-[#2A2D31]"
                 />

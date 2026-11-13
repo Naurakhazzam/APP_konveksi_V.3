@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import ModalBayarGaji from './ModalBayarGaji';
+import { tanggalWIB } from '@/lib/waktu';
 
 interface Props {
   initialRekap: RekapGajiItem[];
@@ -52,8 +53,8 @@ export default function RekapGajiClient({ initialRekap, tanggal_dari, tanggal_sa
     const nextFriday = new Date(lastSaturday);
     nextFriday.setDate(lastSaturday.getDate() + 6);
     return {
-      from: lastSaturday.toISOString().split('T')[0],
-      to: nextFriday.toISOString().split('T')[0],
+      from: tanggalWIB(lastSaturday),
+      to: tanggalWIB(nextFriday),
       fromDateObj: lastSaturday,
       toDateObj: nextFriday,
     };

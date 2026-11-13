@@ -28,6 +28,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { tanggalWIB } from '@/lib/waktu';
 
 interface Props {
   items: InventoryOverviewItem[];
@@ -214,7 +215,7 @@ export default function AlertOrderClient({ items, kategoriTrxList }: Props) {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="tanggal_masuk">Tanggal Masuk</Label>
-                <Input id="tanggal_masuk" name="tanggal_masuk" type="date" defaultValue={new Date().toISOString().split('T')[0]} required className="bg-[#16181A] border-[#2A2D31]" />
+                <Input id="tanggal_masuk" name="tanggal_masuk" type="date" defaultValue={tanggalWIB()} required className="bg-[#16181A] border-[#2A2D31]" />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="kategori_trx_id">Kategori Biaya</Label>

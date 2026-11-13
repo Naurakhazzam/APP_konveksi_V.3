@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import SlipPreview from './SlipPreview';
+import { tanggalWIB } from '@/lib/waktu';
 
 interface Props {
   karyawanList: { id: string; nama: string; gaji_pokok: number }[];
@@ -45,8 +46,8 @@ export default function SlipGajiClient({ karyawanList }: Props) {
     nextFriday.setDate(lastSaturday.getDate() + 6);
     
     return {
-      from: lastSaturday.toISOString().split('T')[0],
-      to: nextFriday.toISOString().split('T')[0],
+      from: tanggalWIB(lastSaturday),
+      to: tanggalWIB(nextFriday),
       fromDateObj: lastSaturday,
       toDateObj: nextFriday
     };

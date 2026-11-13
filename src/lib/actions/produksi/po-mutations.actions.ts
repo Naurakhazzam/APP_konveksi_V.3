@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { getCurrentUserProfile, assertCanEditProduksi } from '@/lib/auth/permissions';
 import { CreatePoSchema, AddItemsToPoSchema, type CreatePoInput, type AddItemsToPoInput } from '@/lib/validations/po.schemas';
+import { tanggalWIB } from '@/lib/waktu';
 
 const TENANT_ID = 'STX-001';
 
@@ -21,7 +22,7 @@ export async function createPoWithBundles(data: CreatePoInput) {
   if (!validated.tanggal_target) {
     const orderDate = new Date(validated.tanggal_order);
     orderDate.setDate(orderDate.getDate() + 30);
-    validated.tanggal_target = orderDate.toISOString().split('T')[0];
+    validated.tanggal_target = tanggalWIB(orderDate);
   }
 
   const supabase = await createClient();

@@ -10,6 +10,7 @@ import {
   hapusAmbilBenang,
 } from '@/lib/actions/inventory/benang.actions';
 import { useRouter } from 'next/navigation';
+import { tanggalWIB } from '@/lib/waktu';
 
 // ─── Props ───────────────────────────────────────────────────────────────────
 
@@ -26,7 +27,7 @@ function formatRp(n: number) {
 }
 
 function today() {
-  return new Date().toISOString().split('T')[0];
+  return tanggalWIB();
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────

@@ -20,6 +20,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { toast } from 'sonner';
+import { tanggalWIB } from '@/lib/waktu';
 
 interface Props {
   defaultPoNumber: string;
@@ -33,7 +34,7 @@ export function InputPoForm({ defaultPoNumber, klienList, modelList }: Props) {
   
   const [noPo, setNoPo] = useState(defaultPoNumber);
   const [klienId, setKlienId] = useState('');
-  const [tanggalOrder, setTanggalOrder] = useState(new Date().toISOString().split('T')[0]);
+  const [tanggalOrder, setTanggalOrder] = useState(tanggalWIB());
   const [tanggalTarget, setTanggalTarget] = useState('');
   const [catatan, setCatatan] = useState('');
 

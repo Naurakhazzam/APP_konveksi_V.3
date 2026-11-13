@@ -12,6 +12,7 @@ import {
   type ImportPoPayload,
   type ImportPoResult 
 } from '@/lib/actions/produksi/import-po.actions';
+import { tanggalWIB } from '@/lib/waktu';
 
 interface ExcelRow {
   Nomor_PO: string;
@@ -45,7 +46,7 @@ export default function ImportPoClient({ klienList }: Props) {
   const [step, setStep] = useState<ImportStep>('config');
   const [config, setConfig] = useState({
     klienId: '',
-    tanggalOrder: new Date().toISOString().split('T')[0],
+    tanggalOrder: tanggalWIB(),
     tanggalTarget: '',
   });
 

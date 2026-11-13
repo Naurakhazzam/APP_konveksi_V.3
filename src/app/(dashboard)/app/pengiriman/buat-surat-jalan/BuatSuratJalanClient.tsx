@@ -9,6 +9,7 @@ import CartPanel from './CartPanel';
 import ModalTutupDataLama from '@/components/produksi/ModalTutupDataLama';
 import TombolDataDitutup from '@/components/produksi/TombolDataDitutup';
 import { ChevronRight, ChevronDown, Search, X, Archive } from 'lucide-react';
+import { tanggalWIB } from '@/lib/waktu';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -66,7 +67,7 @@ export default function BuatSuratJalanClient({ initialBundles }: { initialBundle
   const [bundles, setBundles] = useState<BundleReadyToShip[]>(initialBundles);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
-  const [tanggal, setTanggal] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [tanggal, setTanggal] = useState<string>(tanggalWIB());
   const [catatan, setCatatan] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [alasanLebih, setAlasanLebih] = useState<Record<string, string>>({});
@@ -268,7 +269,7 @@ export default function BuatSuratJalanClient({ initialBundles }: { initialBundle
       setSelectedIds(new Set());
       setCatatan('');
       setAlasanLebih({});
-      setTanggal(new Date().toISOString().split('T')[0]);
+      setTanggal(tanggalWIB());
       router.refresh();
     } catch (error: any) {
       // Pesan error sekarang menyebutkan PO + nama barang + kode singkat di

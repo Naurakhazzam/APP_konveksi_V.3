@@ -1,6 +1,7 @@
 import { getRekapGaji } from '@/lib/actions/penggajian/penggajian.actions';
 import RekapGajiClient from './RekapGajiClient';
 import { PageWrapper } from '@/components/ui/PageWrapper';
+import { tanggalWIB } from '@/lib/waktu';
 
 export const metadata = { title: 'Rekap Gaji' };
 
@@ -15,8 +16,8 @@ function getPayrollCycleRange() {
   nextFriday.setDate(lastSaturday.getDate() + 6);
 
   return {
-    dari: lastSaturday.toISOString().split('T')[0],
-    sampai: nextFriday.toISOString().split('T')[0]
+    dari: tanggalWIB(lastSaturday),
+    sampai: tanggalWIB(nextFriday)
   };
 }
 
