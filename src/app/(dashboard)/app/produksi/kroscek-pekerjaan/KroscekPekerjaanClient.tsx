@@ -6,7 +6,7 @@ import { ChevronLeft, ChevronRight, Loader2, X, Users, Shirt, ClipboardList, Pri
 import {
   getHasilKerjaPekerja,
   getRincianHasilKerja,
-  getKroscekExportCSV,
+  getKroscekExportExcel,
   type HasilKerjaPekerja,
   type RincianHasilKerja,
 } from '@/lib/actions/produksi/kroscek-pekerjaan.actions';
@@ -154,12 +154,13 @@ export default function KroscekPekerjaanClient({
   const handleExport = async () => {
     setExportLoading(true);
     try {
-      const csv = await getKroscekExportCSV(periode.dari, periode.sampai);
-      const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+      const base64 = await getKroscekExportExcel(periode.dari, periode.sampai);
+      const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+      const blob = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `kroscek-pekerjaan-${periode.dari}_${periode.sampai}.csv`;
+      a.download = `kroscek-pekerjaan-${periode.dari}_${periode.sampai}.xlsx`;
       document.body.appendChild(a); a.click();
       document.body.removeChild(a); URL.revokeObjectURL(url);
     } catch (e: unknown) {
@@ -222,7 +223,7 @@ export default function KroscekPekerjaanClient({
             {exportLoading
               ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
               : <Download className="w-3.5 h-3.5" />}
-            {exportLoading ? 'Mengunduh...' : 'Export CSV'}
+            {exportLoading ? 'Mengunduh...' : 'Export Excel'}
           </button>
         </div>
       </div>
