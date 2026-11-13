@@ -45,6 +45,23 @@ const r3 = (n: number) => Math.round(n * 1000) / 1000;
 
 const utama = (r: PemakaianCuttingRow) => isBahanUtama(r.bahan_nama, r.jenis_bahan);
 
+/** "Yard" dan "yard" satuan yang sama — samakan ke huruf kecil. */
+const normSatuan = (s: string) => (s ?? '').trim().toLowerCase();
+
+/** Gabung angka per satuan jadi teks, mis. "48,2 yard · 2,6 meter". */
+const teksPerSatuan = (m: Map<string, number>) =>
+  [...m].filter(([, v]) => r3(v) !== 0).map(([s, v]) => `${fmtQty(r3(Math.abs(v)))} ${s}`).join(' · ');
+const tambahSatuan = (m: Map<string, number>, satuan: string, v: number) =>
+  m.set(satuan, (m.get(satuan) ?? 0) + v);
+
+/** Irit/boros satu jenis bahan (Bahan JN, Toyobo, …) */
+interface PerJenis {
+  jenis: string;
+  nIrit: number; nBoros: number;
+  irit: Map<string, number>; boros: Map<string, number>;
+  iritRp: number; borosRp: number; sesuaiRp: number;
+}
+
 /** Pemakaian bahan utama per bundle, untuk dibandingkan dengan patokan. */
 interface BundleNilai {
   rate: number; patokan: number | null; qty: number; satuan: string;
@@ -360,16 +377,18 @@ export default function PemakaianBahanTab({ rows, isOwner, onChanged }: Props) {
   const [exporting, setExporting] = useState(false);
 
   /** Periode menyaring catatan; pencarian memilih artikel utuh (semua bahannya tetap ikut). */
+  const rowsN = useMemo(() => rows.map(r => ({ ...r, satuan: normSatuan(r.satuan) })), [rows]);
+
   const tersaring = useMemo(() => {
     const batas = batasPeriode(periode);
-    const diPeriode = batas ? rows.filter(r => new Date(r.tanggal) >= batas) : rows;
+    const diPeriode = batas ? rowsN.filter(r => new Date(r.tanggal) >= batas) : rowsN;
     const kata = q.trim().toLowerCase();
     if (!kata) return diPeriode;
     const cocok = new Set(diPeriode.filter(r =>
       [r.no_po, r.klien_nama, r.model_nama ?? '', r.produk_nama, r.bahan_nama, r.barcode, r.warna, r.karyawan_nama ?? '']
         .some(s => s.toLowerCase().includes(kata))).map(r => `${r.po_id}::${r.model_nama ?? ''}`));
     return diPeriode.filter(r => cocok.has(`${r.po_id}::${r.model_nama ?? ''}`));
-  }, [rows, q, periode]);
+  }, [rowsN, q, periode]);
 
   const grup = useMemo(() => {
     const map = new Map<string, Omit<Grup, 'status'>>();
@@ -411,21 +430,35 @@ export default function PemakaianBahanTab({ rows, isOwner, onChanged }: Props) {
     const bundles = new Set<string>();
     let pcs = 0;
     const perSatuan = new Map<string, number>();
-    const kosong = () => ({ n: 0, sel: 0, rp: 0 });
+    const kosong = () => ({ n: 0, rp: 0, perSatuan: new Map<string, number>() });
     const st = { irit: kosong(), sesuai: kosong(), boros: kosong(), tanpa: kosong() };
     /** Nilai rupiah bahan utama yang punya patokan & harga */
     const rp = { standar: 0, aktual: 0 };
+    const jenisMap = new Map<string, PerJenis>();
     for (const g of grup) {
       rp.standar += g.status.rpStandar;
       rp.aktual += g.status.rpAktual;
       g.bundle_ids.forEach(id => bundles.add(id));
       pcs += g.qty_potong;
       for (const v of g.bahan.values()) perSatuan.set(v.satuan, (perSatuan.get(v.satuan) ?? 0) + v.qty);
-      st[g.status.status].n += 1;
-      st[g.status.status].sel += g.status.hemat;
-      st[g.status.status].rp += g.status.nilai;
+      const s = g.status;
+      st[s.status].n += 1;
+      st[s.status].rp += s.nilai;
+      tambahSatuan(st[s.status].perSatuan, s.satuan, s.hemat);
+
+      if (s.status === 'tanpa') continue;
+      const jenis = (g.items.find(utama) ?? g.items[0])?.jenis_bahan?.trim() || 'Lainnya';
+      const j = jenisMap.get(jenis) ?? {
+        jenis, nIrit: 0, nBoros: 0, irit: new Map(), boros: new Map(), iritRp: 0, borosRp: 0, sesuaiRp: 0,
+      };
+      if (s.status === 'irit') { j.nIrit += 1; j.iritRp += s.nilai; tambahSatuan(j.irit, s.satuan, s.hemat); }
+      else if (s.status === 'boros') { j.nBoros += 1; j.borosRp += s.nilai; tambahSatuan(j.boros, s.satuan, -s.hemat); }
+      else j.sesuaiRp += s.nilai;
+      jenisMap.set(jenis, j);
     }
-    return { bundles: bundles.size, pcs, perSatuan, st, rp };
+    const perJenis = [...jenisMap.values()].sort((a, b) =>
+      (b.iritRp + b.borosRp + b.sesuaiRp) - (a.iritRp + a.borosRp + a.sesuaiRp) || a.jenis.localeCompare(b.jenis));
+    return { bundles: bundles.size, pcs, perSatuan, st, rp, perJenis };
   }, [grup]);
 
   const togglePilih = (key: string) => setPilih(p => {
@@ -452,7 +485,6 @@ export default function PemakaianBahanTab({ rows, isOwner, onChanged }: Props) {
   const th = 'sticky top-0 z-10 px-4 py-3 text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold bg-[#16181A] border-b border-[#2A2D31]';
   const card = 'flex items-center gap-3 rounded-xl px-4 py-3 bg-[#1A1D1F] border border-[#2A2D31]';
   const ikon = 'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border';
-  const satuanUtama = [...ringkasan.perSatuan.keys()][0] ?? '';
 
   return (
     <div className="space-y-4">
@@ -497,36 +529,38 @@ export default function PemakaianBahanTab({ rows, isOwner, onChanged }: Props) {
         <div className={`${card} lg:col-span-1`}>
           <div className={`${ikon} bg-[rgba(229,193,123,0.12)] border-[rgba(229,193,123,0.2)]`}><Package className="w-4 h-4 text-[#e5c17b]" /></div>
           <div>
-            <p className="text-lg font-bold leading-none text-[#e8eaed]">
-              {ringkasan.perSatuan.size === 0 ? '0' : [...ringkasan.perSatuan].map(([s, v]) => `${fmtQty(v)} ${s}`).join(' · ')}
+            <p className="text-lg font-bold leading-tight text-[#e8eaed]">
+              {ringkasan.perSatuan.size === 0 ? '0' : [...ringkasan.perSatuan].map(([s, v], i) => (
+                <span key={s} className="whitespace-nowrap">{i > 0 && <span className="text-[#9aa0a6] font-normal"> · </span>}{fmtQty(v)} <span className="text-xs font-medium text-[#9aa0a6]">{s}</span></span>
+              ))}
             </p>
             <p className="text-[11px] text-[#9aa0a6] mt-1">Total bahan terpakai</p>
           </div>
         </div>
-        <div className={card}>
+        <div className={`${card} ${ringkasan.st.irit.n ? '' : 'opacity-50'}`}>
           <div className={`${ikon} bg-green-500/10 border-green-500/30`}><TrendingDown className="w-4 h-4 text-green-400" /></div>
           <div>
             <p className="text-lg font-bold leading-none text-green-400">{ringkasan.st.irit.n} <span className="text-xs font-medium text-[#9aa0a6]">artikel</span></p>
-            <p className="text-[11px] text-[#9aa0a6] mt-1">Irit {ringkasan.st.irit.n ? `(${bertanda(r3(ringkasan.st.irit.sel), fmtQty)} ${satuanUtama})` : ''}</p>
+            <p className="text-[11px] text-[#9aa0a6] mt-1">Irit {ringkasan.st.irit.n ? `(hemat ${teksPerSatuan(ringkasan.st.irit.perSatuan)})` : ''}</p>
             {ringkasan.st.irit.rp !== 0 && <p className="text-[11px] font-mono font-semibold text-green-400">{bertanda(ringkasan.st.irit.rp, fmtRp)}</p>}
           </div>
         </div>
-        <div className={card}>
+        <div className={`${card} ${ringkasan.st.sesuai.n ? '' : 'opacity-50'}`}>
           <div className={`${ikon} bg-sky-500/10 border-sky-500/30`}><CheckCircle2 className="w-4 h-4 text-sky-300" /></div>
           <div>
             <p className="text-lg font-bold leading-none text-sky-300">{ringkasan.st.sesuai.n} <span className="text-xs font-medium text-[#9aa0a6]">artikel</span></p>
             <p className="text-[11px] text-[#9aa0a6] mt-1">Sesuai patokan</p>
           </div>
         </div>
-        <div className={card}>
+        <div className={`${card} ${ringkasan.st.boros.n ? '' : 'opacity-50'}`}>
           <div className={`${ikon} bg-red-500/10 border-red-500/30`}><TrendingUp className="w-4 h-4 text-red-400" /></div>
           <div>
             <p className="text-lg font-bold leading-none text-red-400">{ringkasan.st.boros.n} <span className="text-xs font-medium text-[#9aa0a6]">artikel</span></p>
-            <p className="text-[11px] text-[#9aa0a6] mt-1">Boros {ringkasan.st.boros.n ? `(${bertanda(r3(ringkasan.st.boros.sel), fmtQty)} ${satuanUtama})` : ''}</p>
+            <p className="text-[11px] text-[#9aa0a6] mt-1">Boros {ringkasan.st.boros.n ? `(lebih ${teksPerSatuan(ringkasan.st.boros.perSatuan)})` : ''}</p>
             {ringkasan.st.boros.rp !== 0 && <p className="text-[11px] font-mono font-semibold text-red-400">{bertanda(ringkasan.st.boros.rp, fmtRp)}</p>}
           </div>
         </div>
-        <div className={card}>
+        <div className={`${card} ${ringkasan.st.tanpa.n ? '' : 'opacity-50'}`}>
           <div className={`${ikon} bg-[#2A2D31]/40 border-[#2A2D31]`}><HelpCircle className="w-4 h-4 text-[#9aa0a6]" /></div>
           <div>
             <p className="text-lg font-bold leading-none text-[#e8eaed]">{ringkasan.st.tanpa.n} <span className="text-xs font-medium text-[#9aa0a6]">artikel</span></p>
@@ -570,6 +604,45 @@ export default function PemakaianBahanTab({ rows, isOwner, onChanged }: Props) {
               artikel yang boros menambah biaya <b className="text-red-400">{bertanda(ringkasan.st.boros.rp, fmtRp)}</b>
               {ringkasan.st.sesuai.rp !== 0 && <>, artikel yang sesuai patokan (selisih kecil) <b>{bertanda(ringkasan.st.sesuai.rp, fmtRp)}</b></>}.
             </p>
+            {ringkasan.perJenis.length > 0 && (
+              <div className="rounded-lg border border-[#2A2D31] overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="bg-[#0D0E10] text-[10px] uppercase tracking-widest text-[#9aa0a6]">
+                      <th className="px-3 py-2 text-left font-bold">Jenis bahan</th>
+                      <th className="px-3 py-2 text-left font-bold">Irit</th>
+                      <th className="px-3 py-2 text-left font-bold">Boros</th>
+                      <th className="px-3 py-2 text-right font-bold">Hasil</th>
+                    </tr>
+                  </thead>
+                  <tbody className="[&_td]:border-t [&_td]:border-[#2A2D31]">
+                    {ringkasan.perJenis.map(j => {
+                      const net = j.iritRp + j.borosRp + j.sesuaiRp;
+                      return (
+                        <tr key={j.jenis}>
+                          <td className="px-3 py-2 font-semibold text-[#e8eaed] whitespace-nowrap">{j.jenis}</td>
+                          <td className="px-3 py-2">
+                            {j.nIrit ? <>
+                              <span className="font-mono font-semibold text-green-400">{bertanda(j.iritRp, fmtRp)}</span>
+                              <span className="text-[#9aa0a6]"> · hemat {teksPerSatuan(j.irit)} · {j.nIrit} artikel</span>
+                            </> : <span className="text-[#9aa0a6]">-</span>}
+                          </td>
+                          <td className="px-3 py-2">
+                            {j.nBoros ? <>
+                              <span className="font-mono font-semibold text-red-400">{bertanda(j.borosRp, fmtRp)}</span>
+                              <span className="text-[#9aa0a6]"> · lebih {teksPerSatuan(j.boros)} · {j.nBoros} artikel</span>
+                            </> : <span className="text-[#9aa0a6]">-</span>}
+                          </td>
+                          <td className={`px-3 py-2 text-right font-mono font-bold whitespace-nowrap ${net > 0 ? 'text-green-400' : net < 0 ? 'text-red-400' : 'text-sky-300'}`}>
+                            {net > 0 ? 'HEMAT ' : net < 0 ? 'BOROS ' : 'SESUAI '}{bertanda(net, fmtRp)}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
             <p className="text-[11px] text-[#9aa0a6]">
               Dihitung dari bahan utama yang sudah punya patokan HPP dan harga bahan. Artikel tanpa patokan atau tanpa harga tidak ikut dihitung.
             </p>
