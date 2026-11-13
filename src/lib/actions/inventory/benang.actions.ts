@@ -1,5 +1,6 @@
 'use server';
 
+import { assertCanEditProduksi } from '@/lib/auth/permissions';
 import { createClient } from '@/lib/supabase/server';
 import { getUserFromClaims } from '@/lib/auth/session';
 
@@ -169,6 +170,7 @@ export interface BenangSerahTerimaInput {
 export async function submitBenangSerahTerima(
   items: BenangSerahTerimaInput[]
 ): Promise<void> {
+  await assertCanEditProduksi();
   const supabase = await createClient();
   const { data: { user } } = await getUserFromClaims(supabase);
 

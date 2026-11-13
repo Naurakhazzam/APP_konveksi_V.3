@@ -1,13 +1,14 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
-import { getCurrentUserProfile } from '@/lib/auth/permissions';
+import { getCurrentUserProfile, assertCanEditProduksi } from '@/lib/auth/permissions';
 import { CreatePoSchema, AddItemsToPoSchema, type CreatePoInput, type AddItemsToPoInput } from '@/lib/validations/po.schemas';
 
 const TENANT_ID = 'STX-001';
 
 // 8. createPoWithBundles()
 export async function createPoWithBundles(data: CreatePoInput) {
+  await assertCanEditProduksi();
   const profile = await getCurrentUserProfile();
   if (!profile) throw new Error('Unauthorized');
 
@@ -69,6 +70,7 @@ export async function createPoWithBundles(data: CreatePoInput) {
 
 // 8b. addItemsToExistingPo() — tambah artikel ke PO yang sudah ada (status 'aktif')
 export async function addItemsToExistingPo(data: AddItemsToPoInput) {
+  await assertCanEditProduksi();
   const profile = await getCurrentUserProfile();
   if (!profile) throw new Error('Unauthorized');
 
@@ -120,6 +122,7 @@ export async function addItemsToExistingPo(data: AddItemsToPoInput) {
 
 // 9. cancelPo()
 export async function cancelPo(id: string) {
+  await assertCanEditProduksi();
   const profile = await getCurrentUserProfile();
   if (!profile) throw new Error('Unauthorized');
 

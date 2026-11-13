@@ -2,7 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server';
 import { revalidatePath } from 'next/cache';
-import { getCurrentUserProfile } from '@/lib/auth/permissions';
+import { getCurrentUserProfile, assertCanEditProduksi } from '@/lib/auth/permissions';
 
 const TENANT_ID = 'STX-001';
 
@@ -52,6 +52,7 @@ export async function tutupBundleDataLama(
   bundleIds: string[],
   alasan: string,
 ): Promise<{ jumlah: number }> {
+  await assertCanEditProduksi();
   const profile = await getCurrentUserProfile();
   if (!profile) throw new Error('Unauthorized');
   if (bundleIds.length === 0) throw new Error('Pilih minimal satu bundle');
@@ -71,6 +72,7 @@ export async function tutupBundleDataLama(
 }
 
 export async function bukaBundleDitutup(bundleId: string): Promise<{ barcode: string }> {
+  await assertCanEditProduksi();
   const profile = await getCurrentUserProfile();
   if (!profile) throw new Error('Unauthorized');
 

@@ -1,5 +1,6 @@
 'use server';
 
+import { assertCanEditProduksi } from '@/lib/auth/permissions';
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { getUserFromClaims } from '@/lib/auth/session';
@@ -36,6 +37,7 @@ export async function serahTerimaJahitBatch(input: {
   items?: { bundle_id: string; qty_selesai: number; alasan_qty_id: string | null }[];
   benang?: { inventory_item_id: string; qty: number }[];
 }): Promise<{ jumlah: number; stok_warnings: StokWarningJahit[]; upah_total: number }> {
+  await assertCanEditProduksi();
   const supabase = await createClient();
   const user_id = await getUserId(supabase);
   const { data, error } = await supabase.rpc('jahit_serah_terima_batch', {
@@ -61,6 +63,7 @@ export async function serahTerimaJahitBatch(input: {
 export async function selesaiJahitBatch(
   items: { bundle_id: string; qty: number; alasan_qty_id: string | null; catatan?: string }[],
 ): Promise<{ jumlah: number; qty_lebih: number }> {
+  await assertCanEditProduksi();
   const supabase = await createClient();
   const user_id = await getUserId(supabase);
   const { data, error } = await supabase.rpc('jahit_selesai_batch', {
@@ -84,6 +87,7 @@ export async function batalJahitBatch(
   mode: 'serah_terima' | 'selesai',
   alasan: string,
 ): Promise<{ jumlah: number }> {
+  await assertCanEditProduksi();
   const supabase = await createClient();
   const user_id = await getUserId(supabase);
   const { data, error } = await supabase.rpc('jahit_batal_batch', {
@@ -104,6 +108,7 @@ export async function batalJahitBatch(
  * otomatis dikembalikan.
  */
 export async function kembalikanKeCutting(bundle_ids: string[], alasan: string): Promise<{ jumlah: number }> {
+  await assertCanEditProduksi();
   const supabase = await createClient();
   const user_id = await getUserId(supabase);
   const { data, error } = await supabase.rpc('batal_selesai_cutting', {

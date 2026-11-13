@@ -1,5 +1,6 @@
 'use server';
 
+import { assertCanEditProduksi } from '@/lib/auth/permissions';
 import { createClient } from '@/lib/supabase/server';
 import { getUserFromClaims } from '@/lib/auth/session';
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -723,6 +724,7 @@ function revalidateProduksi() {
 
 /** Batalkan "Tutup" cutting: sisa muncul lagi di Pending Cutting. */
 export async function bukaKembaliCutting(bundle_id: string, alasan: string): Promise<{ sisa: number }> {
+  await assertCanEditProduksi();
   const supabase = await createClient();
   const user_id = await resolveUserId(supabase);
   const { data, error } = await supabase.rpc('buka_kembali_cutting', {
@@ -742,6 +744,7 @@ export async function kembalikanTahapBundle(
   tahap_tujuan: TahapBundle,
   alasan: string,
 ): Promise<{ tahap_dihapus: string[]; surat_jalan: { nomor_sj: string; sj_dihapus: boolean }[] }> {
+  await assertCanEditProduksi();
   const supabase = await createClient();
   const user_id = await resolveUserId(supabase);
   const { data, error } = await supabase.rpc('kembalikan_tahap_bundle', {
@@ -776,6 +779,7 @@ export async function koreksiQtyTahap(input: {
   penjahit_id?: string | null;
   qty_terima_lama?: number | null;
 }): Promise<void> {
+  await assertCanEditProduksi();
   const supabase = await createClient();
 
   if (input.tahap === 'jahit' && input.qty_terima !== input.qty_terima_lama) {
@@ -819,6 +823,7 @@ export async function koreksiQtyBerantai(input: {
   qty: number;
   alasan: string;
 }): Promise<{ jumlah_tahap: number; surat_jalan: { nomor_sj: string; qty_lama: number; qty_baru: number }[] }> {
+  await assertCanEditProduksi();
   const supabase = await createClient();
   const user_id = await resolveUserId(supabase);
   const { data, error } = await supabase.rpc('koreksi_qty_berantai', {

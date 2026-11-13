@@ -1,7 +1,7 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
-import { getCurrentUserProfile } from '@/lib/auth/permissions';
+import { getCurrentUserProfile, assertCanEditProduksi } from '@/lib/auth/permissions';
 
 const TENANT_ID = 'STX-001';
 
@@ -61,6 +61,7 @@ export async function getModelAksesori(model_id: string): Promise<ModelAksesori[
 
 /** 2. Tambah kebutuhan aksesori ke model */
 export async function addModelAksesori(input: AddModelAksesoriInput): Promise<void> {
+  await assertCanEditProduksi();
   const profile = await getCurrentUserProfile();
   if (!profile) throw new Error('Unauthorized');
 
@@ -83,6 +84,7 @@ export async function addModelAksesori(input: AddModelAksesoriInput): Promise<vo
 
 /** 3. Hapus kebutuhan aksesori */
 export async function deleteModelAksesori(id: string): Promise<void> {
+  await assertCanEditProduksi();
   const supabase = await createClient();
 
   const { error } = await supabase
@@ -271,6 +273,7 @@ export async function getWarnaAksesori(warna_id?: string): Promise<WarnaAksesori
 
 /** Tambah warna_aksesori */
 export async function addWarnaAksesori(input: AddWarnaAksesoriInput): Promise<void> {
+  await assertCanEditProduksi();
   const profile = await getCurrentUserProfile();
   if (!profile) throw new Error('Unauthorized');
 
@@ -289,6 +292,7 @@ export async function addWarnaAksesori(input: AddWarnaAksesoriInput): Promise<vo
 
 /** Hapus warna_aksesori */
 export async function deleteWarnaAksesori(id: string): Promise<void> {
+  await assertCanEditProduksi();
   const supabase = await createClient();
 
   const { error } = await supabase

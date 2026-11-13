@@ -1,7 +1,7 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
-import { getCurrentUserProfile } from '@/lib/auth/permissions';
+import { getCurrentUserProfile, assertCanEditProduksi } from '@/lib/auth/permissions';
 
 const TENANT_ID = 'STX-001';
 
@@ -310,6 +310,7 @@ export async function getPoDetail(noPoNumber: string): Promise<PoDetail | null> 
  * Menghapus PO jika statusnya masih 'aktif' atau 'draft' dan belum ada scan log sama sekali.
  */
 export async function deletePoById(id: string): Promise<{ success: boolean; message: string }> {
+  await assertCanEditProduksi();
   const profile = await getCurrentUserProfile();
   if (!profile) throw new Error('Unauthorized');
   

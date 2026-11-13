@@ -1,5 +1,6 @@
 'use server';
 
+import { assertCanEditProduksi } from '@/lib/auth/permissions';
 import { createClient } from '@/lib/supabase/server';
 import { getUserFromClaims } from '@/lib/auth/session';
 import {
@@ -43,6 +44,7 @@ async function resolveUserId(): Promise<string> {
 export async function scanCuttingTerima(
   input: ScanCuttingTerimaInput
 ): Promise<ScanCuttingTerimaResult> {
+  await assertCanEditProduksi();
   const validated = ScanCuttingTerimaInputSchema.parse(input);
   const user_id   = await resolveUserId();
   const supabase  = await createClient();
@@ -74,6 +76,7 @@ export async function scanCuttingTerima(
 export async function scanSelesai(
   input: ScanSelesaiInput
 ): Promise<ScanSelesaiResult> {
+  await assertCanEditProduksi();
   const validated = ScanSelesaiInputSchema.parse(input);
   const user_id   = await resolveUserId();
   const supabase  = await createClient();
@@ -119,6 +122,7 @@ export async function scanJahitTerima(input: {
   karyawan_id: string;
   qty: number;
 }): Promise<ScanJahitTerimaResult> {
+  await assertCanEditProduksi();
   const user_id  = await resolveUserId();
   const supabase = await createClient();
 
@@ -147,6 +151,7 @@ export interface ScanTerimaGenericResult {
 export async function scanTerimaGeneric(
   input: ScanTerimaGenericInput
 ): Promise<ScanTerimaGenericResult> {
+  await assertCanEditProduksi();
   const validated = ScanTerimaGenericInputSchema.parse(input);
   const user_id   = await resolveUserId();
   const supabase  = await createClient();
@@ -183,6 +188,7 @@ export async function scanSplitBundle(input: {
   karyawan_id_asli:   string;
   karyawan_id_sisa:   string;
 }): Promise<ScanSplitBundleResult> {
+  await assertCanEditProduksi();
   const user_id  = await resolveUserId();
   const supabase = await createClient();
 
@@ -223,6 +229,7 @@ export async function scanLanjutTahap(input: {
   karyawan_id: string;
   qty: number;
 }): Promise<ScanLanjutTahapResult> {
+  await assertCanEditProduksi();
   const user_id  = await resolveUserId();
   const supabase = await createClient();
 
@@ -263,6 +270,7 @@ export async function splitBundleAwalJahit(input: {
   qty_assign:   number;
   karyawan_id:  string;
 }): Promise<SplitBundleAwalJahitResult> {
+  await assertCanEditProduksi();
   const user_id  = await resolveUserId();
   const supabase = await createClient();
 
@@ -309,6 +317,7 @@ export async function koreksiSerahTerimaJahit(input: {
   alasan:          string;
   koreksi_cutting: boolean;
 }): Promise<KoreksiSerahTerimaJahitResult> {
+  await assertCanEditProduksi();
   const user_id  = await resolveUserId();
   const supabase = await createClient();
 
@@ -351,6 +360,7 @@ export async function koreksiHasilCutting(input: {
   qty:       number;
   alasan:    string;
 }): Promise<KoreksiHasilCuttingResult> {
+  await assertCanEditProduksi();
   const user_id  = await resolveUserId();
   const supabase = await createClient();
 

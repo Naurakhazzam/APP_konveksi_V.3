@@ -1,5 +1,6 @@
 'use server';
 
+import { assertCanEditProduksi } from '@/lib/auth/permissions';
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 
@@ -225,6 +226,7 @@ export async function getRejectDetail(id: string): Promise<RejectDetail> {
  * Semua logika bisnis (update status, pemotongan gaji, dsb.) dihandle di sisi DB.
  */
 export async function buatReject(input: BuatRejectInput): Promise<void> {
+  await assertCanEditProduksi();
   if (!input.alasan_reject_id) throw new Error('alasan_reject_id wajib diisi');
   if (!input.qty_reject || input.qty_reject < 1)
     throw new Error('qty_reject harus minimal 1');
@@ -264,6 +266,7 @@ export async function konfirmasiReject(
   reject_log_id: string,
   responsible_ids: string[],
 ): Promise<void> {
+  await assertCanEditProduksi();
   if (!reject_log_id) throw new Error('reject_log_id wajib diisi');
   if (!responsible_ids || responsible_ids.length === 0)
     throw new Error('Minimal satu karyawan bertanggung jawab harus dipilih');
@@ -291,6 +294,7 @@ export async function konfirmasiReject(
  * @param reject_log_id - UUID reject_log yang rework-nya sudah selesai
  */
 export async function selesaiRework(reject_log_id: string): Promise<void> {
+  await assertCanEditProduksi();
   if (!reject_log_id) throw new Error('reject_log_id wajib diisi');
 
   const supabase = await createClient();
@@ -317,6 +321,7 @@ export interface RecordRejectInput {
 }
 
 export async function recordReject(input: RecordRejectInput): Promise<void> {
+  await assertCanEditProduksi();
   const supabase = await createClient();
 
   const { error } = await supabase.rpc('record_reject', {

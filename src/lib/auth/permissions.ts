@@ -52,6 +52,27 @@ export const getCurrentUserProfile = cache(async (): Promise<UserProfile | null>
 });
 
 // ---------------------------------------------------------------------------
+// Produksi read-only
+// admin_keuangan boleh MELIHAT menu produksi (jika dicentang di Permission
+// Matrix), tapi tidak boleh mengubah data apa pun di sana.
+// ---------------------------------------------------------------------------
+
+export const PRODUKSI_READ_ONLY_MESSAGE =
+  'Akses hanya-lihat: role Anda tidak dapat mengubah data produksi.';
+
+export function isProduksiReadOnly(role: UserRole | string | null | undefined): boolean {
+  return role === 'admin_keuangan';
+}
+
+/** Panggil di awal setiap server action yang MENGUBAH data produksi. */
+export async function assertCanEditProduksi(): Promise<UserProfile> {
+  const profile = await getCurrentUserProfile();
+  if (!profile) throw new Error('Unauthorized');
+  if (isProduksiReadOnly(profile.role)) throw new Error(PRODUKSI_READ_ONLY_MESSAGE);
+  return profile;
+}
+
+// ---------------------------------------------------------------------------
 // canAccessPage
 // Sesuai matrix akses halaman BR-10 bagian 2.1.
 // `page` adalah segment path, contoh: 'master-data', 'produksi/scan-station'

@@ -1,5 +1,6 @@
 'use server';
 
+import { assertCanEditProduksi } from '@/lib/auth/permissions';
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { getUserFromClaims } from '@/lib/auth/session';
@@ -186,6 +187,7 @@ export async function selesaiTahapBatch(
   tahap: TahapBorongan,
   items: { bundle_id: string; qty?: number; alasan_qty_id?: string | null }[],
 ): Promise<{ jumlah: number; upah_total: number }> {
+  await assertCanEditProduksi();
   const supabase = await createClient();
   const user_id = await getUserId(supabase);
   const { data, error } = await supabase.rpc('tahap_selesai_batch', {
@@ -204,6 +206,7 @@ export async function selesaiTahapBatch(
 export async function batalSelesaiTahapBatch(
   tahap: TahapBorongan, bundle_ids: string[], alasan: string,
 ): Promise<{ jumlah: number }> {
+  await assertCanEditProduksi();
   const supabase = await createClient();
   const user_id = await getUserId(supabase);
   const { data, error } = await supabase.rpc('tahap_batal_selesai_batch', {

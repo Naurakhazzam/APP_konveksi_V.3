@@ -1,5 +1,6 @@
 'use server';
 
+import { assertCanEditProduksi } from '@/lib/auth/permissions';
 import { createClient } from '@/lib/supabase/server';
 import { getUserFromClaims } from '@/lib/auth/session';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -243,6 +244,7 @@ export async function getPOCuttingList(): Promise<POCuttingItem[]> {
 export async function mulaiCuttingBatch(
   bundle_ids: string[]
 ): Promise<{ success: boolean; jumlah_bundle: number; error?: string }> {
+  await assertCanEditProduksi();
   try {
     const user_id = await resolveUserId();
     const supabase = await createClient();
@@ -308,6 +310,7 @@ export async function selesaiCuttingBatch(
    *  tahu upahnya milik siapa. */
   karyawan_id?: string | null,
 ): Promise<SelesaiCuttingResult> {
+  await assertCanEditProduksi();
   try {
     const user_id = await resolveUserId();
     const supabase = await createClient();
@@ -350,6 +353,7 @@ export async function closeBundleCutting(
   /** Wajib dari UI — tercatat di audit_log & timeline Lacak Barcode. */
   alasan?: string,
 ): Promise<{ success: boolean; error?: string }> {
+  await assertCanEditProduksi();
   try {
     const user_id = await resolveUserId();
     const supabase = await createClient();
@@ -389,6 +393,7 @@ export async function lanjutCuttingPartial(
   /** Tukang potong — tanpa ini upah cutting susulan tidak terbentuk. */
   karyawan_id?: string | null,
 ): Promise<LanjutCuttingResult> {
+  await assertCanEditProduksi();
   try {
     const user_id = await resolveUserId();
     const supabase = await createClient();
@@ -718,6 +723,7 @@ export async function getBundlesForPO(
 export async function deleteBundleMenunggu(
   bundle_ids: string[]
 ): Promise<{ success: boolean; deleted: number; error?: string }> {
+  await assertCanEditProduksi();
   if (!bundle_ids.length) return { success: false, deleted: 0, error: 'Tidak ada bundle dipilih' };
 
   try {

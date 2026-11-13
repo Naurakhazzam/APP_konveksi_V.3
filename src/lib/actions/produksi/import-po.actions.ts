@@ -1,7 +1,7 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
-import { getCurrentUserProfile } from '@/lib/auth/permissions';
+import { getCurrentUserProfile, assertCanEditProduksi } from '@/lib/auth/permissions';
 
 const TENANT_ID = 'STX-001';
 
@@ -91,6 +91,7 @@ export async function validateImportSkus(skuList: string[]): Promise<SkuValidati
  * Memanggil RPC create_po_with_bundles langsung.
  */
 export async function importPoBulk(pos: ImportPoPayload[]): Promise<ImportPoResult[]> {
+  await assertCanEditProduksi();
   const profile = await getCurrentUserProfile();
   if (!profile) throw new Error('Unauthorized');
 

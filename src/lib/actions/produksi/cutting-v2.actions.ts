@@ -18,7 +18,7 @@ import { createClient } from '@/lib/supabase/server';
 import { getUserFromClaims } from '@/lib/auth/session';
 import { revalidatePath } from 'next/cache';
 import type { AntrianBundle } from './antrian.actions';
-import { getCurrentUserProfile } from '@/lib/auth/permissions';
+import { getCurrentUserProfile, assertCanEditProduksi } from '@/lib/auth/permissions';
 import { isBahanUtama } from '@/lib/produksi/patokan-bahan';
 
 const TENANT_ID = 'STX-001';
@@ -185,6 +185,7 @@ export interface MulaiResult {
 }
 
 export async function mulaiCuttingV2(items: { bundle_id: string; qty: number }[]): Promise<MulaiResult> {
+  await assertCanEditProduksi();
   try {
     const user_id = await resolveUserId();
     const supabase = await createClient();
@@ -224,6 +225,7 @@ export async function selesaiCuttingV2(
   kurangiSisa: boolean,
   karyawanId: string | null,
 ): Promise<SelesaiResult> {
+  await assertCanEditProduksi();
   try {
     const user_id = await resolveUserId();
     const supabase = await createClient();
@@ -535,6 +537,7 @@ export async function getPrintBundlesByIds(ids: string[]): Promise<AntrianBundle
 export async function batalMulaiCutting(
   bundleIds: string[],
 ): Promise<{ success: boolean; jumlah_bundle: number; sisa_digabung: number; error?: string }> {
+  await assertCanEditProduksi();
   try {
     const user_id = await resolveUserId();
     const supabase = await createClient();
@@ -660,6 +663,7 @@ export async function koreksiPemakaianBahan(
   items: { id: string; inventory_item_id: string; rate_per_pcs: number }[],
   alasan: string,
 ): Promise<{ success: boolean; diubah: number; dihapus: number; error?: string }> {
+  await assertCanEditProduksi();
   try {
     const profile = await getCurrentUserProfile();
     if (!profile || profile.role !== 'owner') {

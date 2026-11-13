@@ -1,5 +1,6 @@
 'use server';
 
+import { assertCanEditProduksi } from '@/lib/auth/permissions';
 import { createClient } from '@/lib/supabase/server';
 import { getUserFromClaims } from '@/lib/auth/session';
 import bcrypt from 'bcryptjs';
@@ -100,6 +101,7 @@ export async function resolveQtyApproval(
   catatan: string,
   pin: string
 ): Promise<{ status: string; qty_final: number }> {
+  await assertCanEditProduksi();
   const userId = await resolveUserId();
   const supabase = await createClient();
 
