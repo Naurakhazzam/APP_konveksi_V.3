@@ -51,8 +51,12 @@ const normSatuan = (s: string) => (s ?? '').trim().toLowerCase();
 /** Gabung angka per satuan jadi teks, mis. "48,2 yard · 2,6 meter". */
 const teksPerSatuan = (m: Map<string, number>) =>
   [...m].filter(([, v]) => r3(v) !== 0).map(([s, v]) => `${fmtQty(r3(Math.abs(v)))} ${s}`).join(' · ');
-const tambahSatuan = (m: Map<string, number>, satuan: string, v: number) =>
-  m.set(satuan, (m.get(satuan) ?? 0) + v);
+/** Ringkasan memakai yard: bahan bersatuan meter dikonversi (1 yard = 0,9144 meter). */
+const METER_PER_YARD = 0.9144;
+const tambahSatuan = (m: Map<string, number>, satuan: string, v: number) => {
+  const [s, n] = satuan === 'meter' ? ['yard', v / METER_PER_YARD] : [satuan, v];
+  m.set(s, (m.get(s) ?? 0) + n);
+};
 
 /** Irit/boros satu jenis bahan (Bahan JN, Toyobo, …) */
 interface PerJenis {
@@ -440,7 +444,7 @@ export default function PemakaianBahanTab({ rows, isOwner, onChanged }: Props) {
       rp.aktual += g.status.rpAktual;
       g.bundle_ids.forEach(id => bundles.add(id));
       pcs += g.qty_potong;
-      for (const v of g.bahan.values()) perSatuan.set(v.satuan, (perSatuan.get(v.satuan) ?? 0) + v.qty);
+      for (const v of g.bahan.values()) tambahSatuan(perSatuan, v.satuan, v.qty);
       const s = g.status;
       st[s.status].n += 1;
       st[s.status].rp += s.nilai;
@@ -618,24 +622,36 @@ export default function PemakaianBahanTab({ rows, isOwner, onChanged }: Props) {
                   <tbody className="[&_td]:border-t [&_td]:border-[#2A2D31]">
                     {ringkasan.perJenis.map(j => {
                       const net = j.iritRp + j.borosRp + j.sesuaiRp;
+                      // Rp 0 padahal ada irit/boros = harga bahan belum tercatat saat cutting.
+                      // Status tetap dari jumlah bahan, bukan dari rupiah.
+                      const tanpaHarga = net === 0 && (j.nIrit > 0 || j.nBoros > 0);
+                      const statusQty = j.nBoros && !j.nIrit ? 'boros' : j.nIrit && !j.nBoros ? 'irit' : 'campur';
+                      const belumHarga = <span className="font-semibold text-orange-400">harga belum tercatat</span>;
                       return (
                         <tr key={j.jenis}>
                           <td className="px-3 py-2 font-semibold text-[#e8eaed] whitespace-nowrap">{j.jenis}</td>
                           <td className="px-3 py-2">
                             {j.nIrit ? <>
-                              <span className="font-mono font-semibold text-green-400">{bertanda(j.iritRp, fmtRp)}</span>
+                              {j.iritRp ? <span className="font-mono font-semibold text-green-400">{bertanda(j.iritRp, fmtRp)}</span> : belumHarga}
                               <span className="text-[#9aa0a6]"> · hemat {teksPerSatuan(j.irit)} · {j.nIrit} artikel</span>
                             </> : <span className="text-[#9aa0a6]">-</span>}
                           </td>
                           <td className="px-3 py-2">
                             {j.nBoros ? <>
-                              <span className="font-mono font-semibold text-red-400">{bertanda(j.borosRp, fmtRp)}</span>
+                              {j.borosRp ? <span className="font-mono font-semibold text-red-400">{bertanda(j.borosRp, fmtRp)}</span> : belumHarga}
                               <span className="text-[#9aa0a6]"> · lebih {teksPerSatuan(j.boros)} · {j.nBoros} artikel</span>
                             </> : <span className="text-[#9aa0a6]">-</span>}
                           </td>
-                          <td className={`px-3 py-2 text-right font-mono font-bold whitespace-nowrap ${net > 0 ? 'text-green-400' : net < 0 ? 'text-red-400' : 'text-sky-300'}`}>
-                            {net > 0 ? 'HEMAT ' : net < 0 ? 'BOROS ' : 'SESUAI '}{bertanda(net, fmtRp)}
-                          </td>
+                          {tanpaHarga ? (
+                            <td className={`px-3 py-2 text-right font-bold whitespace-nowrap ${statusQty === 'boros' ? 'text-red-400' : statusQty === 'irit' ? 'text-green-400' : 'text-[#9aa0a6]'}`}>
+                              {statusQty === 'boros' ? 'BOROS' : statusQty === 'irit' ? 'HEMAT' : 'CAMPUR'}
+                              <span className="block text-[10px] font-medium text-orange-400">Rp belum bisa dihitung</span>
+                            </td>
+                          ) : (
+                            <td className={`px-3 py-2 text-right font-mono font-bold whitespace-nowrap ${net > 0 ? 'text-green-400' : net < 0 ? 'text-red-400' : 'text-sky-300'}`}>
+                              {net > 0 ? 'HEMAT ' : net < 0 ? 'BOROS ' : 'SESUAI '}{bertanda(net, fmtRp)}
+                            </td>
+                          )}
                         </tr>
                       );
                     })}
