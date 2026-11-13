@@ -18,11 +18,14 @@ import TombolDataDitutup from '@/components/produksi/TombolDataDitutup';
 import RowMenu from '@/components/produksi/RowMenu';
 import {
   Package, Clock, Loader2, Users, Printer, CheckCircle, AlertTriangle, Scissors,
-  Pencil, Archive, Search, Undo2, X, SkipForward,
+  Pencil, Archive, Search, Undo2, X, SkipForward, Ticket,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getAksesoriForKartuKerja } from '@/lib/actions/produksi/model-aksesori.actions';
 import PrintKartuKerjaLayout, { type KartuBundle, type AksesoriItem } from '@/app/(dashboard)/app/produksi/antrian-cutting/PrintKartuKerjaLayout';
+import PrintCuttingTicketLayout from '@/app/(dashboard)/app/produksi/daftar-po/PrintCuttingTicketLayout';
+import { getPrintBundlesByIds } from '@/lib/actions/produksi/cutting-v2.actions';
+import type { AntrianBundle } from '@/lib/actions/produksi/antrian.actions';
 
 interface Props {
   initialAntrian: AntrianJahitBundle[];
@@ -180,6 +183,35 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
       aksesori: aks, nama_penjahit: karyawanNama,
     }]);
     setTimeout(() => { window.print(); setPrintUlangData(null); }, 500);
+  };
+
+  // ── Cetak Tiket Nomor Cutting (bundle di Antrian) ──
+  const [tiketData, setTiketData] = useState<AntrianBundle[]>([]);
+  const [busyTiket, setBusyTiket] = useState(false);
+
+  useEffect(() => {
+    if (!tiketData.length) return;
+    const t = setTimeout(() => window.print(), 200);
+    return () => clearTimeout(t);
+  }, [tiketData]);
+  useEffect(() => {
+    const fn = () => setTiketData([]);
+    window.addEventListener('afterprint', fn);
+    return () => window.removeEventListener('afterprint', fn);
+  }, []);
+
+  const cetakTiket = async (ids: string[]) => {
+    if (!ids.length || busyTiket) return;
+    setBusyTiket(true);
+    try {
+      const data = await getPrintBundlesByIds(ids);
+      if (!data.length) { toast.error('Bundle tidak ditemukan'); return; }
+      setTiketData(data);
+    } catch (e) {
+      toast.error('Gagal menyiapkan cetak: ' + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setBusyTiket(false);
+    }
   };
 
   // ── Scan / Enter di kolom cari: barcode persis → centang baris itu ──
@@ -340,6 +372,14 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
               {pilihAntrian.size > 0 && (
                 <>
                   <button
+                    onClick={() => cetakTiket([...pilihAntrian])}
+                    disabled={busyTiket}
+                    title="Cetak Tiket Nomor Cutting untuk bundle terpilih"
+                    className="flex items-center gap-2 h-9 px-3 rounded-lg border border-[#2A2D31] text-[#e8eaed] text-xs font-bold hover:bg-[#2A2D31] disabled:opacity-50"
+                  >
+                    {busyTiket ? <Loader2 className="w-4 h-4 animate-spin" /> : <Ticket className="w-4 h-4" />} Cetak Tiket ({pilihAntrian.size})
+                  </button>
+                  <button
                     onClick={() => setShowTutupDataLama(true)}
                     title="Bundle sudah beres di lapangan tapi tertinggal di sistem — tutup tanpa upah"
                     className="flex items-center gap-2 h-9 px-3 rounded-lg border border-[#2A2D31] text-[#9aa0a6] text-xs font-bold hover:bg-[#2A2D31] hover:text-[#e8eaed]"
@@ -434,6 +474,7 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
                             onClick: () => setSplitAwalBundle(item), disabled: item.qty_per_bundle <= 1,
                             hint: item.qty_per_bundle <= 1 ? 'Qty cuma 1 pcs' : 'Tugaskan sebagian qty ke satu penjahit, sisanya tetap di Antrian',
                           },
+                          { label: 'Cetak tiket', icon: <Ticket className="w-3.5 h-3.5" />, onClick: () => cetakTiket([item.id]) },
                           { label: 'Koreksi hasil cutting', icon: <Pencil className="w-3.5 h-3.5" />, onClick: () => setKoreksiCuttingBundle(item) },
                           {
                             label: 'Kembalikan ke Cutting', icon: <Undo2 className="w-3.5 h-3.5" />, danger: true,
@@ -637,6 +678,8 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
           onClose={() => setKoreksiCuttingBundle(null)}
         />
       )}
+
+      {tiketData.length > 0 && <PrintCuttingTicketLayout bundles={tiketData} />}
 
       {printUlangData && printUlangData.length > 0 && (
         <PrintKartuKerjaLayout
