@@ -625,6 +625,11 @@ export default function InventoryOverviewClient({ items, kategoriTrxList, warnaL
               />
             </div>
 
+            <p className="text-xs text-[#9aa0a6] bg-[#16181A] border border-[#2A2D31] rounded-lg px-3 py-2">
+              Total belanja (qty × harga) otomatis tercatat sebagai <b className="text-[#e8eaed]">uang keluar di Buku Kas</b> (kategori Pembelian Bahan).
+              Tidak perlu input lagi di Buku Kas.
+            </p>
+
             <DialogFooter className="pt-4 flex flex-col sm:flex-row gap-4 sm:gap-0 items-center justify-between">
               <div className="text-sm font-medium text-[#e5c17b] bg-[#e5c17b]/10 px-3 py-1.5 rounded-lg border border-[#e5c17b]/20">
                 Preview Total Nilai: Rp — (Update Realtime)

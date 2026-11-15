@@ -224,6 +224,7 @@ export async function selesaiCuttingV2(
   pemakaian: { po_item_id: string; inventory_item_id: string; rate_per_pcs: number }[],
   kurangiSisa: boolean,
   karyawanId: string | null,
+  dariSisa = false,
 ): Promise<SelesaiResult> {
   await assertCanEditProduksi();
   try {
@@ -236,6 +237,7 @@ export async function selesaiCuttingV2(
       p_user_id: user_id,
       p_tenant_id: TENANT_ID,
       p_karyawan_id: karyawanId,
+      p_dari_sisa: dariSisa,
     });
     if (error) return { success: false, ...EMPTY_SELESAI, error: error.message };
     revalidatePath(PATH);

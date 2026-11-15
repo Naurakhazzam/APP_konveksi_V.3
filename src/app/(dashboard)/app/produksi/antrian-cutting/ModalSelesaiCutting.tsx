@@ -48,6 +48,7 @@ export default function ModalSelesaiCutting({ selectedBundleIds, onSuccess, onCl
   const [patokan, setPatokan] = useState<Record<string, PatokanArtikel>>({});
   const [kurangiSisa, setKurangiSisa] = useState(true);
   const [konfirmLebih, setKonfirmLebih] = useState(false);
+  const [dariSisa, setDariSisa] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [stokWarnings, setStokWarnings] = useState<SelesaiResult['stok_warnings']>([]);
@@ -179,7 +180,7 @@ export default function ModalSelesaiCutting({ selectedBundleIds, onSuccess, onCl
 
     const res = await selesaiCuttingV2(
       bundles.map(b => ({ bundle_id: b.id, qty_aktual: qtyOf(b) })),
-      pemakaian, kurangiSisa, karyawanId || null);
+      pemakaian, kurangiSisa, karyawanId || null, dariSisa);
     setIsSubmitting(false);
 
     if (!res.success) { toast.error(res.error ?? 'Gagal menyimpan'); return; }
@@ -298,6 +299,15 @@ export default function ModalSelesaiCutting({ selectedBundleIds, onSuccess, onCl
               {/* B. Bahan per artikel */}
               <section>
                 <h3 className={h3}>B — Pemakaian Bahan per Artikel</h3>
+                <label className={`mb-3 flex items-start gap-2 rounded-lg border p-3 text-xs cursor-pointer ${dariSisa ? 'border-emerald-500/40 bg-emerald-500/5' : 'border-[#2A2D31]'}`}>
+                  <input type="checkbox" checked={dariSisa} onChange={e => setDariSisa(e.target.checked)} className="accent-emerald-400 mt-0.5" />
+                  <span className="text-[#e8eaed] font-semibold">Ini memakai sisa bahan
+                    <span className="block text-[10px] font-normal text-[#9aa0a6]">
+                      Bahan di bawah dimasukkan ke stok sebanyak pemakaian lalu langsung terpakai — stok gudang tidak berkurang,
+                      pemakaian & biaya (harga referensi) tetap tercatat. Tanpa jurnal pembelian.
+                    </span>
+                  </span>
+                </label>
                 <div className="space-y-3">
                   {artikel.map(a => {
                     const q = qtyArtikel(a.po_item_id);
@@ -387,7 +397,7 @@ export default function ModalSelesaiCutting({ selectedBundleIds, onSuccess, onCl
                 </div>
                 {ringkasanBahan.length > 0 && (
                   <div className="space-y-1">
-                    <div className="text-[10px] text-[#9aa0a6] uppercase">Bahan yang dikurangi</div>
+                    <div className="text-[10px] text-[#9aa0a6] uppercase">{dariSisa ? 'Bahan dari sisa (stok tidak berkurang)' : 'Bahan yang dikurangi'}</div>
                     {ringkasanBahan.map(d => (
                       <div key={d.nama} className="flex justify-between text-xs">
                         <span className="text-[#e8eaed]">{d.nama}</span>

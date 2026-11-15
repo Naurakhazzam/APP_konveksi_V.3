@@ -237,7 +237,7 @@ export default function AlertOrderClient({ items, kategoriTrxList }: Props) {
             </div>
 
             <DialogFooter className="pt-4 flex items-center justify-between">
-              <div className="text-xs text-[#9aa0a6]">Total nilai akan tercatat di jurnal buku besar.</div>
+              <div className="text-xs text-[#9aa0a6]">Total belanja otomatis tercatat sebagai uang keluar di Buku Kas.</div>
               <div className="flex gap-2">
                 <Button type="button" variant="ghost" onClick={() => setShowStokMasuk(false)} className="text-[#9aa0a6]">Batal</Button>
                 <Button type="submit" disabled={loading} className="bg-[#e5c17b] hover:bg-[#d4b06a] text-[#0D0E10] font-bold">

@@ -384,6 +384,12 @@ export default function BukuKasClient({ initialEntries, poList, kompoList }: Pro
                     <option key={k} value={k}>{k}</option>
                   ))}
                 </select>
+                {form.kategori === 'Pembelian Bahan' && (
+                  <p className="text-[11px] text-orange-300 mt-1">
+                    Belanja bahan yang diinput lewat Inventory → Stok Masuk sudah otomatis tercatat di sini.
+                    Input manual hanya untuk belanja bahan yang tidak masuk stok.
+                  </p>
+                )}
               </div>
             </div>
 
