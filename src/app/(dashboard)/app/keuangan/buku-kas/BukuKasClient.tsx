@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import TogglePoLama from '@/components/keuangan/TogglePoLama';
 import { poPeriodeBaru } from '@/lib/keuangan/periode-po';
 import { toast } from 'sonner';
-import { Plus, Trash2, Loader2, Filter, TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { Plus, Trash2, Loader2, Filter, TrendingUp, TrendingDown, Minus, Pencil, Lock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -25,6 +25,7 @@ import {
 import {
   getBukuKasEntries,
   addBukuKas,
+  updateBukuKas,
   deleteBukuKas,
 } from '@/lib/actions/keuangan/buku-kas.actions';
 
@@ -40,6 +41,12 @@ const idrFmt = (n: number) =>
 
 const dateFmt = (d: string) =>
   new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+
+/** Nama hari dari tanggal 'YYYY-MM-DD' (tanpa geser zona waktu) */
+const hariFmt = (d: string) => {
+  const [y, m, day] = d.slice(0, 10).split('-').map(Number);
+  return new Date(y, m - 1, day).toLocaleDateString('id-ID', { weekday: 'long' });
+};
 
 const inputCls = 'w-full h-10 px-3 rounded-lg bg-[#1E2124] border border-[#2A2D31] text-sm text-[#e8eaed] focus:ring-1 focus:ring-[#e5c17b] outline-none';
 const labelCls = 'block text-[10px] font-bold text-[#9aa0a6] uppercase tracking-widest mb-1';
@@ -88,6 +95,8 @@ export default function BukuKasClient({ initialEntries, poList, kompoList, pemba
   // Modal state
   const [modalTipe, setModalTipe] = useState<'masuk' | 'keluar' | null>(null);
   const [form, setForm] = useState(makeDefaultForm('masuk'));
+  /** id entri yang sedang diedit; null = tambah baru */
+  const [editId, setEditId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   // Delete state
@@ -129,8 +138,27 @@ export default function BukuKasClient({ initialEntries, poList, kompoList, pemba
   // ─── OPEN MODAL ───────────────────────────────────────────────────────────
 
   const openModal = (tipe: 'masuk' | 'keluar') => {
+    setEditId(null);
     setForm(makeDefaultForm(tipe));
     setModalTipe(tipe);
+  };
+
+  const openEdit = (entry: BukuKasEntry) => {
+    setEditId(entry.id);
+    setForm({
+      tanggal:      entry.tanggal.slice(0, 10),
+      tipe:         entry.tipe,
+      kategori:     entry.kategori,
+      nominal:      String(entry.nominal),
+      keterangan:   entry.keterangan ?? '',
+      no_referensi: entry.no_referensi ?? '',
+      po_id:        entry.po_id ?? '',
+      komponen_id:  entry.komponen_id ?? '',
+      pembantu_jenis_id: entry.pembantu_jenis_id ?? '',
+      qty:          entry.qty == null ? '' : String(entry.qty),
+      satuan:       entry.satuan ?? '',
+    });
+    setModalTipe(entry.tipe);
   };
 
   // ─── ADD ──────────────────────────────────────────────────────────────────
@@ -151,14 +179,17 @@ export default function BukuKasClient({ initialEntries, poList, kompoList, pemba
       qty:          isPembantu ? parseFloat(form.qty) || null : null,
       satuan:       isPembantu ? form.satuan || null : null,
     };
-    const result = await addBukuKas(input);
+    const result = editId ? await updateBukuKas(editId, input) : await addBukuKas(input);
     setSubmitting(false);
     if (!result.success) {
       toast.error(result.error || 'Gagal menyimpan');
       return;
     }
-    toast.success(`Kas ${form.tipe === 'masuk' ? 'Masuk' : 'Keluar'} berhasil ditambahkan`);
+    toast.success(editId
+      ? 'Entri kas berhasil diperbarui'
+      : `Kas ${form.tipe === 'masuk' ? 'Masuk' : 'Keluar'} berhasil ditambahkan`);
     setModalTipe(null);
+    setEditId(null);
     // Refresh data
     const fresh = await getBukuKasEntries({
       bulan: filterBulan || undefined,
@@ -310,7 +341,7 @@ export default function BukuKasClient({ initialEntries, poList, kompoList, pemba
               <TableHead className="text-[#9aa0a6]">No. Referensi</TableHead>
               <TableHead className="text-[#9aa0a6]">Tag PO</TableHead>
               <TableHead className="text-[#9aa0a6] text-right">Nominal</TableHead>
-              <TableHead className="text-[#9aa0a6] w-14 text-center">Aksi</TableHead>
+              <TableHead className="text-[#9aa0a6] w-24 text-center">Aksi</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody className="bg-[#16181A]">
@@ -323,7 +354,8 @@ export default function BukuKasClient({ initialEntries, poList, kompoList, pemba
             ) : tampil.map(entry => (
               <TableRow key={entry.id} className="border-[#2A2D31] hover:bg-[#1A1C1E]">
                 <TableCell className="text-sm text-[#e8eaed] whitespace-nowrap">
-                  {dateFmt(entry.tanggal)}
+                  <div>{dateFmt(entry.tanggal)}</div>
+                  <div className="text-[11px] text-[#9aa0a6]">{hariFmt(entry.tanggal)}</div>
                 </TableCell>
                 <TableCell>
                   <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-bold ${
@@ -355,7 +387,22 @@ export default function BukuKasClient({ initialEntries, poList, kompoList, pemba
                 }`}>
                   {entry.tipe === 'keluar' ? '-' : '+'}{idrFmt(entry.nominal)}
                 </TableCell>
-                <TableCell className="text-center">
+                <TableCell className="text-center whitespace-nowrap">
+                  {entry.dikunci ? (
+                    <span title={entry.dikunci} className="inline-flex h-8 w-8 items-center justify-center text-[#5f6368]">
+                      <Lock className="h-4 w-4" />
+                    </span>
+                  ) : (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => openEdit(entry)}
+                      className="h-8 w-8 text-[#9aa0a6] hover:text-[#e5c17b] hover:bg-[#e5c17b]/10"
+                      title="Edit"
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                  )}
                   <Button
                     variant="ghost"
                     size="icon"
@@ -373,13 +420,15 @@ export default function BukuKasClient({ initialEntries, poList, kompoList, pemba
       </div>
 
       {/* ─── MODAL FORM (MASUK / KELUAR) ────────────────────────────────── */}
-      <Dialog open={modalTipe !== null} onOpenChange={open => { if (!open) setModalTipe(null); }}>
+      <Dialog open={modalTipe !== null} onOpenChange={open => { if (!open) { setModalTipe(null); setEditId(null); } }}>
         <DialogContent className="bg-[#16181A] border-[#2A2D31] text-[#e8eaed] sm:max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              {modalTipe === 'masuk'
-                ? <span className="text-green-400">+ Kas Masuk</span>
-                : <span className="text-red-400">+ Kas Keluar</span>}
+              {editId
+                ? <span className="text-[#e5c17b]">Edit Kas {modalTipe === 'masuk' ? 'Masuk' : 'Keluar'}</span>
+                : modalTipe === 'masuk'
+                  ? <span className="text-green-400">+ Kas Masuk</span>
+                  : <span className="text-red-400">+ Kas Keluar</span>}
             </DialogTitle>
           </DialogHeader>
           <form onSubmit={handleAdd} className="space-y-4 py-2">
@@ -393,6 +442,9 @@ export default function BukuKasClient({ initialEntries, poList, kompoList, pemba
                   value={form.tanggal}
                   onChange={e => setForm(f => ({ ...f, tanggal: e.target.value }))}
                 />
+                {form.tanggal && (
+                  <p className="text-[11px] text-[#9aa0a6] mt-1">{hariFmt(form.tanggal)}</p>
+                )}
               </div>
               <div>
                 <label className={labelCls}>Kategori *</label>
@@ -403,9 +455,11 @@ export default function BukuKasClient({ initialEntries, poList, kompoList, pemba
                   onChange={e => setForm(f => ({ ...f, kategori: e.target.value }))}
                 >
                   <option value="">-- Pilih --</option>
-                  {(modalTipe === 'masuk' ? KATEGORI_MASUK : KATEGORI_KELUAR).map(k => (
-                    <option key={k} value={k}>{k}</option>
-                  ))}
+                  {(() => {
+                    const daftar: string[] = [...(modalTipe === 'masuk' ? KATEGORI_MASUK : KATEGORI_KELUAR)];
+                    if (form.kategori && !daftar.includes(form.kategori)) daftar.push(form.kategori);
+                    return daftar.map(k => <option key={k} value={k}>{k}</option>);
+                  })()}
                 </select>
                 {form.kategori === 'Pembelian Bahan' && (
                   <p className="text-[11px] text-orange-300 mt-1">
@@ -556,7 +610,7 @@ export default function BukuKasClient({ initialEntries, poList, kompoList, pemba
                   : 'bg-red-600 hover:bg-red-700 text-white font-bold'}
               >
                 {submitting && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-                {submitting ? 'Menyimpan...' : 'Simpan'}
+                {submitting ? 'Menyimpan...' : editId ? 'Simpan Perubahan' : 'Simpan'}
               </Button>
             </DialogFooter>
           </form>

@@ -19,7 +19,7 @@ export async function getBukuKasEntries(filters?: {
 
   let query = supabase
     .from('buku_kas')
-    .select('id, tanggal, tipe, kategori, nominal, keterangan, no_referensi, po_id, komponen_id, created_at, po:po_id(no_po)')
+    .select('id, tanggal, tipe, kategori, nominal, keterangan, no_referensi, po_id, komponen_id, pembantu_jenis_id, qty, satuan, inventory_batch_id, sumber_gaji, created_at, po:po_id(no_po)')
     .eq('tenant_id', TENANT_ID)
     .order('tanggal', { ascending: false })
     .order('created_at', { ascending: false });
@@ -55,8 +55,19 @@ export async function getBukuKasEntries(filters?: {
     po_id: item.po_id ?? null,
     po_no: (Array.isArray(item.po) ? item.po[0]?.no_po : item.po?.no_po) ?? null,
     komponen_id: item.komponen_id ?? null,
+    pembantu_jenis_id: item.pembantu_jenis_id ?? null,
+    qty: item.qty == null ? null : Number(item.qty),
+    satuan: item.satuan ?? null,
+    dikunci: alasanKunci(item),
     created_at: item.created_at,
   }));
+}
+
+/** Baris otomatis tidak boleh diedit dari Buku Kas agar tetap cocok dengan sumbernya */
+function alasanKunci(row: { inventory_batch_id?: string | null; sumber_gaji?: string | null }): string | null {
+  if (row.inventory_batch_id) return 'Dibuat otomatis dari Stok Masuk — perbaiki lewat menu Inventory.';
+  if (row.sumber_gaji) return 'Dibuat otomatis dari pembayaran gaji — perbaiki lewat menu Gaji.';
+  return null;
 }
 
 export async function addBukuKas(
@@ -65,47 +76,14 @@ export async function addBukuKas(
   const profile = await getCurrentUserProfile();
   if (!profile) return { success: false, error: 'Unauthorized.' };
 
-  if (!input.nominal || input.nominal <= 0)
-    return { success: false, error: 'Nominal harus lebih dari 0.' };
-  if (!input.tanggal)
-    return { success: false, error: 'Tanggal tidak boleh kosong.' };
-  if (!input.kategori)
-    return { success: false, error: 'Kategori tidak boleh kosong.' };
-
   const supabase = await createClient();
-  const pembantu = input.tipe === 'keluar' && input.kategori === KATEGORI_BAHAN_PEMBANTU;
-  let keterangan = input.keterangan?.trim() ?? '';
-
-  if (pembantu) {
-    if (!input.pembantu_jenis_id)
-      return { success: false, error: 'Pilih jenis bahan pembantu.' };
-    if (!input.qty || input.qty <= 0)
-      return { success: false, error: 'Jumlah barang harus lebih dari 0.' };
-    if (!input.satuan?.trim())
-      return { success: false, error: 'Pilih satuan barang.' };
-    if (!keterangan) {
-      const { data: jenis } = await supabase
-        .from('pembantu_jenis').select('nama').eq('id', input.pembantu_jenis_id).maybeSingle();
-      keterangan = `Belanja ${jenis?.nama ?? 'bahan pembantu'} ${input.qty} ${input.satuan.trim()}`;
-    }
-  } else if (!keterangan) {
-    return { success: false, error: 'Keterangan tidak boleh kosong.' };
-  }
+  const siap = await siapkanBaris(supabase, input);
+  if ('error' in siap) return { success: false, error: siap.error };
 
   const { error } = await supabase.from('buku_kas').insert({
-    tanggal:      input.tanggal,
-    tipe:         input.tipe,
-    kategori:     input.kategori,
-    nominal:      input.nominal,
-    keterangan,
-    no_referensi: input.no_referensi ?? null,
-    po_id:        input.po_id ?? null,
-    komponen_id:  pembantu ? null : (input.komponen_id ?? null),
-    pembantu_jenis_id: pembantu ? input.pembantu_jenis_id : null,
-    qty:          pembantu ? input.qty : null,
-    satuan:       pembantu ? input.satuan!.trim() : null,
-    tenant_id:    TENANT_ID,
-    created_by:   profile.id,
+    ...siap.row,
+    tenant_id:  TENANT_ID,
+    created_by: profile.id,
   });
 
   if (error) return { success: false, error: error.message };
@@ -113,6 +91,85 @@ export async function addBukuKas(
   revalidatePath('/app/keuangan/buku-kas');
   revalidatePath('/app/keuangan/saldo-pembantu');
   return { success: true };
+}
+
+/** Edit entri Buku Kas (owner saja; baris otomatis dari Stok Masuk / gaji dikunci) */
+export async function updateBukuKas(
+  id: string,
+  input: AddBukuKasInput
+): Promise<{ success: boolean; error?: string }> {
+  const profile = await getCurrentUserProfile();
+  if (!profile) return { success: false, error: 'Unauthorized.' };
+  if (profile.role !== 'owner')
+    return { success: false, error: 'Hanya owner yang dapat mengedit.' };
+
+  const supabase = await createClient();
+  const { data: lama, error: e1 } = await supabase
+    .from('buku_kas')
+    .select('id, tipe, inventory_batch_id, sumber_gaji')
+    .eq('id', id)
+    .eq('tenant_id', TENANT_ID)
+    .maybeSingle();
+  if (e1) return { success: false, error: e1.message };
+  if (!lama) return { success: false, error: 'Entri tidak ditemukan.' };
+  const kunci = alasanKunci(lama);
+  if (kunci) return { success: false, error: kunci };
+
+  const siap = await siapkanBaris(supabase, { ...input, tipe: lama.tipe });
+  if ('error' in siap) return { success: false, error: siap.error };
+
+  const { error } = await supabase
+    .from('buku_kas')
+    .update(siap.row)
+    .eq('id', id)
+    .eq('tenant_id', TENANT_ID);
+  if (error) return { success: false, error: error.message };
+
+  revalidatePath('/app/keuangan/buku-kas');
+  revalidatePath('/app/keuangan/saldo-pembantu');
+  return { success: true };
+}
+
+/** Validasi + susun kolom buku_kas dari input form (dipakai tambah & edit) */
+async function siapkanBaris(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  input: AddBukuKasInput
+): Promise<{ row: Record<string, unknown> } | { error: string }> {
+  if (!input.nominal || input.nominal <= 0) return { error: 'Nominal harus lebih dari 0.' };
+  if (!input.tanggal) return { error: 'Tanggal tidak boleh kosong.' };
+  if (!input.kategori) return { error: 'Kategori tidak boleh kosong.' };
+
+  const pembantu = input.tipe === 'keluar' && input.kategori === KATEGORI_BAHAN_PEMBANTU;
+  let keterangan = input.keterangan?.trim() ?? '';
+
+  if (pembantu) {
+    if (!input.pembantu_jenis_id) return { error: 'Pilih jenis bahan pembantu.' };
+    if (!input.qty || input.qty <= 0) return { error: 'Jumlah barang harus lebih dari 0.' };
+    if (!input.satuan?.trim()) return { error: 'Pilih satuan barang.' };
+    if (!keterangan) {
+      const { data: jenis } = await supabase
+        .from('pembantu_jenis').select('nama').eq('id', input.pembantu_jenis_id).maybeSingle();
+      keterangan = `Belanja ${jenis?.nama ?? 'bahan pembantu'} ${input.qty} ${input.satuan.trim()}`;
+    }
+  } else if (!keterangan) {
+    return { error: 'Keterangan tidak boleh kosong.' };
+  }
+
+  return {
+    row: {
+      tanggal:      input.tanggal,
+      tipe:         input.tipe,
+      kategori:     input.kategori,
+      nominal:      input.nominal,
+      keterangan,
+      no_referensi: input.no_referensi || null,
+      po_id:        input.po_id || null,
+      komponen_id:  pembantu ? null : (input.komponen_id || null),
+      pembantu_jenis_id: pembantu ? input.pembantu_jenis_id : null,
+      qty:          pembantu ? input.qty : null,
+      satuan:       pembantu ? input.satuan!.trim() : null,
+    },
+  };
 }
 
 /** Jenis saldo bahan pembantu + satuan yang terakhir dipakai saat belanja */

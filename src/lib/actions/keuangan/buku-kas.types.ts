@@ -11,6 +11,11 @@ export interface BukuKasEntry {
   po_id: string | null;
   po_no: string | null;
   komponen_id: string | null;
+  pembantu_jenis_id: string | null;
+  qty: number | null;
+  satuan: string | null;
+  /** Diisi bila baris dibuat otomatis (Stok Masuk / gaji) → tidak bisa diedit dari Buku Kas */
+  dikunci: string | null;
   created_at: string;
 }
 
