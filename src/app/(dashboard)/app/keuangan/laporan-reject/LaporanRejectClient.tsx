@@ -8,6 +8,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow
 } from '@/components/ui/table';
 import { getLaporanReject, type LaporanRejectSummary } from '@/lib/actions/keuangan/laporan-reject.actions';
+import TogglePoLama from '@/components/keuangan/TogglePoLama';
 
 const BULAN = [
   'Januari','Februari','Maret','April','Mei','Juni',
@@ -32,14 +33,16 @@ export default function LaporanRejectClient({ initialData, karyawanList, default
   const [filterTahun, setFilterTahun] = useState(defaultTahun);
   const [filterKaryawan, setFilterKaryawan] = useState('');
   const [loading, setLoading] = useState(false);
+  const [tampilkanLama, setTampilkanLama] = useState(false);
 
-  const handleFilter = async () => {
+  const handleFilter = async (lama = tampilkanLama) => {
     setLoading(true);
     try {
       const result = await getLaporanReject({
         bulan: filterBulan || undefined,
         tahun: filterTahun || undefined,
         karyawan_id: filterKaryawan || undefined,
+        hanyaPeriodeBaru: !lama,
       });
       setData(result);
     } catch (e: any) {
@@ -74,11 +77,13 @@ export default function LaporanRejectClient({ initialData, karyawanList, default
             {karyawanList.map(k => <option key={k.id} value={k.id}>{k.nama}</option>)}
           </select>
         </div>
-        <Button onClick={handleFilter} disabled={loading}
+        <Button onClick={() => handleFilter()} disabled={loading}
           className="h-9 bg-[#2A2D31] text-[#e8eaed] hover:bg-[#3A3D41] text-xs">
           {loading ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Filter className="h-4 w-4 mr-1" />}
           Terapkan
         </Button>
+        <TogglePoLama className="ml-auto" checked={tampilkanLama}
+          onChange={v => { setTampilkanLama(v); handleFilter(v); }} />
       </div>
 
       {/* Summary cards */}

@@ -1,6 +1,7 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
+import { getBundleIdsPeriodeBaru } from '@/lib/keuangan/periode-po.server';
 
 const TENANT_ID = 'STX-001';
 
@@ -27,8 +28,11 @@ export async function getLaporanReject(filters?: {
   bulan?: string;
   tahun?: string;
   karyawan_id?: string;
+  /** true = hanya potongan dari bundle PO periode baru (PO-0100 ke atas) */
+  hanyaPeriodeBaru?: boolean;
 }): Promise<LaporanRejectSummary> {
   const supabase = await createClient();
+  const bundleBaru = filters?.hanyaPeriodeBaru ? await getBundleIdsPeriodeBaru(supabase) : null;
 
   let query = supabase
     .from('gaji_ledger')
@@ -59,7 +63,8 @@ export async function getLaporanReject(filters?: {
   const { data, error } = await query;
   if (error) throw new Error(error.message);
 
-  const items: LaporanRejectItem[] = (data ?? []).map((row: any) => ({
+  const rows = bundleBaru ? (data ?? []).filter((r: any) => bundleBaru.has(String(r.sumber_id))) : (data ?? []);
+  const items: LaporanRejectItem[] = rows.map((row: any) => ({
     id: row.id,
     tanggal: row.tanggal,
     karyawan_nama: (row.karyawan as any)?.nama ?? '-',

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import TogglePoLama from '@/components/keuangan/TogglePoLama';
 import Link from 'next/link';
 import {
   TrendingUp, TrendingDown, ChevronLeft, ChevronRight, Loader2,
@@ -33,6 +34,7 @@ export default function RingkasanClient({ initialData }: Props) {
   const [data, setData] = useState<RingkasanKeuanganData>(initialData);
   const [monthOffset, setMonthOffset] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [tampilkanLama, setTampilkanLama] = useState(false);
 
   // Derive current month/year from offset
   const viewDate = new Date(now.getFullYear(), now.getMonth() + monthOffset, 1);
@@ -40,13 +42,13 @@ export default function RingkasanClient({ initialData }: Props) {
   const viewTahun = viewDate.getFullYear();
   const viewLabel = `${BULAN_FULL[viewBulan - 1]} ${viewTahun}`;
 
-  const navigate = async (offset: number) => {
+  const navigate = async (offset: number, lama = tampilkanLama) => {
     const newOffset = monthOffset + offset;
     setMonthOffset(newOffset);
     setLoading(true);
     try {
       const d = new Date(now.getFullYear(), now.getMonth() + newOffset, 1);
-      const result = await getRingkasanKeuangan(d.getMonth() + 1, d.getFullYear());
+      const result = await getRingkasanKeuangan(d.getMonth() + 1, d.getFullYear(), !lama);
       setData(result);
     } catch (e: any) {
       toast.error(e.message || 'Gagal memuat data');
@@ -79,9 +81,10 @@ export default function RingkasanClient({ initialData }: Props) {
           <ChevronLeft className="h-4 w-4 mr-1" />
           Bulan Lalu
         </Button>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           {loading && <Loader2 className="h-4 w-4 animate-spin text-[#e5c17b]" />}
           <h3 className="text-sm font-bold text-[#e8eaed]">{viewLabel}</h3>
+          <TogglePoLama checked={tampilkanLama} onChange={v => { setTampilkanLama(v); navigate(0, v); }} />
         </div>
         <Button
           variant="ghost"

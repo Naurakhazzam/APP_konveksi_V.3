@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import TogglePoLama from '@/components/keuangan/TogglePoLama';
 import { toast } from 'sonner';
 import {
   Trash2, Loader2, Filter, ChevronDown, ChevronUp,
@@ -59,6 +60,10 @@ const defaultBayarForm = (invoice_id: string) => ({
 
 export default function InvoiceClient({ initialInvoices, klienList, defaultBulan, defaultTahun }: Props) {
   const [invoices, setInvoices]     = useState<InvoiceRow[]>(initialInvoices);
+  /** Invoice PO lama (sebelum PO-0100) disembunyikan kecuali dicentang */
+  const [tampilkanLama, setTampilkanLama] = useState(false);
+  const tampil = tampilkanLama ? invoices : invoices.filter(i => i.periode_baru !== false);
+  const jumlahLama = invoices.length - tampil.length;
   const [filtering, setFiltering]   = useState(false);
 
   // Filter
@@ -85,9 +90,9 @@ export default function InvoiceClient({ initialInvoices, klienList, defaultBulan
 
   // ─── DERIVED ──────────────────────────────────────────────────────────────
 
-  const totalPiutang      = invoices.filter(i => i.status !== 'lunas').reduce((s, i) => s + i.sisa, 0);
-  const totalLunas        = invoices.filter(i => i.status === 'lunas').reduce((s, i) => s + i.total_nilai, 0);
-  const jumlahOutstanding = invoices.filter(i => i.status !== 'lunas').length;
+  const totalPiutang      = tampil.filter(i => i.status !== 'lunas').reduce((s, i) => s + i.sisa, 0);
+  const totalLunas        = tampil.filter(i => i.status === 'lunas').reduce((s, i) => s + i.total_nilai, 0);
+  const jumlahOutstanding = tampil.filter(i => i.status !== 'lunas').length;
 
   // ─── FILTER ───────────────────────────────────────────────────────────────
 
@@ -224,7 +229,7 @@ export default function InvoiceClient({ initialInvoices, klienList, defaultBulan
             <p className="text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold">Total Invoice</p>
             <CreditCard className="h-4 w-4 text-[#e5c17b]" />
           </div>
-          <p className="text-lg font-bold font-mono text-[#e5c17b]">{invoices.length} invoice</p>
+          <p className="text-lg font-bold font-mono text-[#e5c17b]">{tampil.length} invoice</p>
           <p className="text-[10px] text-[#5f6368] mt-1">Otomatis dari Surat Jalan</p>
         </div>
       </div>
@@ -273,6 +278,8 @@ export default function InvoiceClient({ initialInvoices, klienList, defaultBulan
           className="h-9 text-xs text-[#9aa0a6] hover:text-[#e8eaed]">
           Reset
         </Button>
+        <TogglePoLama className="ml-auto" checked={tampilkanLama} onChange={setTampilkanLama}
+          info={!tampilkanLama && jumlahLama > 0 ? `(${jumlahLama} disembunyikan)` : undefined} />
       </div>
 
       {/* ─── TABEL ────────────────────────────────────────────────────────── */}
@@ -292,13 +299,13 @@ export default function InvoiceClient({ initialInvoices, klienList, defaultBulan
             </TableRow>
           </TableHeader>
           <TableBody className="bg-[#16181A]">
-            {invoices.length === 0 ? (
+            {tampil.length === 0 ? (
               <TableRow className="hover:bg-transparent border-[#2A2D31]">
                 <TableCell colSpan={9} className="h-32 text-center text-[#5f6368]">
                   Belum ada invoice — invoice akan muncul otomatis saat Surat Jalan diterbitkan
                 </TableCell>
               </TableRow>
-            ) : invoices.map(inv => (
+            ) : tampil.map(inv => (
               <React.Fragment key={inv.id}>
 
                 {/* ─── ROW UTAMA ─── */}

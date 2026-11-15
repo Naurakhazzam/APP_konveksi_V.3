@@ -1,0 +1,8 @@
+-- 15 Nov 2026: biaya bahan di laporan diambil dari catatan pemakaian, bukan jurnal.
+-- Cutting tidak menulis jurnal kain, sehingga Laporan Per Bulan & Ringkasan
+-- (yang dulu membaca jurnal direct_bahan) jauh di bawah biaya sebenarnya.
+--   get_biaya_bahan_bulanan(dari, sampai, tenant) → per bulan (WIB): kain & aksesori
+--   get_biaya_pemakaian_per_po / _detail_po → kain dari pemakaian_bahan.harga_pakai
+--     (modal FIFO tersimpan); data lama harga_pakai = 0 → qty × harga LOT/referensi.
+-- Definisi lengkap fungsi diterapkan lewat migrasi Supabase:
+--   biaya_bahan_bulanan, biaya_kain_pakai_harga_pakai

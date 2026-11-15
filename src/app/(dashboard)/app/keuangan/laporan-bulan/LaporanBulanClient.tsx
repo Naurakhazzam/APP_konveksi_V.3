@@ -6,6 +6,7 @@ import { Loader2, Filter, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { getLaporanBulan, type LaporanBulanData } from '@/lib/actions/keuangan/laporan-bulan.actions';
+import TogglePoLama from '@/components/keuangan/TogglePoLama';
 
 const BULAN = [
   'Januari','Februari','Maret','April','Mei','Juni',
@@ -22,11 +23,12 @@ export default function LaporanBulanClient({ initialData }: Props) {
   const [filterBulan, setFilterBulan] = useState(initialData.bulan);
   const [filterTahun, setFilterTahun] = useState(initialData.tahun);
   const [loading, setLoading] = useState(false);
+  const [tampilkanLama, setTampilkanLama] = useState(false);
 
-  const handleFilter = async () => {
+  const handleFilter = async (lama = tampilkanLama) => {
     setLoading(true);
     try {
-      const result = await getLaporanBulan(filterBulan, filterTahun);
+      const result = await getLaporanBulan(filterBulan, filterTahun, !lama);
       setData(result);
     } catch (e: any) {
       toast.error(e.message || 'Gagal memuat data');
@@ -62,11 +64,14 @@ export default function LaporanBulanClient({ initialData }: Props) {
             onChange={e => setFilterTahun(e.target.value)}
           />
         </div>
-        <Button onClick={handleFilter} disabled={loading}
+        <Button onClick={() => handleFilter()} disabled={loading}
           className="h-9 bg-[#2A2D31] text-[#e8eaed] hover:bg-[#3A3D41] text-xs">
           {loading ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Filter className="h-4 w-4 mr-1" />}
           Terapkan
         </Button>
+        <TogglePoLama className="ml-auto" checked={tampilkanLama}
+          onChange={v => { setTampilkanLama(v); handleFilter(v); }}
+          info="(entri tanpa PO tetap dihitung)" />
       </div>
 
       {/* Title */}

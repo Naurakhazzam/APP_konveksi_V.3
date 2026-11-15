@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
+import TogglePoLama from '@/components/keuangan/TogglePoLama';
+import { poPeriodeBaru } from '@/lib/keuangan/periode-po';
 import { toast } from 'sonner';
 import { Plus, Trash2, Loader2, Filter, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -67,6 +69,10 @@ const makeDefaultForm = (tipe: 'masuk' | 'keluar') => ({
 
 export default function BukuKasClient({ initialEntries, poList, kompoList, defaultBulan, defaultTahun }: Props) {
   const [entries, setEntries] = useState<BukuKasEntry[]>(initialEntries);
+  /** Entri bertanda PO lama (sebelum PO-0100) disembunyikan kecuali dicentang; tanpa tag PO selalu tampil */
+  const [tampilkanLama, setTampilkanLama] = useState(false);
+  const tampil = tampilkanLama ? entries : entries.filter(e => !e.po_no || poPeriodeBaru(e.po_no));
+  const jumlahLama = entries.length - tampil.length;
   const [filterBulan, setFilterBulan] = useState(defaultBulan);
   const [filterTahun, setFilterTahun] = useState(defaultTahun);
   const [filterTipe, setFilterTipe] = useState('');
@@ -89,8 +95,8 @@ export default function BukuKasClient({ initialEntries, poList, kompoList, defau
     return m;
   }, [poList]);
 
-  const totalMasuk  = entries.filter(e => e.tipe === 'masuk').reduce((s, e) => s + e.nominal, 0);
-  const totalKeluar = entries.filter(e => e.tipe === 'keluar').reduce((s, e) => s + e.nominal, 0);
+  const totalMasuk  = tampil.filter(e => e.tipe === 'masuk').reduce((s, e) => s + e.nominal, 0);
+  const totalKeluar = tampil.filter(e => e.tipe === 'keluar').reduce((s, e) => s + e.nominal, 0);
   const saldo       = totalMasuk - totalKeluar;
 
   // ─── FILTER ───────────────────────────────────────────────────────────────
@@ -276,6 +282,8 @@ export default function BukuKasClient({ initialEntries, poList, kompoList, defau
         >
           Reset
         </Button>
+        <TogglePoLama className="ml-auto" checked={tampilkanLama} onChange={setTampilkanLama}
+          info={!tampilkanLama && jumlahLama > 0 ? `(${jumlahLama} disembunyikan)` : undefined} />
       </div>
 
       {/* ─── TABEL ──────────────────────────────────────────────────────── */}
@@ -294,13 +302,13 @@ export default function BukuKasClient({ initialEntries, poList, kompoList, defau
             </TableRow>
           </TableHeader>
           <TableBody className="bg-[#16181A]">
-            {entries.length === 0 ? (
+            {tampil.length === 0 ? (
               <TableRow className="hover:bg-transparent border-[#2A2D31]">
                 <TableCell colSpan={8} className="h-32 text-center text-[#5f6368]">
                   Belum ada transaksi kas
                 </TableCell>
               </TableRow>
-            ) : entries.map(entry => (
+            ) : tampil.map(entry => (
               <TableRow key={entry.id} className="border-[#2A2D31] hover:bg-[#1A1C1E]">
                 <TableCell className="text-sm text-[#e8eaed] whitespace-nowrap">
                   {dateFmt(entry.tanggal)}

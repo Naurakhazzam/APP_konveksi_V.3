@@ -1,16 +1,17 @@
 import { getLaporanBulan } from '@/lib/actions/keuangan/laporan-bulan.actions';
 import { PageWrapper } from '@/components/ui/PageWrapper';
 import LaporanBulanClient from './LaporanBulanClient';
+import { bulanBerjalan } from '@/lib/bulan-berjalan';
 
 export const metadata = { title: 'Laporan Per Bulan | Stitchlyx' };
 
 export default async function LaporanBulanPage() {
-  const now = new Date();
-  const bulan = String(now.getMonth() + 1);
-  const tahun = String(now.getFullYear());
+  const bb = bulanBerjalan();
+  const bulan = String(Number(bb.bulan));
+  const tahun = bb.tahun;
 
   try {
-    const data = await getLaporanBulan(bulan, tahun);
+    const data = await getLaporanBulan(bulan, tahun, true);
     return (
       <PageWrapper title="Laporan Per Bulan" subtitle="Income statement sederhana per periode bulanan">
         <div className="mt-6">

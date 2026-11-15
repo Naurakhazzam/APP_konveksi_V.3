@@ -9,6 +9,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow
 } from '@/components/ui/table';
 import { getLaporanGaji, type LaporanGajiData } from '@/lib/actions/keuangan/laporan-gaji.actions';
+import TogglePoLama from '@/components/keuangan/TogglePoLama';
 
 const BULAN = [
   'Januari','Februari','Maret','April','Mei','Juni',
@@ -28,13 +29,15 @@ export default function LaporanGajiClient({ initialData, defaultBulan, defaultTa
   const [filterTahun, setFilterTahun] = useState(defaultTahun);
   const [loading, setLoading] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [tampilkanLama, setTampilkanLama] = useState(false);
 
-  const handleFilter = async () => {
+  const handleFilter = async (lama = tampilkanLama) => {
     setLoading(true);
     try {
       const result = await getLaporanGaji({
         bulan: filterBulan || undefined,
         tahun: filterTahun || undefined,
+        hanyaPeriodeBaru: !lama,
       });
       setData(result);
     } catch (e: any) {
@@ -67,7 +70,7 @@ export default function LaporanGajiClient({ initialData, defaultBulan, defaultTa
           <input type="number" className="h-9 w-24 px-3 rounded-lg bg-[#1E2124] border border-[#2A2D31] text-sm text-[#e8eaed] outline-none focus:ring-1 focus:ring-[#e5c17b]"
             value={filterTahun} onChange={e => setFilterTahun(e.target.value)} />
         </div>
-        <Button onClick={handleFilter} disabled={loading}
+        <Button onClick={() => handleFilter()} disabled={loading}
           className="h-9 bg-[#2A2D31] text-[#e8eaed] hover:bg-[#3A3D41] text-xs">
           {loading ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Filter className="h-4 w-4 mr-1" />}
           Terapkan
@@ -78,6 +81,9 @@ export default function LaporanGajiClient({ initialData, defaultBulan, defaultTa
             Kelola Pembayaran
           </Button>
         </Link>
+        <TogglePoLama className="ml-auto" checked={tampilkanLama}
+          onChange={v => { setTampilkanLama(v); handleFilter(v); }}
+          info="(kasbon selalu ditampilkan)" />
       </div>
 
       {/* KPI Cards */}

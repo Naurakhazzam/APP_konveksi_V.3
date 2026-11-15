@@ -1,6 +1,7 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
+import { getBundleIdsPeriodeBaru } from '@/lib/keuangan/periode-po.server';
 import { getCurrentUserProfile } from '@/lib/auth/permissions';
 import { revalidatePath } from 'next/cache';
 import type {
@@ -72,6 +73,19 @@ export async function getInvoiceList(filters?: {
     (sjData ?? []).forEach((sj: any) => { sjMap[sj.id] = sj.nomor_sj; });
   }
 
+  // Periode baru: SJ berisi bundle PO-0100 ke atas
+  const sjBaru = new Set<string>();
+  const sjBerisi = new Set<string>();
+  if (sjIds.length > 0) {
+    const bundleBaru = await getBundleIdsPeriodeBaru(supabase);
+    const { data: sjItem } = await supabase
+      .from('surat_jalan_item').select('sj_id, bundle_id').in('sj_id', sjIds);
+    (sjItem ?? []).forEach((it: any) => {
+      sjBerisi.add(it.sj_id);
+      if (bundleBaru.has(String(it.bundle_id))) sjBaru.add(it.sj_id);
+    });
+  }
+
   return invoices.map((inv: any) => ({
     id:                 inv.id,
     nomor_invoice:      inv.nomor_invoice,
@@ -87,6 +101,7 @@ export async function getInvoiceList(filters?: {
     status:             inv.status,
     catatan:            inv.catatan ?? null,
     created_at:         inv.created_at,
+    periode_baru:       !inv.surat_jalan_id || !sjBerisi.has(inv.surat_jalan_id) || sjBaru.has(inv.surat_jalan_id),
   }));
 }
 

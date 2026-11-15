@@ -1,6 +1,8 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
+import { PO_AWAL_PERIODE } from '@/lib/keuangan/periode-po';
+import { getBundleIdsPeriodeBaru, getPoIdsPeriodeBaru } from '@/lib/keuangan/periode-po.server';
 
 const TENANT_ID = 'STX-001';
 
@@ -36,16 +38,20 @@ const JENIS_LABEL: Record<string, string> = {
 
 export async function getLaporanBulan(
   bulan: string,
-  tahun: string
+  tahun: string,
+  /** true = hanya angka PO periode baru (PO-0100 ke atas); entri tanpa PO tetap dihitung */
+  hanyaPeriodeBaru = false,
 ): Promise<LaporanBulanData> {
   const supabase = await createClient();
+  const poBaru = hanyaPeriodeBaru ? await getPoIdsPeriodeBaru(supabase) : null;
+  const bundleBaru = hanyaPeriodeBaru ? await getBundleIdsPeriodeBaru(supabase) : null;
   const mm = bulan.padStart(2, '0');
 
   const lastDay = new Date(Number(tahun), Number(mm), 0).getDate();
-  const { data: jurnalData, error } = await supabase
+  const { data: jurnalRaw, error } = await supabase
     .from('jurnal_entry')
     .select(`
-      jenis, nominal,
+      jenis, nominal, tag_po_ids,
       kategori_trx:kategori_trx_id(nama)
     `)
     .eq('tenant_id', TENANT_ID)
@@ -53,28 +59,37 @@ export async function getLaporanBulan(
     .lte('tanggal', `${tahun}-${mm}-${String(lastDay).padStart(2, '0')}`);
 
   if (error) throw new Error(error.message);
+  const jurnalData = poBaru
+    ? (jurnalRaw ?? []).filter((j: any) => !(j.tag_po_ids ?? []).length || (j.tag_po_ids as string[]).some(id => poBaru.has(String(id))))
+    : (jurnalRaw ?? []);
 
   // Buku kas tipe='masuk' untuk range bulan (DP klien, pelunasan, dll)
-  const { data: bukuKasData, error: bukuKasErr } = await supabase
+  const { data: bukuKasRaw, error: bukuKasErr } = await supabase
     .from('buku_kas')
-    .select('nominal, kategori')
+    .select('nominal, kategori, po_id')
     .eq('tenant_id', TENANT_ID)
     .eq('tipe', 'masuk')
     .gte('tanggal', `${tahun}-${mm}-01`)
     .lte('tanggal', `${tahun}-${mm}-${String(lastDay).padStart(2, '0')}`);
 
   if (bukuKasErr) throw new Error(bukuKasErr.message);
+  const bukuKasData = poBaru
+    ? (bukuKasRaw ?? []).filter((k: any) => !k.po_id || poBaru.has(String(k.po_id)))
+    : (bukuKasRaw ?? []);
 
   // Upah bulan ini: baca dari gaji_ledger (earned, belum/sudah lunas)
-  const { data: gajiLedgerData, error: gajiLedgerErr } = await supabase
+  const { data: gajiLedgerRaw, error: gajiLedgerErr } = await supabase
     .from('gaji_ledger')
-    .select('total')
+    .select('total, sumber_id')
     .eq('tenant_id', TENANT_ID)
     .in('status', ['belum_lunas', 'lunas'])
     .gte('tanggal', `${tahun}-${mm}-01`)
     .lte('tanggal', `${tahun}-${mm}-${String(lastDay).padStart(2, '0')}`);
 
   if (gajiLedgerErr) throw new Error(gajiLedgerErr.message);
+  const gajiLedgerData = bundleBaru
+    ? (gajiLedgerRaw ?? []).filter((g: any) => bundleBaru.has(String(g.sumber_id)))
+    : (gajiLedgerRaw ?? []);
 
   // ─── Pemasukan: group by kategori ───
   const pemasukanMap: Record<string, number> = {};
@@ -101,11 +116,25 @@ export async function getLaporanBulan(
   // ─── Pengeluaran: group by jenis ───
   const pengeluaranMap: Record<string, number> = {};
 
-  // Fallback: direct_bahan, direct_upah, overhead dari jurnal_entry
+  // direct_upah & overhead dari jurnal_entry. direct_bahan TIDAK dari jurnal:
+  // cutting tidak menulis jurnal kain, jadi jurnal hanya berisi sebagian bahan.
   (jurnalData ?? []).forEach((j: any) => {
-    if (!['direct_bahan', 'direct_upah', 'overhead'].includes(j.jenis)) return;
+    if (!['direct_upah', 'overhead'].includes(j.jenis)) return;
     pengeluaranMap[j.jenis] = (pengeluaranMap[j.jenis] || 0) + Number(j.nominal);
   });
+
+  // direct_bahan dari catatan pemakaian (kain cutting + aksesori, modal FIFO) —
+  // sama dengan sumber Laporan Per PO
+  const { data: bahanData, error: bahanErr } = await supabase.rpc('get_biaya_bahan_bulanan', {
+    p_dari: `${tahun}-${mm}-01`,
+    p_sampai: `${tahun}-${mm}-${String(lastDay).padStart(2, '0')}`,
+    p_tenant_id: TENANT_ID,
+    p_po_mulai: hanyaPeriodeBaru ? PO_AWAL_PERIODE : null,
+  });
+  if (bahanErr) throw new Error(bahanErr.message);
+  const biayaBahan = (bahanData ?? []).reduce(
+    (s: number, r: any) => s + Number(r.biaya_kain ?? 0) + Number(r.biaya_aksesori ?? 0), 0);
+  if (biayaBahan > 0) pengeluaranMap['direct_bahan'] = Math.round(biayaBahan);
 
   // Gabungkan direct_upah dari gaji_ledger (upah earned, belum/sudah lunas)
   const upahLedger = (gajiLedgerData ?? []).reduce(

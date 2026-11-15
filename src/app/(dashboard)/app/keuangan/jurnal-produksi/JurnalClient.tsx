@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import TogglePoLama from '@/components/keuangan/TogglePoLama';
 import { useRouter } from 'next/navigation';
 import { Trash2, Plus, Loader2, TrendingUp, TrendingDown, Filter } from 'lucide-react';
 import { toast } from 'sonner';
@@ -67,6 +68,8 @@ interface Props {
   poList: { id: string; no_po: string }[];
   defaultBulan: string;
   defaultTahun: string;
+  /** Id PO periode baru (PO-0100 ke atas) */
+  poBaruIds: string[];
 }
 
 // ─── DEFAULT FORM ────────────────────────────────────────────────────────────
@@ -84,7 +87,7 @@ const defaultForm = {
 
 // ─── COMPONENT ───────────────────────────────────────────────────────────────
 
-export default function JurnalClient({ initialEntries, kategoriList, poList, defaultBulan, defaultTahun }: Props) {
+export default function JurnalClient({ initialEntries, kategoriList, poList, defaultBulan, defaultTahun, poBaruIds }: Props) {
   const router = useRouter();
 
   // Map PO ID to no_po for quick lookup
@@ -96,6 +99,12 @@ export default function JurnalClient({ initialEntries, kategoriList, poList, def
 
   // Entries & filter state
   const [entries, setEntries] = useState<JurnalEntry[]>(initialEntries);
+  /** Jurnal bertanda PO lama disembunyikan kecuali dicentang; tanpa tag PO selalu tampil */
+  const [tampilkanLama, setTampilkanLama] = useState(false);
+  const poBaru = React.useMemo(() => new Set(poBaruIds), [poBaruIds]);
+  const tampil = tampilkanLama ? entries
+    : entries.filter(e => !e.tag_po_ids?.length || e.tag_po_ids.some(id => poBaru.has(String(id))));
+  const jumlahLama = entries.length - tampil.length;
   const [filterBulan, setFilterBulan] = useState(defaultBulan);
   const [filterTahun, setFilterTahun] = useState(defaultTahun);
   const [filterJenis, setFilterJenis] = useState('');
@@ -131,7 +140,7 @@ export default function JurnalClient({ initialEntries, kategoriList, poList, def
   // ─── SUMMARY ─────────────────────────────────────────────────────────────
 
   const sum = (jenis: string) =>
-    entries.filter(e => e.jenis === jenis).reduce((acc, e) => acc + e.nominal, 0);
+    tampil.filter(e => e.jenis === jenis).reduce((acc, e) => acc + e.nominal, 0);
 
   const summaryCards = [
     { label: 'Pembelian Bahan', value: sum('pembelian_bahan'), color: 'text-yellow-400' },
@@ -227,6 +236,8 @@ export default function JurnalClient({ initialEntries, kategoriList, poList, def
           {filtering ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Filter className="h-4 w-4 mr-1" />}
           Terapkan Filter
         </Button>
+        <TogglePoLama className="ml-auto" checked={tampilkanLama} onChange={setTampilkanLama}
+          info={!tampilkanLama && jumlahLama > 0 ? `(${jumlahLama} disembunyikan)` : undefined} />
       </div>
 
       {/* Summary cards */}
@@ -255,13 +266,13 @@ export default function JurnalClient({ initialEntries, kategoriList, poList, def
             </TableRow>
           </TableHeader>
           <TableBody className="bg-[#1A1D1F]">
-            {entries.length === 0 ? (
+            {tampil.length === 0 ? (
               <TableRow className="hover:bg-transparent border-[#2A2D31]">
                 <TableCell colSpan={7} className="h-32 text-center text-[#5f6368]">
                   Belum ada transaksi
                 </TableCell>
               </TableRow>
-            ) : entries.map(entry => (
+            ) : tampil.map(entry => (
               <TableRow key={entry.id} className="border-[#2A2D31] hover:bg-[#16181A]">
                 <TableCell className="text-sm text-[#e8eaed] whitespace-nowrap">{dateFmt(entry.tanggal)}</TableCell>
                 <TableCell className="text-sm text-[#9aa0a6]">{entry.kategori_nama}</TableCell>

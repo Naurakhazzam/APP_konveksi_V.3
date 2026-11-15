@@ -8,7 +8,7 @@ export const metadata = { title: 'Laporan Gaji | Stitchlyx' };
 export default async function LaporanGajiPage() {
   try {
     const { bulan, tahun } = bulanBerjalan();
-    const data = await getLaporanGaji({ bulan, tahun });
+    const data = await getLaporanGaji({ bulan, tahun, hanyaPeriodeBaru: true });
     return (
       <PageWrapper title="Laporan Gaji" subtitle="Ringkasan penggajian dari sudut pandang keuangan">
         <div className="mt-6">

@@ -32,6 +32,8 @@ export interface InvoiceRow {
   status: InvoiceStatus;
   catatan: string | null;
   created_at: string;
+  /** true bila surat jalannya berisi barang PO-0100 ke atas (atau tidak bisa ditelusuri) */
+  periode_baru?: boolean;
 }
 
 export interface InvoicePembayaran {

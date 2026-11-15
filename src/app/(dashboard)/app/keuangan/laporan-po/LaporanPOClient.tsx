@@ -205,12 +205,13 @@ export default function LaporanPOClient({ initialData, overheadRateInfo, default
   ];
 
   // ─── FILTER ────────────────────────────────────────────────────────────
-  const handleFilter = async () => {
+  // bulan/tahun boleh diberikan langsung (mis. dari Reset) agar tidak memakai state lama
+  const handleFilter = async (bulan = filterBulan, tahun = filterTahun) => {
     setFiltering(true);
     try {
       const result = await getLaporanPOList({
-        bulan: filterBulan || undefined,
-        tahun: filterTahun || undefined,
+        bulan: bulan || undefined,
+        tahun: tahun || undefined,
       });
       setData(result);
     } catch (e: any) {
@@ -353,7 +354,7 @@ export default function LaporanPOClient({ initialData, overheadRateInfo, default
           />
         </div>
         <Button
-          onClick={handleFilter}
+          onClick={() => handleFilter()}
           disabled={filtering}
           className="h-9 bg-[#2A2D31] text-[#e8eaed] hover:bg-[#3A3D41] text-xs"
         >
@@ -363,7 +364,7 @@ export default function LaporanPOClient({ initialData, overheadRateInfo, default
           Terapkan Filter
         </Button>
         <Button
-          onClick={() => { setFilterBulan(defaultBulan); setFilterTahun(defaultTahun); handleFilter(); }}
+          onClick={() => { setFilterBulan(defaultBulan); setFilterTahun(defaultTahun); handleFilter(defaultBulan, defaultTahun); }}
           variant="ghost"
           className="h-9 text-xs text-[#9aa0a6] hover:text-[#e8eaed]"
         >

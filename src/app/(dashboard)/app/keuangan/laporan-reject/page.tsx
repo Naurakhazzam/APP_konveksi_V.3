@@ -9,7 +9,7 @@ export default async function LaporanRejectPage() {
   try {
     const { bulan, tahun } = bulanBerjalan();
     const [data, karyawanList] = await Promise.all([
-      getLaporanReject({ bulan, tahun }),
+      getLaporanReject({ bulan, tahun, hanyaPeriodeBaru: true }),
       getKaryawanList(),
     ]);
     return (

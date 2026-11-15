@@ -1,6 +1,7 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
+import { getBundleIdsPeriodeBaru } from '@/lib/keuangan/periode-po.server';
 
 const TENANT_ID = 'STX-001';
 
@@ -27,13 +28,16 @@ export interface LaporanGajiData {
 export async function getLaporanGaji(filters?: {
   bulan?: string;
   tahun?: string;
+  /** true = hanya upah dari bundle PO periode baru (PO-0100 ke atas) */
+  hanyaPeriodeBaru?: boolean;
 }): Promise<LaporanGajiData> {
   const supabase = await createClient();
+  const bundleBaru = filters?.hanyaPeriodeBaru ? await getBundleIdsPeriodeBaru(supabase) : null;
 
   // 1. Fetch gaji_ledger
   let ledgerQuery = supabase
     .from('gaji_ledger')
-    .select('karyawan_id, tipe, total, status, tanggal_bayar, karyawan:karyawan_id(nama)')
+    .select('id, karyawan_id, tipe, total, status, tanggal_bayar, sumber_id, karyawan:karyawan_id(nama)')
     .eq('tenant_id', TENANT_ID)
     .in('tipe', ['selesai', 'rework', 'reject_potong']);
 
@@ -49,8 +53,11 @@ export async function getLaporanGaji(filters?: {
       .lte('tanggal', `${filters.tahun}-12-31`);
   }
 
-  const { data: ledgerData, error: ledgerError } = await ledgerQuery;
+  const { data: ledgerRaw, error: ledgerError } = await ledgerQuery;
   if (ledgerError) throw new Error(ledgerError.message);
+  const ledgerData = bundleBaru
+    ? (ledgerRaw ?? []).filter((r: any) => bundleBaru.has(String(r.sumber_id)))
+    : (ledgerRaw ?? []);
 
   // 2. Fetch kasbon outstanding (no date filter — always current)
   const { data: kasbonData, error: kasbonError } = await supabase
@@ -78,7 +85,7 @@ export async function getLaporanGaji(filters?: {
   let total_upah_sudah_bayar = 0;
   let total_upah_belum_bayar = 0;
 
-  (ledgerData ?? []).forEach((row: any) => {
+  ledgerData.forEach((row: any) => {
     const karyawanNama = (row.karyawan as any)?.nama ?? '-';
     ensureKaryawan(row.karyawan_id, karyawanNama);
     const amount = Math.abs(Number(row.total));
@@ -99,7 +106,7 @@ export async function getLaporanGaji(filters?: {
   // 3. Fetch history pembayaran dari gaji_payment (1 row = 1 event bayar)
   let paymentQuery = supabase
     .from('gaji_payment')
-    .select('tanggal_bayar, total_bayar, karyawan:karyawan_id(nama)')
+    .select('tanggal_bayar, total_bayar, ledger_ids, karyawan:karyawan_id(nama)')
     .eq('tenant_id', TENANT_ID)
     .order('tanggal_bayar', { ascending: false });
 
@@ -119,7 +126,21 @@ export async function getLaporanGaji(filters?: {
 
   if (paymentError) throw new Error(paymentError.message);
 
-  const history_pembayaran = (paymentData ?? []).map((p: any) => ({
+  // Periode baru: hanya pembayaran yang mencakup upah dari bundle PO-0100+
+  let paymentRows = paymentData ?? [];
+  if (bundleBaru) {
+    const ledgerBaru = new Set<string>();
+    if (bundleBaru.size) {
+      const { data: lb, error: lbErr } = await supabase.from('gaji_ledger').select('id')
+        .eq('tenant_id', TENANT_ID).in('sumber_id', [...bundleBaru]);
+      if (lbErr) throw new Error(lbErr.message);
+      (lb ?? []).forEach((r: any) => ledgerBaru.add(String(r.id)));
+    }
+    paymentRows = paymentRows.filter((p: any) =>
+      (Array.isArray(p.ledger_ids) ? p.ledger_ids : []).some((id: any) => ledgerBaru.has(String(id))));
+  }
+
+  const history_pembayaran = paymentRows.map((p: any) => ({
     tanggal_bayar: p.tanggal_bayar,
     karyawan_nama: (p.karyawan as any)?.nama ?? '-',
     jumlah_dibayar: Number(p.total_bayar) || 0,

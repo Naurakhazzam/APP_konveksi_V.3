@@ -2,6 +2,8 @@
 
 import { createClient } from '@/lib/supabase/server';
 import { getLaporanPOList } from './laporan-po.actions';
+import { PO_AWAL_PERIODE, poPeriodeBaru } from '@/lib/keuangan/periode-po';
+import { getBundleIdsPeriodeBaru, getPoIdsPeriodeBaru } from '@/lib/keuangan/periode-po.server';
 
 const TENANT_ID = 'STX-001';
 
@@ -37,7 +39,9 @@ const BULAN_SHORT = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt'
 
 export async function getRingkasanKeuangan(
   bulan?: number,
-  tahun?: number
+  tahun?: number,
+  /** true = hanya angka PO periode baru (PO-0100 ke atas); entri tanpa PO tetap dihitung */
+  hanyaPeriodeBaru = false,
 ): Promise<RingkasanKeuanganData> {
   const now = new Date();
   const currentBulan = bulan ?? (now.getMonth() + 1);
@@ -45,12 +49,20 @@ export async function getRingkasanKeuangan(
   const mm = String(currentBulan).padStart(2, '0');
 
   const supabase = await createClient();
+  const poBaru = hanyaPeriodeBaru ? await getPoIdsPeriodeBaru(supabase) : null;
+  const bundleBaru = hanyaPeriodeBaru ? await getBundleIdsPeriodeBaru(supabase) : null;
+  const saringJurnal = (rows: any[] | null) => !poBaru ? (rows ?? [])
+    : (rows ?? []).filter((j: any) => !(j.tag_po_ids ?? []).length || (j.tag_po_ids as string[]).some(id => poBaru.has(String(id))));
+  const saringKas = (rows: any[] | null) => !poBaru ? (rows ?? [])
+    : (rows ?? []).filter((k: any) => !k.po_id || poBaru.has(String(k.po_id)));
+  const saringUpah = (rows: any[] | null) => !bundleBaru ? (rows ?? [])
+    : (rows ?? []).filter((g: any) => bundleBaru.has(String(g.sumber_id)));
 
   // ─── 1. Jurnal bulan berjalan ───
   const lastDayCurrent = new Date(currentTahun, currentBulan, 0).getDate();
   const { data: jurnalBulanIni, error: jurnalErr } = await supabase
     .from('jurnal_entry')
-    .select('jenis, nominal')
+    .select('jenis, nominal, tag_po_ids')
     .eq('tenant_id', TENANT_ID)
     .gte('tanggal', `${currentTahun}-${mm}-01`)
     .lte('tanggal', `${currentTahun}-${mm}-${String(lastDayCurrent).padStart(2, '0')}`);
@@ -60,7 +72,7 @@ export async function getRingkasanKeuangan(
   // Buku kas tipe='masuk' untuk bulan berjalan (DP klien, pelunasan, dll)
   const { data: bukuKasBulanIni, error: bukuKasBulanErr } = await supabase
     .from('buku_kas')
-    .select('nominal')
+    .select('nominal, po_id')
     .eq('tenant_id', TENANT_ID)
     .eq('tipe', 'masuk')
     .gte('tanggal', `${currentTahun}-${mm}-01`)
@@ -71,7 +83,7 @@ export async function getRingkasanKeuangan(
   // Upah bulan berjalan: baca dari gaji_ledger (earned, belum/sudah lunas)
   const { data: gajiLedgerBulanIni, error: gajiLedgerBulanErr } = await supabase
     .from('gaji_ledger')
-    .select('total, tipe')
+    .select('total, tipe, sumber_id')
     .eq('tenant_id', TENANT_ID)
     .in('status', ['belum_lunas', 'lunas'])
     .gte('tanggal', `${currentTahun}-${mm}-01`)
@@ -83,22 +95,32 @@ export async function getRingkasanKeuangan(
   let direct_bahan = 0;
   let overhead = 0;
 
-  // Fallback: direct_bahan & overhead dari jurnal_entry
-  (jurnalBulanIni ?? []).forEach((j: any) => {
+  // overhead & pemasukan manual dari jurnal_entry. direct_bahan TIDAK dari jurnal
+  // (cutting tidak menulis jurnal kain) — diambil dari catatan pemakaian di bawah.
+  saringJurnal(jurnalBulanIni).forEach((j: any) => {
     const nominal = Number(j.nominal);
     if (j.jenis === 'masuk') total_pemasukan += nominal;
-    else if (j.jenis === 'direct_bahan') direct_bahan += nominal;
     else if (j.jenis === 'overhead') overhead += nominal;
   });
 
+  const { data: bahanBulanIni, error: bahanBulanErr } = await supabase.rpc('get_biaya_bahan_bulanan', {
+    p_dari: `${currentTahun}-${mm}-01`,
+    p_sampai: `${currentTahun}-${mm}-${String(lastDayCurrent).padStart(2, '0')}`,
+    p_tenant_id: TENANT_ID,
+    p_po_mulai: hanyaPeriodeBaru ? PO_AWAL_PERIODE : null,
+  });
+  if (bahanBulanErr) throw new Error(bahanBulanErr.message);
+  direct_bahan = Math.round((bahanBulanIni ?? []).reduce(
+    (s: number, r: any) => s + Number(r.biaya_kain ?? 0) + Number(r.biaya_aksesori ?? 0), 0));
+
   // Gabungkan pemasukan dari buku_kas
-  (bukuKasBulanIni ?? []).forEach((k: any) => {
+  saringKas(bukuKasBulanIni).forEach((k: any) => {
     total_pemasukan += Number(k.nominal);
   });
 
   // direct_upah dari gaji_ledger (upah earned bulan berjalan)
   // selesai + rework = biaya positif; reject_potong = potongan (dikurangi)
-  const direct_upah = (gajiLedgerBulanIni ?? []).reduce(
+  const direct_upah = saringUpah(gajiLedgerBulanIni).reduce(
     (s: number, r: any) => {
       const t = Number(r.total);
       return r.tipe === 'reject_potong' ? s - t : s + t;
@@ -127,7 +149,7 @@ export async function getRingkasanKeuangan(
   const lastDayOfRange = new Date(Number(lastMonth.yyyy), Number(lastMonth.mm), 0).getDate();
   const { data: jurnal6Bulan, error: tren6Err } = await supabase
     .from('jurnal_entry')
-    .select('jenis, nominal, tanggal')
+    .select('jenis, nominal, tanggal, tag_po_ids')
     .eq('tenant_id', TENANT_ID)
     .gte('tanggal', `${firstMonth.yyyy}-${firstMonth.mm}-01`)
     .lte('tanggal', `${lastMonth.yyyy}-${lastMonth.mm}-${String(lastDayOfRange).padStart(2, '0')}`);
@@ -137,7 +159,7 @@ export async function getRingkasanKeuangan(
   // Buku kas tipe='masuk' untuk 6 bulan terakhir
   const { data: bukuKas6Bulan, error: bukuKas6Err } = await supabase
     .from('buku_kas')
-    .select('nominal, tanggal')
+    .select('nominal, tanggal, po_id')
     .eq('tenant_id', TENANT_ID)
     .eq('tipe', 'masuk')
     .gte('tanggal', `${firstMonth.yyyy}-${firstMonth.mm}-01`)
@@ -148,7 +170,7 @@ export async function getRingkasanKeuangan(
   // Gaji ledger 6 bulan terakhir (upah earned, belum/sudah lunas)
   const { data: gajiLedger6Bulan, error: gajiLedger6Err } = await supabase
     .from('gaji_ledger')
-    .select('total, tipe, tanggal')
+    .select('total, tipe, tanggal, sumber_id')
     .eq('tenant_id', TENANT_ID)
     .in('status', ['belum_lunas', 'lunas'])
     .gte('tanggal', `${firstMonth.yyyy}-${firstMonth.mm}-01`)
@@ -156,29 +178,40 @@ export async function getRingkasanKeuangan(
 
   if (gajiLedger6Err) throw new Error(gajiLedger6Err.message);
 
+  // Biaya bahan 6 bulan dari catatan pemakaian (bukan jurnal)
+  const { data: bahan6Bulan, error: bahan6Err } = await supabase.rpc('get_biaya_bahan_bulanan', {
+    p_dari: `${firstMonth.yyyy}-${firstMonth.mm}-01`,
+    p_sampai: `${lastMonth.yyyy}-${lastMonth.mm}-${String(lastDayOfRange).padStart(2, '0')}`,
+    p_tenant_id: TENANT_ID,
+    p_po_mulai: hanyaPeriodeBaru ? PO_AWAL_PERIODE : null,
+  });
+  if (bahan6Err) throw new Error(bahan6Err.message);
+  const bahanPerBulan = new Map<string, number>(
+    (bahan6Bulan ?? []).map((r: any) => [String(r.bulan), Number(r.biaya_kain ?? 0) + Number(r.biaya_aksesori ?? 0)]));
+
   const tren_6_bulan = months.map(month => {
-    const monthJurnal = (jurnal6Bulan ?? []).filter((j: any) => {
+    const monthJurnal = saringJurnal(jurnal6Bulan).filter((j: any) => {
       const d = j.tanggal as string;
       return d.startsWith(`${month.yyyy}-${month.mm}`);
     });
 
-    const monthBukuKas = (bukuKas6Bulan ?? []).filter((k: any) => {
+    const monthBukuKas = saringKas(bukuKas6Bulan).filter((k: any) => {
       const d = k.tanggal as string;
       return d.startsWith(`${month.yyyy}-${month.mm}`);
     });
 
-    const monthGajiLedger = (gajiLedger6Bulan ?? []).filter((g: any) => {
+    const monthGajiLedger = saringUpah(gajiLedger6Bulan).filter((g: any) => {
       const d = g.tanggal as string;
       return d.startsWith(`${month.yyyy}-${month.mm}`);
     });
 
-    let db = 0, ov = 0, pm = 0;
+    const db = Math.round(bahanPerBulan.get(`${month.yyyy}-${month.mm}`) ?? 0);
+    let ov = 0, pm = 0;
 
-    // direct_bahan & overhead dari jurnal_entry; pemasukan manual sebagai fallback
+    // overhead & pemasukan manual dari jurnal_entry (bahan dari catatan pemakaian)
     monthJurnal.forEach((j: any) => {
       const n = Number(j.nominal);
-      if (j.jenis === 'direct_bahan') db += n;
-      else if (j.jenis === 'overhead') ov += n;
+      if (j.jenis === 'overhead') ov += n;
       else if (j.jenis === 'masuk') pm += n;
     });
 
@@ -208,13 +241,13 @@ export async function getRingkasanKeuangan(
   // ─── 3. Upah outstanding ───
   const { data: ledgerData, error: ledgerErr } = await supabase
     .from('gaji_ledger')
-    .select('total, tipe')
+    .select('total, tipe, sumber_id')
     .eq('tenant_id', TENANT_ID)
     .eq('status', 'belum_lunas');
 
   if (ledgerErr) throw new Error(ledgerErr.message);
 
-  const upah_outstanding = (ledgerData ?? []).reduce(
+  const upah_outstanding = saringUpah(ledgerData).reduce(
     (s: number, r: any) => {
       const t = Number(r.total);
       return r.tipe === 'reject_potong' ? s - t : s + t;
@@ -226,7 +259,7 @@ export async function getRingkasanKeuangan(
   try {
     const allPO = await getLaporanPOList();
     po_boncos = allPO
-      .filter(p => p.status === 'boncos')
+      .filter(p => p.status === 'boncos' && (!hanyaPeriodeBaru || poPeriodeBaru(p.no_po)))
       .sort((a, b) => b.gap - a.gap)
       .slice(0, 5)
       .map(p => ({
