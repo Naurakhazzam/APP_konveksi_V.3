@@ -1,6 +1,9 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
+import { poPeriodeBaru } from '@/lib/keuangan/periode-po';
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 const TENANT_ID = 'STX-001';
 
@@ -58,6 +61,8 @@ export async function getLaporanLR(
   tahun       : number,
   bulan_dari  ?: number,
   bulan_sampai?: number,
+  /** true = hanya pendapatan/pengeluaran PO periode baru (PO-0100 ke atas) */
+  hanyaPeriodeBaru = false,
 ): Promise<LaporanLRData> {
   const supabase = await createClient();
 
@@ -70,22 +75,66 @@ export async function getLaporanLR(
 
   const { data: pembayaranData, error: pembayaranError } = await supabase
     .from('invoice_pembayaran')
-    .select('jumlah, tanggal')
+    .select('jumlah, tanggal, invoice_id')
     .eq('tenant_id', TENANT_ID)
     .gte('tanggal', date_dari)
     .lte('tanggal', date_sampai);
 
   if (pembayaranError) throw new Error(pembayaranError.message);
 
-  const { data: kasData, error: kasError } = await supabase
+  const { data: kasRaw, error: kasError } = await supabase
     .from('buku_kas')
-    .select('nominal, tanggal, kategori')
+    .select('nominal, tanggal, kategori, po:po_id(no_po)')
     .eq('tenant_id', TENANT_ID)
     .eq('tipe', 'keluar')
     .gte('tanggal', date_dari)
     .lte('tanggal', date_sampai);
 
   if (kasError) throw new Error(kasError.message);
+
+  // Pengeluaran yang ditandai ke PO lama ikut disembunyikan; yang tanpa PO tetap dihitung
+  const kasData = hanyaPeriodeBaru
+    ? (kasRaw ?? []).filter((k: any) => {
+        const noPo = (Array.isArray(k.po) ? k.po[0]?.no_po : k.po?.no_po) as string | undefined;
+        return !noPo || poPeriodeBaru(noPo);
+      })
+    : (kasRaw ?? []);
+
+  // Porsi pendapatan PO periode baru per invoice = nilai barang PO-0100+ ÷ nilai seluruh barang di surat jalannya
+  const porsiInvoice = new Map<string, number>();
+  if (hanyaPeriodeBaru) {
+    const invoiceIds = [...new Set((pembayaranData ?? []).map((p: any) => p.invoice_id).filter(Boolean))] as string[];
+    if (invoiceIds.length) {
+      const { data: invData, error: invErr } = await supabase
+        .from('invoice').select('id, surat_jalan_id').in('id', invoiceIds);
+      if (invErr) throw new Error(invErr.message);
+      const sjIds = [...new Set((invData ?? []).map((i: any) => i.surat_jalan_id).filter(Boolean))] as string[];
+      const nilaiSj = new Map<string, { baru: number; semua: number }>();
+      if (sjIds.length) {
+        const { data: sjItems, error: sjErr } = await supabase
+          .from('surat_jalan_item')
+          .select('sj_id, qty_kirim, bundle:bundle_id(po_item:po_item_id(po:po_id(no_po), produk:produk_id(harga_jual)))')
+          .in('sj_id', sjIds);
+        if (sjErr) throw new Error(sjErr.message);
+        (sjItems ?? []).forEach((it: any) => {
+          const bundle = Array.isArray(it.bundle) ? it.bundle[0] : it.bundle;
+          const pi     = Array.isArray(bundle?.po_item) ? bundle.po_item[0] : bundle?.po_item;
+          const po     = Array.isArray(pi?.po) ? pi.po[0] : pi?.po;
+          const produk = Array.isArray(pi?.produk) ? pi.produk[0] : pi?.produk;
+          const nilai  = Number(it.qty_kirim ?? 0) * Number(produk?.harga_jual ?? 0);
+          const cur    = nilaiSj.get(it.sj_id) ?? { baru: 0, semua: 0 };
+          cur.semua += nilai;
+          if (poPeriodeBaru(po?.no_po)) cur.baru += nilai;
+          nilaiSj.set(it.sj_id, cur);
+        });
+      }
+      (invData ?? []).forEach((i: any) => {
+        const n = nilaiSj.get(i.surat_jalan_id);
+        // Invoice tanpa surat jalan / tanpa nilai: tidak bisa ditelusuri ke PO → tetap dihitung
+        porsiInvoice.set(i.id, n && n.semua > 0 ? n.baru / n.semua : 1);
+      });
+    }
+  }
 
   const bulanMap: Record<number, LaporanLRBulan> = {};
 
@@ -96,10 +145,11 @@ export async function getLaporanLR(
 
   (pembayaranData ?? []).forEach((p: any) => {
     const bln = new Date(p.tanggal).getMonth() + 1;
-    ensure(bln).pendapatan += Number(p.jumlah);
+    const porsi = hanyaPeriodeBaru ? (porsiInvoice.get(p.invoice_id) ?? 1) : 1;
+    ensure(bln).pendapatan += Math.round(Number(p.jumlah) * porsi);
   });
 
-  (kasData ?? []).forEach((k: any) => {
+  kasData.forEach((k: any) => {
     const bln     = new Date(k.tanggal).getMonth() + 1;
     const row     = ensure(bln);
     const nominal = Number(k.nominal);

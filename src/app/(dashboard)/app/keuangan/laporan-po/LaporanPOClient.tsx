@@ -19,6 +19,7 @@ import {
   type HPPPerSizeResult,
 } from '@/lib/actions/keuangan/laporan-po.actions';
 import { type OverheadRateInfo } from '@/lib/actions/keuangan/overhead.actions';
+import { PO_AWAL_PERIODE, poPeriodeBaru } from '@/lib/keuangan/periode-po';
 
 // ─── CONSTANTS ──────────────────────────────────────────────────────────────
 
@@ -74,12 +75,19 @@ export default function LaporanPOClient({ initialData, overheadRateInfo }: Props
   const [filterBulan, setFilterBulan] = useState('');
   const [filterTahun, setFilterTahun] = useState(String(new Date().getFullYear()));
   const [filtering, setFiltering] = useState(false);
+  /** PO sebelum PO-0100 disembunyikan kecuali dicentang */
+  const [tampilkanLama, setTampilkanLama] = useState(false);
+  const jumlahLama = React.useMemo(() => data.filter(p => !poPeriodeBaru(p.no_po)).length, [data]);
+  const visible = React.useMemo(
+    () => (tampilkanLama ? data : data.filter(p => poPeriodeBaru(p.no_po))),
+    [data, tampilkanLama],
+  );
 
   // ─── SORT STATE ────────────────────────────────────────────────────────
   const [sortConfig, setSortConfig] = useState<{ key: keyof POLaporanItem; direction: 'asc' | 'desc' } | null>(null);
 
   const sortedData = React.useMemo(() => {
-    let sortableItems = [...data];
+    let sortableItems = [...visible];
     if (sortConfig !== null) {
       sortableItems.sort((a, b) => {
         if (a[sortConfig.key] < b[sortConfig.key]) {
@@ -92,7 +100,7 @@ export default function LaporanPOClient({ initialData, overheadRateInfo }: Props
       });
     }
     return sortableItems;
-  }, [data, sortConfig]);
+  }, [visible, sortConfig]);
 
   const requestSort = (key: keyof POLaporanItem) => {
     let direction: 'asc' | 'desc' = 'asc';
@@ -134,13 +142,13 @@ export default function LaporanPOClient({ initialData, overheadRateInfo }: Props
   const [isLoadingHpp, setIsLoadingHpp] = useState(false);
 
   // ─── SUMMARY ───────────────────────────────────────────────────────────
-  const totalEstimasi = data.reduce((s, p) => s + p.hpp_estimasi, 0);
-  const totalAktual   = data.reduce((s, p) => s + p.hpp_aktual_final, 0);
-  const totalGap      = data.reduce((s, p) => s + p.gap, 0);
-  const totalProfit   = data.reduce((s, p) => s + p.profit_final, 0);
-  const countBoncos   = data.filter(p => p.status === 'boncos').length;
-  const countHemat    = data.filter(p => p.status === 'hemat').length;
-  const countOnBudget = data.filter(p => p.status === 'on_budget').length;
+  const totalEstimasi = visible.reduce((s, p) => s + p.hpp_estimasi, 0);
+  const totalAktual   = visible.reduce((s, p) => s + p.hpp_aktual_final, 0);
+  const totalGap      = visible.reduce((s, p) => s + p.gap, 0);
+  const totalProfit   = visible.reduce((s, p) => s + p.profit_final, 0);
+  const countBoncos   = visible.filter(p => p.status === 'boncos').length;
+  const countHemat    = visible.filter(p => p.status === 'hemat').length;
+  const countOnBudget = visible.filter(p => p.status === 'on_budget').length;
 
   const summaryCards = [
     {
@@ -359,6 +367,12 @@ export default function LaporanPOClient({ initialData, overheadRateInfo }: Props
         >
           Reset
         </Button>
+        <label className="flex items-center gap-2 h-9 ml-auto text-xs text-[#9aa0a6] cursor-pointer select-none">
+          <input type="checkbox" checked={tampilkanLama} onChange={e => setTampilkanLama(e.target.checked)}
+            className="accent-[#e5c17b]" />
+          Tampilkan PO sebelum PO-{String(PO_AWAL_PERIODE).padStart(4, '0')}
+          {jumlahLama > 0 && <span className="text-[#5f6368]">({jumlahLama} disembunyikan)</span>}
+        </label>
       </div>
 
       {/* Tabel */}

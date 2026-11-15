@@ -8,6 +8,7 @@ import {
   type LaporanLRData,
   type LaporanLRBulan,
 } from '@/lib/actions/keuangan/laporan-lr.actions';
+import { PO_AWAL_PERIODE } from '@/lib/keuangan/periode-po';
 
 // ─── HELPERS ────────────────────────────────────────────────────────────────
 
@@ -93,20 +94,31 @@ interface Props {
 export default function LaporanLRClient({ initialData, initialTahun }: Props) {
   const [data,    setData]   = useState<LaporanLRData>(initialData);
   const [tahun,   setTahun]  = useState(initialTahun);
+  /** PO sebelum PO-0100 disembunyikan kecuali dicentang */
+  const [tampilkanLama, setTampilkanLama] = useState(false);
   const [pending, startTransition] = useTransition();
 
   const TAHUN_OPTIONS = Array.from({ length: 5 }, (_, i) => initialTahun - i);
 
-  function handleTahunChange(t: number) {
-    setTahun(t);
+  function muat(t: number, lama: boolean) {
     startTransition(async () => {
       try {
-        const res = await getLaporanLR(t);
+        const res = await getLaporanLR(t, undefined, undefined, !lama);
         setData(res);
       } catch {
         toast.error('Gagal memuat laporan');
       }
     });
+  }
+
+  function handleTahunChange(t: number) {
+    setTahun(t);
+    muat(t, tampilkanLama);
+  }
+
+  function handleLamaChange(lama: boolean) {
+    setTampilkanLama(lama);
+    muat(tahun, lama);
   }
 
   const maxLaba = Math.max(...data.bulan_list.map(b => Math.abs(b.laba_bersih)), 1);
@@ -123,8 +135,14 @@ export default function LaporanLRClient({ initialData, initialTahun }: Props) {
             Kas masuk vs semua pengeluaran — rincian per kategori
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           {pending && <Loader2 className="w-4 h-4 animate-spin text-[#9aa0a6]" />}
+          <label className="flex items-center gap-2 text-xs text-[#9aa0a6] cursor-pointer select-none"
+            title="Default hanya PO periode baru: pendapatan dari invoice barang PO-0100 ke atas; pengeluaran yang ditandai ke PO lama disembunyikan">
+            <input type="checkbox" checked={tampilkanLama} onChange={e => handleLamaChange(e.target.checked)}
+              className="accent-[#e5c17b]" />
+            Tampilkan PO sebelum PO-{String(PO_AWAL_PERIODE).padStart(4, '0')}
+          </label>
           <select
             value={tahun}
             onChange={(e) => handleTahunChange(Number(e.target.value))}

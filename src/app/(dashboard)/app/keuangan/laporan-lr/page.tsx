@@ -3,7 +3,8 @@ import LaporanLRClient from './LaporanLRClient';
 
 export default async function LaporanLRPage() {
   const tahun = new Date().getFullYear();
-  const data  = await getLaporanLR(tahun);
+  // Default: fokus PO periode baru (PO-0100 ke atas)
+  const data  = await getLaporanLR(tahun, undefined, undefined, true);
 
   return <LaporanLRClient initialData={data} initialTahun={tahun} />;
 }
