@@ -7,7 +7,7 @@ export default function PrintButton() {
 
   const handlePrint = () => {
     const el = document.getElementById('sj-driver-name');
-    if (el) el.textContent = namaDriver || '................................';
+    if (el) el.textContent = namaDriver || '.....................';
     window.print();
   };
 

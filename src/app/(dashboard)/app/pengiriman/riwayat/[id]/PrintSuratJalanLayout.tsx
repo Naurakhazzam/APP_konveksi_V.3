@@ -1,6 +1,9 @@
 import React from 'react';
 import type { SuratJalanDetail } from '@/lib/actions/pengiriman/surat-jalan.actions';
 
+// Dicetak di kertas A6 (105 x 148 mm). Layout dipadatkan supaya ±15 baris
+// tabel muat satu lembar; lebih dari itu otomatis lanjut ke lembar berikutnya
+// (header tabel diulang, tanda tangan tidak terpotong).
 export default function PrintSuratJalanLayout({ detail }: { detail: SuratJalanDetail }) {
   // Grouping item by NO_PO + Warna + Size + Model
   const groupedItems = detail.items.reduce((acc, item) => {
@@ -21,104 +24,93 @@ export default function PrintSuratJalanLayout({ detail }: { detail: SuratJalanDe
   const groupedArray = Object.values(groupedItems);
   const totalQty = groupedArray.reduce((sum, i) => sum + i.qty_kirim, 0);
 
+  const cell = 'border border-black px-1 py-[1px]';
+
   return (
-    <div className="sj-print-root hidden print:block font-sans text-black bg-white">
+    <div className="sj-print-root hidden print:block font-sans text-black bg-white text-[9px] leading-tight">
       <style>{`
         @media print {
-          @page { margin: 1cm; size: A4 portrait; }
+          @page { margin: 5mm; size: A6 portrait; }
           * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
           html, body { height: auto !important; overflow: visible !important; background: white !important; }
           body * { visibility: hidden; }
           .sj-print-root, .sj-print-root * { visibility: visible; }
           .sj-print-root { position: absolute; top: 0; left: 0; width: 100%; background: white !important; }
-          table { border-collapse: collapse; width: 100%; }
+          .sj-print-root table { border-collapse: collapse; width: 100%; }
+          .sj-print-root thead { display: table-header-group; }
+          .sj-print-root tr, .sj-no-break { break-inside: avoid; page-break-inside: avoid; }
         }
       `}</style>
 
-      {/* Kop Surat Header (Opsional, disesuaikan) */}
-      <div className="text-center border-b-2 border-black pb-2 mb-3">
-        <h1 className="text-lg font-bold tracking-wide uppercase">Surat Jalan</h1>
-        <p className="text-xs">Stitchlyx Syncore</p>
-      </div>
-
-      {/* Info SJ */}
-      <div className="flex justify-between mb-4 text-xs">
+      {/* Kop */}
+      <div className="flex items-end justify-between border-b border-black pb-1 mb-1">
         <div>
-          <table className="text-left">
-            <tbody>
-              <tr><td className="py-0.5 pr-3 font-semibold">Kepada</td><td className="py-0.5">: {detail.klien_nama}</td></tr>
-              <tr><td className="py-0.5 pr-3 font-semibold align-top">Alamat</td><td className="py-0.5 max-w-[280px] align-top">: {detail.klien_alamat || '-'}</td></tr>
-            </tbody>
-          </table>
+          <h1 className="text-[12px] font-bold tracking-wide uppercase leading-none">Surat Jalan</h1>
+          <p className="text-[8px]">Stitchlyx Syncore</p>
         </div>
-        <div>
-          <table className="text-left">
-            <tbody>
-              <tr><td className="py-0.5 pr-3 font-semibold">No. Surat Jalan</td><td className="py-0.5">: {detail.nomor_sj}</td></tr>
-              <tr><td className="py-0.5 pr-3 font-semibold">Tanggal</td><td className="py-0.5">: {new Date(detail.tanggal).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' })}</td></tr>
-            </tbody>
-          </table>
+        <div className="text-right">
+          <p className="font-bold">{detail.nomor_sj}</p>
+          <p>{new Date(detail.tanggal).toLocaleDateString('id-ID', { year: 'numeric', month: 'short', day: 'numeric' })}</p>
         </div>
       </div>
 
-      <div className="mb-3">
-        <p className="text-xs mb-1">Harap diterima dengan baik barang-barang berikut ini:</p>
-        <table className="w-full text-xs border border-black">
-          <thead>
-            <tr className="border-b border-black">
-              <th className="border-r border-black py-1 px-2 w-8 text-center">No</th>
-              <th className="border-r border-black py-1 px-2">No PO</th>
-              <th className="border-r border-black py-1 px-2">Deskripsi (Model)</th>
-              <th className="border-r border-black py-1 px-2">Warna / Size</th>
-              <th className="py-1 px-2 text-right w-20">QTY (Pcs)</th>
-            </tr>
-          </thead>
-          <tbody>
-            {groupedArray.map((item, idx) => (
-              <tr key={idx} className="border-b border-black">
-                <td className="border-r border-black py-1 px-2 text-center">{idx + 1}</td>
-                <td className="border-r border-black py-1 px-2">{item.no_po}</td>
-                <td className="border-r border-black py-1 px-2">{item.model_nama || '-'}</td>
-                <td className="border-r border-black py-1 px-2">{item.warna} / {item.size}</td>
-                <td className="py-1 px-2 text-right font-medium">{item.qty_kirim}</td>
-              </tr>
-            ))}
-          </tbody>
-          <tfoot>
-            <tr className="border-t border-black font-bold">
-              <td colSpan={4} className="border-r border-black py-1 px-2 text-right">TOTAL</td>
-              <td className="py-1 px-2 text-right">{totalQty}</td>
-            </tr>
-          </tfoot>
-        </table>
+      {/* Kepada */}
+      <div className="mb-1">
+        <p><span className="font-semibold">Kepada:</span> {detail.klien_nama}</p>
+        {detail.klien_alamat && <p><span className="font-semibold">Alamat:</span> {detail.klien_alamat}</p>}
       </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th className={`${cell} w-[14px] text-center`}>No</th>
+            <th className={`${cell} text-left`}>No PO</th>
+            <th className={`${cell} text-left`}>Model</th>
+            <th className={`${cell} text-left`}>Warna / Size</th>
+            <th className={`${cell} text-right w-[32px]`}>Qty</th>
+          </tr>
+        </thead>
+        <tbody>
+          {groupedArray.map((item, idx) => (
+            <tr key={idx}>
+              <td className={`${cell} text-center`}>{idx + 1}</td>
+              <td className={cell}>{item.no_po}</td>
+              <td className={cell}>{item.model_nama || '-'}</td>
+              <td className={cell}>{item.warna} / {item.size}</td>
+              <td className={`${cell} text-right font-medium`}>{item.qty_kirim}</td>
+            </tr>
+          ))}
+          <tr className="font-bold">
+            <td colSpan={4} className={`${cell} text-right`}>TOTAL (pcs)</td>
+            <td className={`${cell} text-right`}>{totalQty}</td>
+          </tr>
+        </tbody>
+      </table>
 
       {detail.catatan && (
-        <div className="mb-3 text-xs border border-black p-2 min-h-[28px]">
-          <strong>Catatan:</strong><br/>
-          {detail.catatan}
+        <div className="mt-1 border border-black px-1 py-[2px] sj-no-break">
+          <strong>Catatan:</strong> {detail.catatan}
         </div>
       )}
 
       {/* Tanda Tangan */}
-      <div className="grid grid-cols-3 gap-4 text-center text-xs mt-5">
+      <div className="sj-no-break grid grid-cols-3 gap-1 text-center mt-2">
         <div>
-          <p className="mb-8">Penerima,</p>
-          <p className="font-semibold border-b border-black inline-block min-w-[110px]">( ................................ )</p>
+          <p className="mb-5">Penerima,</p>
+          <p>( ..................... )</p>
         </div>
         <div>
-          <p className="mb-8">Pengirim (Driver),</p>
-          <p className="font-semibold border-b border-black inline-block min-w-[110px]">( <span id="sj-driver-name">................................</span> )</p>
+          <p className="mb-5">Driver,</p>
+          <p>( <span id="sj-driver-name">.....................</span> )</p>
         </div>
         <div>
-          <p className="mb-6">Hormat Kami,</p>
-          <p className="font-bold text-xs mb-1">FAUZAN</p>
-          <p className="font-semibold border-b border-black inline-block min-w-[110px]">( ................................ )</p>
+          <p className="mb-5">Hormat Kami,</p>
+          <p className="font-bold">( FAUZAN )</p>
         </div>
       </div>
 
-      <div className="mt-4 text-[9px] text-gray-500 text-right">
-        Dicetak otomatis oleh Stitchlyx Syncore pada {new Date().toLocaleString('id-ID')}
+      <div className="mt-1 text-[6px] text-gray-500 text-right">
+        Dicetak {new Date().toLocaleString('id-ID')}
       </div>
     </div>
   );
