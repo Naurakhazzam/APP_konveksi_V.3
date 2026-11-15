@@ -57,7 +57,7 @@ BEGIN
       no_referensi, qty, satuan, inventory_batch_id, created_by
     ) VALUES (
       p_tenant_id, p_tanggal_masuk, 'keluar', 'Pembelian Bahan', v_nominal,
-      'Belanja ' || v_item.nama || ' ' || trim(to_char(p_qty, 'FM999999990.###')) || ' ' || COALESCE(v_item.satuan, '')
+      'Belanja ' || v_item.nama || ' ' || replace(trim_scale(p_qty)::text, '.', ',') || ' ' || COALESCE(v_item.satuan, '')
         || CASE WHEN NULLIF(trim(COALESCE(p_keterangan, '')), '') IS NOT NULL THEN ' — ' || trim(p_keterangan) ELSE '' END,
       p_no_faktur, p_qty, v_item.satuan, v_batch_id, p_user_id
     ) RETURNING id INTO v_kas_id;

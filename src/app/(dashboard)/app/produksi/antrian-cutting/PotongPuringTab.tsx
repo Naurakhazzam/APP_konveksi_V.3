@@ -28,6 +28,20 @@ export default function PotongPuringTab({ data, isOwner, onChanged }: Props) {
   const kgPakai = habis ? (bahan?.stok_aktual ?? 0) : parseFloat(kg) || 0;
   const pcsNum = parseInt(pcs, 10) || 0;
 
+  // Perkiraan biaya FIFO: ambil dari LOT paling lama dulu (sama seperti di server)
+  const biayaFifo = useMemo(() => {
+    if (!bahan || kgPakai <= 0) return 0;
+    let sisa = kgPakai, total = 0;
+    for (const l of bahan.lot) {
+      if (sisa <= 0) break;
+      const ambil = Math.min(l.qty_sisa, sisa);
+      total += ambil * l.harga_satuan;
+      sisa -= ambil;
+    }
+    if (sisa > 0) total += sisa * bahan.harga_referensi;
+    return total;
+  }, [bahan, kgPakai]);
+
   const simpan = async () => {
     if (!bahan) { toast.error('Pilih bahan puring'); return; }
     if (kgPakai <= 0) { toast.error(habis ? `Stok ${bahan.nama} kosong — input belanja di Stok Masuk dulu` : 'Isi kg yang dipotong'); return; }
@@ -131,7 +145,9 @@ export default function PotongPuringTab({ data, isOwner, onChanged }: Props) {
         <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-[#2A2D31]">
           <p className="text-xs text-[#9aa0a6]">
             {kgPakai > 0 && pcsNum > 0
-              ? <>Pakai <b className="text-[#e8eaed]">{fmt(kgPakai)} {bahan?.satuan}</b> → <b className="text-[#e5c17b]">{pcsNum} lembar</b> ({fmt(kgPakai / pcsNum * 1000)} gram/lembar)</>
+              ? <>Pakai <b className="text-[#e8eaed]">{fmt(kgPakai)} {bahan?.satuan}</b> ({rp(biayaFifo)}) → <b className="text-[#e5c17b]">{pcsNum} lembar</b>
+                  {' '}· <b className="text-[#e5c17b]">{rp(biayaFifo / pcsNum)}/lembar</b>
+                  <span className="text-[#9aa0a6]"> ({fmt(kgPakai / pcsNum * 1000)} gram/lembar)</span></>
               : 'Isi data untuk melihat perhitungan'}
           </p>
           <button onClick={simpan} disabled={busy || data.bahan.length === 0}

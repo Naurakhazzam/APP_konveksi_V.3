@@ -30,6 +30,9 @@ export interface BahanPuringOption {
   nama: string;
   satuan: string;
   stok_aktual: number;
+  /** LOT bersisa, urut FIFO (paling lama dulu) — untuk perkiraan biaya */
+  lot: { qty_sisa: number; harga_satuan: number }[];
+  harga_referensi: number;
 }
 
 export interface RiwayatPotongPuring {
@@ -55,7 +58,7 @@ export interface PuringData {
 export async function getPuringData(): Promise<PuringData> {
   const supabase = await createClient();
   const [bahanRes, puringRes, riwayatRes] = await Promise.all([
-    supabase.from('inventory_item').select('id, nama, satuan, stok_aktual')
+    supabase.from('inventory_item').select('id, nama, satuan, stok_aktual, harga_referensi')
       .eq('tenant_id', TENANT_ID).ilike('nama', '%puring%').neq('nama', 'Puring').order('nama'),
     supabase.from('inventory_item').select('stok_aktual, harga_referensi')
       .eq('tenant_id', TENANT_ID).eq('nama', 'Puring').maybeSingle(),
@@ -66,9 +69,20 @@ export async function getPuringData(): Promise<PuringData> {
   if (bahanRes.error) throw new Error(bahanRes.error.message);
   if (riwayatRes.error) throw new Error(riwayatRes.error.message);
 
+  const bahanIds = (bahanRes.data ?? []).map((b: any) => b.id as string);
+  const lotRes = bahanIds.length
+    ? await supabase.from('inventory_batch').select('inventory_item_id, qty_sisa, harga_satuan')
+        .eq('tenant_id', TENANT_ID).in('inventory_item_id', bahanIds).gt('qty_sisa', 0)
+        .order('tanggal_masuk', { ascending: true }).order('created_at', { ascending: true })
+    : { data: [], error: null };
+  if (lotRes.error) throw new Error(lotRes.error.message);
+
   return {
     bahan: (bahanRes.data ?? []).map((b: any) => ({
       id: b.id, nama: b.nama, satuan: b.satuan, stok_aktual: Number(b.stok_aktual),
+      harga_referensi: Number(b.harga_referensi ?? 0),
+      lot: (lotRes.data ?? []).filter((l: any) => l.inventory_item_id === b.id)
+        .map((l: any) => ({ qty_sisa: Number(l.qty_sisa), harga_satuan: Number(l.harga_satuan) })),
     })),
     stok_puring: Number(puringRes.data?.stok_aktual ?? 0),
     harga_puring: Number(puringRes.data?.harga_referensi ?? 0),
