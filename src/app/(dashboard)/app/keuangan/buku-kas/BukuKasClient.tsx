@@ -16,8 +16,11 @@ import {
   type BukuKasEntry,
   type AddBukuKasInput,
   type HppKomponenOption,
+  type PembantuJenisOption,
   KATEGORI_MASUK,
   KATEGORI_KELUAR,
+  KATEGORI_BAHAN_PEMBANTU,
+  SATUAN_BELI,
 } from '@/lib/actions/keuangan/buku-kas.types';
 import {
   getBukuKasEntries,
@@ -47,6 +50,7 @@ interface Props {
   initialEntries: BukuKasEntry[];
   poList: { id: string; no_po: string }[];
   kompoList: HppKomponenOption[];
+  pembantuList: PembantuJenisOption[];
   /** Bulan berjalan "MM" & tahun "YYYY" — filter awal */
   defaultBulan: string;
   defaultTahun: string;
@@ -63,11 +67,14 @@ const makeDefaultForm = (tipe: 'masuk' | 'keluar') => ({
   no_referensi: '',
   po_id: '',
   komponen_id: '',
+  pembantu_jenis_id: '',
+  qty: '',
+  satuan: '',
 });
 
 // ─── COMPONENT ───────────────────────────────────────────────────────────────
 
-export default function BukuKasClient({ initialEntries, poList, kompoList, defaultBulan, defaultTahun }: Props) {
+export default function BukuKasClient({ initialEntries, poList, kompoList, pembantuList, defaultBulan, defaultTahun }: Props) {
   const [entries, setEntries] = useState<BukuKasEntry[]>(initialEntries);
   /** Entri bertanda PO lama (sebelum PO-0100) disembunyikan kecuali dicentang; tanpa tag PO selalu tampil */
   const [tampilkanLama, setTampilkanLama] = useState(false);
@@ -94,6 +101,8 @@ export default function BukuKasClient({ initialEntries, poList, kompoList, defau
     poList.forEach(p => { m[p.id] = p.no_po; });
     return m;
   }, [poList]);
+
+  const isPembantu = form.tipe === 'keluar' && form.kategori === KATEGORI_BAHAN_PEMBANTU;
 
   const totalMasuk  = tampil.filter(e => e.tipe === 'masuk').reduce((s, e) => s + e.nominal, 0);
   const totalKeluar = tampil.filter(e => e.tipe === 'keluar').reduce((s, e) => s + e.nominal, 0);
@@ -137,7 +146,10 @@ export default function BukuKasClient({ initialEntries, poList, kompoList, defau
       keterangan:   form.keterangan,
       no_referensi: form.no_referensi || undefined,
       po_id:        form.po_id        || undefined,
-      komponen_id:  form.komponen_id   || undefined,
+      komponen_id:  isPembantu ? undefined : (form.komponen_id || undefined),
+      pembantu_jenis_id: isPembantu ? form.pembantu_jenis_id || null : null,
+      qty:          isPembantu ? parseFloat(form.qty) || null : null,
+      satuan:       isPembantu ? form.satuan || null : null,
     };
     const result = await addBukuKas(input);
     setSubmitting(false);
@@ -404,6 +416,60 @@ export default function BukuKasClient({ initialEntries, poList, kompoList, defau
               </div>
             </div>
 
+            {isPembantu && (
+              <div className="space-y-3 p-3 rounded-lg border border-[#e5c17b]/30 bg-[#e5c17b]/5">
+                <div>
+                  <label className={labelCls}>Jenis Bahan *</label>
+                  <select
+                    required
+                    className={inputCls}
+                    value={form.pembantu_jenis_id}
+                    onChange={e => {
+                      const j = pembantuList.find(p => p.id === e.target.value);
+                      setForm(f => ({ ...f, pembantu_jenis_id: e.target.value, satuan: j?.satuan_default ?? f.satuan }));
+                    }}
+                  >
+                    <option value="">-- Pilih --</option>
+                    {pembantuList.map(j => (
+                      <option key={j.id} value={j.id}>{j.nama}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className={labelCls}>Jumlah *</label>
+                    <input
+                      type="number"
+                      required
+                      min="0"
+                      step="any"
+                      placeholder="contoh: 2"
+                      className={inputCls}
+                      value={form.qty}
+                      onChange={e => setForm(f => ({ ...f, qty: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Satuan *</label>
+                    <select
+                      required
+                      className={inputCls}
+                      value={form.satuan}
+                      onChange={e => setForm(f => ({ ...f, satuan: e.target.value }))}
+                    >
+                      <option value="">-- Pilih --</option>
+                      {SATUAN_BELI.map(s => (
+                        <option key={s} value={s}>{s}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <p className="text-[11px] text-[#9aa0a6]">
+                  Masuk ke saldo jenis bahan ini (menu Keuangan → Saldo Bahan Pembantu).
+                </p>
+              </div>
+            )}
+
             <div>
               <label className={labelCls}>Nominal (Rp) *</label>
               <input
@@ -418,11 +484,13 @@ export default function BukuKasClient({ initialEntries, poList, kompoList, defau
             </div>
 
             <div>
-              <label className={labelCls}>Keterangan *</label>
+              <label className={labelCls}>
+                Keterangan {isPembantu ? <span className="text-[#5f6368] normal-case font-normal">(opsional)</span> : '*'}
+              </label>
               <input
                 type="text"
-                required
-                placeholder="Deskripsi transaksi"
+                required={!isPembantu}
+                placeholder={isPembantu ? 'contoh: roll WP hitam' : 'Deskripsi transaksi'}
                 className={inputCls}
                 value={form.keterangan}
                 onChange={e => setForm(f => ({ ...f, keterangan: e.target.value }))}
@@ -454,7 +522,7 @@ export default function BukuKasClient({ initialEntries, poList, kompoList, defau
               </select>
             </div>
 
-            {modalTipe === 'keluar' && (
+            {modalTipe === 'keluar' && !isPembantu && (
               <div>
                 <label className={labelCls}>HPP Komponen Overhead <span className="text-[#5f6368] normal-case font-normal">(opsional)</span></label>
                 <select

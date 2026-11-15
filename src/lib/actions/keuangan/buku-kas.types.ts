@@ -23,12 +23,28 @@ export interface AddBukuKasInput {
   no_referensi?: string;
   po_id?: string;
   komponen_id?: string | null;
+  /** Wajib bila kategori = 'Bahan Pembantu' */
+  pembantu_jenis_id?: string | null;
+  qty?: number | null;
+  satuan?: string | null;
 }
 
 export interface HppKomponenOption {
   id: string;
   nama: string;
 }
+
+/** Jenis saldo bahan pembantu (tabel pembantu_jenis) */
+export interface PembantuJenisOption {
+  id: string;
+  nama: string;
+  /** Satuan yang terakhir dipakai saat belanja jenis ini, atau satuan default */
+  satuan_default: string | null;
+}
+
+export const KATEGORI_BAHAN_PEMBANTU = 'Bahan Pembantu';
+
+export const SATUAN_BELI = ['pcs', 'lusin', 'gross', 'pack', 'roll', 'kg', 'meter', 'yard'] as const;
 
 export const KATEGORI_MASUK = [
   'DP Klien',
@@ -38,6 +54,7 @@ export const KATEGORI_MASUK = [
 
 export const KATEGORI_KELUAR = [
   'Pembelian Bahan',
+  'Bahan Pembantu',
   'Pembayaran Gaji',
   'Biaya Overhead',
   'Biaya Operasional',

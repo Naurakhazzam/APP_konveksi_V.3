@@ -259,6 +259,12 @@ export async function addStokMasuk(input: StokMasukInput): Promise<{ batch_id: s
   const supabase = await createClient();
   const userId = await resolveUserId();
 
+  const { data: item } = await supabase
+    .from('inventory_item').select('jenis').eq('id', input.inventory_item_id).maybeSingle();
+  if (item?.jenis === 'pembantu') {
+    throw new Error('Belanja bahan pembantu dicatat di Buku Kas (kategori "Bahan Pembantu"), bukan lewat Stok Masuk.');
+  }
+
   const { data, error } = await supabase.rpc('stok_masuk', {
     p_inventory_item_id: input.inventory_item_id,
     p_qty:               input.qty,

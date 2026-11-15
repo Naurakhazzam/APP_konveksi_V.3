@@ -10,7 +10,7 @@ export default async function StockOpnamePage() {
   const { bulan, tahun } = bulanBerjalan();
   const hariIni = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(new Date());
   return (
-    <PageWrapper title="Stock Opname" subtitle="Hitung fisik stok — pemakaian bahan pembantu dihitung dari selisihnya">
+    <PageWrapper title="Stock Opname" subtitle="Hitung fisik stok bahan utama — selisihnya dicatat sebagai pemakaian">
       <StockOpnameClient data={data} hariIni={hariIni} bulanIni={`${tahun}-${bulan}`} />
     </PageWrapper>
   );

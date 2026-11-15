@@ -15,9 +15,8 @@ interface Props {
 const rp = (n: number) => (n < 0 ? '-' : '') + 'Rp' + Math.abs(Math.round(n)).toLocaleString('id-ID');
 const fmt = (n: number) => Number(n.toFixed(3)).toLocaleString('id-ID');
 
-export default function StockOpnameClient({ data, hariIni, bulanIni }: Props) {
+export default function StockOpnameClient({ data, hariIni }: Props) {
   const router = useRouter();
-  const [jenis, setJenis] = useState<'pembantu' | 'utama'>('pembantu');
   const [cari, setCari] = useState('');
   const [fisik, setFisik] = useState<Record<string, string>>({});
   const [tanggal, setTanggal] = useState(hariIni);
@@ -25,16 +24,11 @@ export default function StockOpnameClient({ data, hariIni, bulanIni }: Props) {
   const [busy, setBusy] = useState(false);
 
   const items = useMemo(() => data.items
-    .filter(i => i.jenis === jenis)
-    .filter(i => !cari || i.nama.toLowerCase().includes(cari.toLowerCase())), [data.items, jenis, cari]);
+    .filter(i => i.jenis === 'utama')
+    .filter(i => !cari || i.nama.toLowerCase().includes(cari.toLowerCase())), [data.items, cari]);
 
   const diisi = Object.entries(fisik).filter(([, v]) => v.trim() !== '' && !Number.isNaN(Number(v)));
   const itemMap = useMemo(() => new Map(data.items.map(i => [i.id, i])), [data.items]);
-
-  // Pemakaian bahan pembantu bulan ini (dari opname)
-  const terpakaiBulanIni = data.riwayat
-    .filter(r => r.tanggal.startsWith(bulanIni) && r.nilai_selisih < 0)
-    .reduce((s, r) => s - r.nilai_selisih, 0);
 
   const simpan = async () => {
     if (!diisi.length) { toast.error('Isi stok fisik minimal satu barang'); return; }
@@ -53,29 +47,15 @@ export default function StockOpnameClient({ data, hariIni, bulanIni }: Props) {
 
   return (
     <div className="space-y-6 mt-4">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        <div className={`${card} px-4 py-3`}>
-          <div className="text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold">Bahan pembantu terpakai bulan ini</div>
-          <div className="text-lg font-bold text-[#e5c17b]">{rp(terpakaiBulanIni)}</div>
-          <div className="text-[10px] text-[#9aa0a6]">dari selisih stock opname (modal FIFO)</div>
-        </div>
-        <div className={`${card} px-4 py-3 md:col-span-2 text-xs text-[#9aa0a6] leading-relaxed`}>
-          <b className="text-[#e8eaed]">Cara pakai:</b> beli bahan lewat <b>Stok Masuk</b> seperti biasa. Di akhir periode (mis. akhir bulan),
-          hitung sisa fisiknya lalu isi kolom <b>Stok Fisik</b>. Selisihnya dicatat sebagai bahan terpakai (atau hilang/rusak).
-          Barang yang tidak diisi tidak diubah.
-        </div>
+      <div className={`${card} px-4 py-3 text-xs text-[#9aa0a6] leading-relaxed`}>
+        <b className="text-[#e8eaed]">Cara pakai:</b> hitung sisa fisik bahan utama lalu isi kolom <b>Stok Fisik</b>.
+        Selisihnya dicatat sebagai bahan terpakai (atau hilang/rusak). Barang yang tidak diisi tidak diubah.
+        Bahan pembantu tidak di-opname lagi — belanjanya dicatat di <b>Buku Kas</b> (kategori Bahan Pembantu)
+        dan dipantau di menu <b>Keuangan → Saldo Bahan Pembantu</b>.
       </div>
 
       <div className={`${card} p-4 space-y-4`}>
         <div className="flex flex-wrap items-end gap-3">
-          <div className="flex p-1 bg-[#16181A] rounded-lg border border-[#2A2D31]">
-            {(['pembantu', 'utama'] as const).map(j => (
-              <button key={j} onClick={() => setJenis(j)}
-                className={'px-4 py-1.5 rounded-md text-sm font-medium ' + (jenis === j ? 'bg-[#e5c17b] text-[#0D0E10]' : 'text-[#9aa0a6] hover:text-[#e8eaed]')}>
-                {j === 'pembantu' ? 'Bahan Pembantu' : 'Bahan Utama'}
-              </button>
-            ))}
-          </div>
           <input value={cari} onChange={e => setCari(e.target.value)} placeholder="Cari barang..." className={`${inputCls} w-56`} />
           <div className="ml-auto flex items-end gap-2">
             <div>

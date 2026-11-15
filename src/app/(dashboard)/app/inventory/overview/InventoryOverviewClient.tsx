@@ -223,6 +223,10 @@ export default function InventoryOverviewClient({ items, kategoriTrxList, warnaL
   };
 
   const openStokMasukModal = async (item: InventoryOverviewItem) => {
+    if (item.jenis === 'pembantu') {
+      toast.info('Belanja bahan pembantu dicatat di Keuangan → Buku Kas (kategori "Bahan Pembantu"), bukan lewat Stok Masuk.');
+      return;
+    }
     setSelectedItem(item);
     setShowStokMasuk(true);
     setLotLoading(true);
@@ -339,7 +343,7 @@ export default function InventoryOverviewClient({ items, kategoriTrxList, warnaL
                     {item.nama}
                     {item.jenis === 'pembantu' && (
                       <span className="ml-2 text-[10px] font-normal px-1.5 py-0.5 rounded border border-sky-500/30 text-sky-300"
-                        title="Bahan pembantu: tidak dipotong otomatis, pemakaian dihitung lewat Stock Opname">
+                        title="Bahan pembantu: belanja dicatat di Buku Kas, dipantau di Keuangan → Saldo Bahan Pembantu">
                         pembantu
                       </span>
                     )}

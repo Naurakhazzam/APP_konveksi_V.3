@@ -1,0 +1,11 @@
+-- Catatan: perubahan data ini sudah dijalankan langsung lewat Supabase (15 Nov 2026).
+-- Cadangan: model_aksesori_backup_20261115_sleting, inventory_item_backup_20261115_sleting.
+--
+-- 1. Neck: sleting saku khusus (beli jadi Rp 35rb/lusin) dipotong otomatis 3 pcs dari
+--    "Sleting Jacket Neck" (diaktifkan lagi); aturan lama "Sleting WP saku" x3 dihapus.
+-- 2. Sleting roll (Sleting saku koil, Sleting WP saku, Sleting Topi) -> jenis 'pembantu',
+--    aturan potong otomatis Storma x2, Airflow x2, Neck x1 dihapus. Masuk saldo "Sleting Roll".
+-- 3. Komponen HPP baru "Kepala Sleting" Rp 1.000 hanya untuk Ignite (kepala diganti warna).
+--    Model lain: harga kepala sudah termasuk HPP Sleting Saku / Sleting Topi.
+-- 4. Sleting depan jadi Ignite, Noir, Raizen -> potong otomatis 1 "Sleting Koil".
+-- 5. HPP Velcro Rp 500 ditambahkan untuk 10 produk Storma (Dravo & Sarung sudah ada).

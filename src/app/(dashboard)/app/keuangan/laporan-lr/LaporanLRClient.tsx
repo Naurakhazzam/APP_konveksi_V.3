@@ -49,7 +49,7 @@ interface ExpenseRow {
 const EXPENSE_ROWS: ExpenseRow[] = [
   {
     label    : 'Pembelian Bahan',
-    desc     : 'kain, aksesori',
+    desc     : 'kain, aksesori, bahan pembantu',
     color    : 'text-blue-300',
     getTotal : (d) => d.total_pembelian_bahan,
     getVal   : (b) => b.pembelian_bahan,

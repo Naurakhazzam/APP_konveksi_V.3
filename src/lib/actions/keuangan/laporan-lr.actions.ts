@@ -154,7 +154,8 @@ export async function getLaporanLR(
     const row     = ensure(bln);
     const nominal = Number(k.nominal);
     switch (k.kategori) {
-      case 'Pembelian Bahan':   row.pembelian_bahan   += nominal; break;
+      case 'Pembelian Bahan':
+      case 'Bahan Pembantu':    row.pembelian_bahan   += nominal; break;
       case 'Pembayaran Gaji':   row.pembayaran_gaji   += nominal; break;
       case 'Biaya Overhead':
       case 'Biaya Peralatan':   row.biaya_overhead    += nominal; break;

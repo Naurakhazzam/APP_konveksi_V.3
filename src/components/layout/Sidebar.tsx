@@ -132,6 +132,7 @@ const NAV_MENU = [
       { label: 'Ringkasan',           path: '/app/keuangan/ringkasan' },
       { label: 'Jurnal Produksi',       path: '/app/keuangan/jurnal-produksi' },
       { label: 'Buku Kas',              path: '/app/keuangan/buku-kas' },
+      { label: 'Saldo Bahan Pembantu', path: '/app/keuangan/saldo-pembantu' },
       { label: 'Invoice & Tagihan',    path: '/app/keuangan/invoice' },
       { label: 'Laporan Laba Rugi',    path: '/app/keuangan/laporan-lr' },
       { label: 'Laporan Per PO',      path: '/app/keuangan/laporan-po' },

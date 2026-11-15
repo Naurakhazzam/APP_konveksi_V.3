@@ -55,6 +55,7 @@ const ALL_APP_PATHS = [
   '/app/keuangan/ringkasan',
   '/app/keuangan/jurnal-produksi',
   '/app/keuangan/buku-kas',
+  '/app/keuangan/saldo-pembantu',
   '/app/keuangan/invoice',
   '/app/keuangan/laporan-lr',
   '/app/keuangan/laporan-po',
