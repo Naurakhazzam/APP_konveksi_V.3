@@ -7,12 +7,15 @@ export const metadata = {
 
 export default async function BukuKasPage() {
   try {
+    // Default: bulan berjalan (zona waktu WIB)
+    const [tahun, bulan] = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit' })
+      .format(new Date()).split('-');
     const [entries, poList, kompoList] = await Promise.all([
-      getBukuKasEntries(),
+      getBukuKasEntries({ bulan, tahun }),
       getPOListForKas(),
       getHppKomponenOverhead(),
     ]);
-    return <BukuKasClient initialEntries={entries} poList={poList} kompoList={kompoList} />;
+    return <BukuKasClient initialEntries={entries} poList={poList} kompoList={kompoList} defaultBulan={bulan} defaultTahun={tahun} />;
   } catch (e) {
     return (
       <div className="p-8 text-red-400">

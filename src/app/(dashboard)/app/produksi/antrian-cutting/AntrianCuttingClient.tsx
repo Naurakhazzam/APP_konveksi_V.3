@@ -24,23 +24,27 @@ import ModalTutupDataLama, { type BundleUntukDitutup } from '@/components/produk
 import TombolDataDitutup from '@/components/produksi/TombolDataDitutup';
 import ModalSelesaiCutting from './ModalSelesaiCutting';
 import PemakaianBahanTab from './PemakaianBahanTab';
+import PotongPuringTab from './PotongPuringTab';
+import type { PuringData } from '@/lib/actions/produksi/potong-puring.actions';
 
 interface Props {
   poList: CuttingRow[];
   pemakaian: PemakaianCuttingRow[];
+  puring: PuringData;
   role: string;
 }
 
 type PrintMode = 'tiket' | 'spk' | 'label' | 'kartu';
 
 /** Tab tahap cutting + tab laporan pemakaian bahan */
-type TabKey = CuttingStatus | 'pemakaian';
+type TabKey = CuttingStatus | 'pemakaian' | 'puring';
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'menunggu',  label: 'Menunggu' },
   { key: 'progress',  label: 'Sedang Dipotong' },
   { key: 'selesai',   label: 'Selesai' },
   { key: 'pemakaian', label: 'Pemakaian Bahan' },
+  { key: 'puring',    label: 'Potong Puring' },
 ];
 
 function formatTime(iso: string | null): string {
@@ -50,7 +54,7 @@ function formatTime(iso: string | null): string {
   });
 }
 
-export default function AntrianCuttingClient({ poList, pemakaian, role }: Props) {
+export default function AntrianCuttingClient({ poList, pemakaian, puring, role }: Props) {
   const router = useRouter();
   const isOwner = role === 'owner';
 
@@ -76,7 +80,8 @@ export default function AntrianCuttingClient({ poList, pemakaian, role }: Props)
   const counts = useMemo(() => ({
     ...Object.fromEntries(TABS.map(t => [t.key, poList.filter(r => r.status === t.key).length])),
     pemakaian: new Set(pemakaian.map(p => `${p.po_id}::${p.model_nama ?? ''}`)).size,
-  }) as Record<TabKey, number>, [poList, pemakaian]);
+    puring: Math.max(0, Math.round(puring.stok_puring)),
+  }) as Record<TabKey, number>, [poList, pemakaian, puring.stok_puring]);
 
   // Data server berubah (router.refresh) → buang cache & pilihan
   const [listSebelumnya, setListSebelumnya] = useState(poList);
@@ -259,7 +264,7 @@ export default function AntrianCuttingClient({ poList, pemakaian, role }: Props)
             ))}
           </div>
 
-          {tab !== 'pemakaian' && <div className="flex items-center gap-2 flex-wrap">
+          {tab !== 'pemakaian' && tab !== 'puring' && <div className="flex items-center gap-2 flex-wrap">
             <TombolDataDitutup onBerubah={() => router.refresh()} />
             {tab !== 'selesai' && (
               <button disabled={!ada || !!busy} onClick={() => setShowTutup(true)}
@@ -318,7 +323,9 @@ export default function AntrianCuttingClient({ poList, pemakaian, role }: Props)
       </div>
 
       {/* Tabel */}
-      {tab === 'pemakaian' ? (
+      {tab === 'puring' ? (
+        <div className="print:hidden"><PotongPuringTab key={puring.riwayat[0]?.id ?? 'kosong'} data={puring} isOwner={isOwner} onChanged={() => router.refresh()} /></div>
+      ) : tab === 'pemakaian' ? (
         <div className="print:hidden"><PemakaianBahanTab rows={pemakaian} isOwner={isOwner} onChanged={() => router.refresh()} /></div>
       ) : (
       <div className="print:hidden rounded-xl border border-[#2A2D31] bg-[#1A1D1F] overflow-hidden">

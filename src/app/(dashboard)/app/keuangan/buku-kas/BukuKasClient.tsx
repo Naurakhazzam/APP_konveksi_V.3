@@ -45,6 +45,9 @@ interface Props {
   initialEntries: BukuKasEntry[];
   poList: { id: string; no_po: string }[];
   kompoList: HppKomponenOption[];
+  /** Bulan berjalan "MM" & tahun "YYYY" — filter awal */
+  defaultBulan: string;
+  defaultTahun: string;
 }
 
 // ─── DEFAULT FORM ─────────────────────────────────────────────────────────────
@@ -62,10 +65,10 @@ const makeDefaultForm = (tipe: 'masuk' | 'keluar') => ({
 
 // ─── COMPONENT ───────────────────────────────────────────────────────────────
 
-export default function BukuKasClient({ initialEntries, poList, kompoList }: Props) {
+export default function BukuKasClient({ initialEntries, poList, kompoList, defaultBulan, defaultTahun }: Props) {
   const [entries, setEntries] = useState<BukuKasEntry[]>(initialEntries);
-  const [filterBulan, setFilterBulan] = useState('');
-  const [filterTahun, setFilterTahun] = useState(String(new Date().getFullYear()));
+  const [filterBulan, setFilterBulan] = useState(defaultBulan);
+  const [filterTahun, setFilterTahun] = useState(defaultTahun);
   const [filterTipe, setFilterTipe] = useState('');
   const [filtering, setFiltering] = useState(false);
 
