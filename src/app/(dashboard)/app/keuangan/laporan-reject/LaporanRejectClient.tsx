@@ -22,12 +22,14 @@ const labelCls = 'block text-[10px] font-bold text-[#9aa0a6] uppercase tracking-
 interface Props {
   initialData: LaporanRejectSummary;
   karyawanList: { id: string; nama: string }[];
+  defaultBulan: string;
+  defaultTahun: string;
 }
 
-export default function LaporanRejectClient({ initialData, karyawanList }: Props) {
+export default function LaporanRejectClient({ initialData, karyawanList, defaultBulan, defaultTahun }: Props) {
   const [data, setData] = useState<LaporanRejectSummary>(initialData);
-  const [filterBulan, setFilterBulan] = useState('');
-  const [filterTahun, setFilterTahun] = useState(String(new Date().getFullYear()));
+  const [filterBulan, setFilterBulan] = useState(defaultBulan);
+  const [filterTahun, setFilterTahun] = useState(defaultTahun);
   const [filterKaryawan, setFilterKaryawan] = useState('');
   const [loading, setLoading] = useState(false);
 

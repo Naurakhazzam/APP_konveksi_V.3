@@ -1,4 +1,5 @@
 import { getBukuKasEntries, getPOListForKas, getHppKomponenOverhead } from '@/lib/actions/keuangan/buku-kas.actions';
+import { bulanBerjalan } from '@/lib/bulan-berjalan';
 import BukuKasClient from './BukuKasClient';
 
 export const metadata = {
@@ -7,9 +8,8 @@ export const metadata = {
 
 export default async function BukuKasPage() {
   try {
-    // Default: bulan berjalan (zona waktu WIB)
-    const [tahun, bulan] = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit' })
-      .format(new Date()).split('-');
+    // Default: bulan berjalan (WIB)
+    const { bulan, tahun } = bulanBerjalan();
     const [entries, poList, kompoList] = await Promise.all([
       getBukuKasEntries({ bulan, tahun }),
       getPOListForKas(),

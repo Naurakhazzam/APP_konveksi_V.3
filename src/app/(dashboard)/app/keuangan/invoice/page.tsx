@@ -1,4 +1,5 @@
 import { getInvoiceList, getKlienListForInvoice } from '@/lib/actions/keuangan/invoice.actions';
+import { bulanBerjalan } from '@/lib/bulan-berjalan';
 import { PageWrapper } from '@/components/ui/PageWrapper';
 import InvoiceClient from './InvoiceClient';
 
@@ -8,8 +9,9 @@ export const metadata = {
 
 export default async function InvoicePage() {
   try {
+    const { bulan, tahun } = bulanBerjalan();
     const [invoices, klienList] = await Promise.all([
-      getInvoiceList(),
+      getInvoiceList({ bulan, tahun }),
       getKlienListForInvoice(),
     ]);
 
@@ -21,6 +23,8 @@ export default async function InvoicePage() {
         <InvoiceClient
           initialInvoices={invoices}
           klienList={klienList}
+          defaultBulan={bulan}
+          defaultTahun={tahun}
         />
       </PageWrapper>
     );

@@ -1,4 +1,5 @@
 import { getJurnalEntries, getKategoriTrxList, getPOList } from '@/lib/actions/keuangan/jurnal.actions';
+import { bulanBerjalan } from '@/lib/bulan-berjalan';
 import { PageWrapper } from '@/components/ui/PageWrapper';
 import JurnalClient from './JurnalClient';
 
@@ -8,8 +9,9 @@ export const metadata = {
 
 export default async function JurnalUmumPage() {
   try {
+    const { bulan, tahun } = bulanBerjalan();
     const [entries, kategoriList, poList] = await Promise.all([
-      getJurnalEntries(),
+      getJurnalEntries({ bulan, tahun }),
       getKategoriTrxList(),
       getPOList(),
     ]);
@@ -23,6 +25,8 @@ export default async function JurnalUmumPage() {
           initialEntries={entries}
           kategoriList={kategoriList}
           poList={poList}
+          defaultBulan={bulan}
+          defaultTahun={tahun}
         />
       </PageWrapper>
     );

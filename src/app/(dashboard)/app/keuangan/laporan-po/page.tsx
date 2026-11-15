@@ -1,4 +1,5 @@
 import { getLaporanPOList } from '@/lib/actions/keuangan/laporan-po.actions';
+import { bulanBerjalan } from '@/lib/bulan-berjalan';
 import { getOverheadRateInfo } from '@/lib/actions/keuangan/overhead.actions';
 import { PageWrapper } from '@/components/ui/PageWrapper';
 import LaporanPOClient from './LaporanPOClient';
@@ -10,8 +11,9 @@ export const metadata = {
 
 export default async function LaporanPerPOPage() {
   try {
+    const { bulan, tahun } = bulanBerjalan();
     const [laporanList, rateInfo] = await Promise.all([
-      getLaporanPOList(),
+      getLaporanPOList({ bulan, tahun }),
       getOverheadRateInfo(),
     ]);
 
@@ -21,7 +23,7 @@ export default async function LaporanPerPOPage() {
         subtitle="HPP Estimasi vs Aktual per Purchase Order"
       >
         <div className="mt-6">
-          <LaporanPOClient initialData={laporanList} overheadRateInfo={rateInfo} />
+          <LaporanPOClient initialData={laporanList} overheadRateInfo={rateInfo} defaultBulan={bulan} defaultTahun={tahun} />
         </div>
       </PageWrapper>
     );

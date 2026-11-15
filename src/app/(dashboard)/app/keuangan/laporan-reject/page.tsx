@@ -1,4 +1,5 @@
 import { getLaporanReject, getKaryawanList } from '@/lib/actions/keuangan/laporan-reject.actions';
+import { bulanBerjalan } from '@/lib/bulan-berjalan';
 import { PageWrapper } from '@/components/ui/PageWrapper';
 import LaporanRejectClient from './LaporanRejectClient';
 
@@ -6,14 +7,15 @@ export const metadata = { title: 'Laporan Koreksi QTY | Stitchlyx' };
 
 export default async function LaporanRejectPage() {
   try {
+    const { bulan, tahun } = bulanBerjalan();
     const [data, karyawanList] = await Promise.all([
-      getLaporanReject(),
+      getLaporanReject({ bulan, tahun }),
       getKaryawanList(),
     ]);
     return (
       <PageWrapper title="Laporan Koreksi QTY" subtitle="Daftar reject dan potongan upah karyawan">
         <div className="mt-6">
-          <LaporanRejectClient initialData={data} karyawanList={karyawanList} />
+          <LaporanRejectClient initialData={data} karyawanList={karyawanList} defaultBulan={bulan} defaultTahun={tahun} />
         </div>
       </PageWrapper>
     );

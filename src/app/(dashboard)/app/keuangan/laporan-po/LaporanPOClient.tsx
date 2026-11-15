@@ -66,14 +66,16 @@ const JENIS_LABEL: Record<string, string> = {
 interface Props {
   initialData: POLaporanItem[];
   overheadRateInfo: OverheadRateInfo;
+  defaultBulan: string;
+  defaultTahun: string;
 }
 
 // ─── COMPONENT ───────────────────────────────────────────────────────────────
 
-export default function LaporanPOClient({ initialData, overheadRateInfo }: Props) {
+export default function LaporanPOClient({ initialData, overheadRateInfo, defaultBulan, defaultTahun }: Props) {
   const [data, setData] = useState<POLaporanItem[]>(initialData);
-  const [filterBulan, setFilterBulan] = useState('');
-  const [filterTahun, setFilterTahun] = useState(String(new Date().getFullYear()));
+  const [filterBulan, setFilterBulan] = useState(defaultBulan);
+  const [filterTahun, setFilterTahun] = useState(defaultTahun);
   const [filtering, setFiltering] = useState(false);
   /** PO sebelum PO-0100 disembunyikan kecuali dicentang */
   const [tampilkanLama, setTampilkanLama] = useState(false);
@@ -361,7 +363,7 @@ export default function LaporanPOClient({ initialData, overheadRateInfo }: Props
           Terapkan Filter
         </Button>
         <Button
-          onClick={() => { setFilterBulan(''); setFilterTahun(String(new Date().getFullYear())); handleFilter(); }}
+          onClick={() => { setFilterBulan(defaultBulan); setFilterTahun(defaultTahun); handleFilter(); }}
           variant="ghost"
           className="h-9 text-xs text-[#9aa0a6] hover:text-[#e8eaed]"
         >

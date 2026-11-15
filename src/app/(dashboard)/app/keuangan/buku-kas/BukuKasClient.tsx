@@ -267,9 +267,9 @@ export default function BukuKasClient({ initialEntries, poList, kompoList, defau
         </Button>
         <Button
           onClick={() => {
-            setFilterBulan('');
+            setFilterBulan(defaultBulan);
             setFilterTipe('');
-            setFilterTahun(String(new Date().getFullYear()));
+            setFilterTahun(defaultTahun);
           }}
           variant="ghost"
           className="h-9 text-xs text-[#9aa0a6] hover:text-[#e8eaed]"

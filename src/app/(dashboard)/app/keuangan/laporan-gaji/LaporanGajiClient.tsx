@@ -20,12 +20,12 @@ const dateFmt = (d: string) =>
   new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
 const labelCls = 'block text-[10px] font-bold text-[#9aa0a6] uppercase tracking-widest mb-1';
 
-interface Props { initialData: LaporanGajiData; }
+interface Props { initialData: LaporanGajiData; defaultBulan: string; defaultTahun: string; }
 
-export default function LaporanGajiClient({ initialData }: Props) {
+export default function LaporanGajiClient({ initialData, defaultBulan, defaultTahun }: Props) {
   const [data, setData] = useState<LaporanGajiData>(initialData);
-  const [filterBulan, setFilterBulan] = useState('');
-  const [filterTahun, setFilterTahun] = useState(String(new Date().getFullYear()));
+  const [filterBulan, setFilterBulan] = useState(defaultBulan);
+  const [filterTahun, setFilterTahun] = useState(defaultTahun);
   const [loading, setLoading] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
 

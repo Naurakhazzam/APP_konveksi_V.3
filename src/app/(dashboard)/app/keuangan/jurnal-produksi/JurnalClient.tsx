@@ -65,6 +65,8 @@ interface Props {
   initialEntries: JurnalEntry[];
   kategoriList: KategoriTrxItem[];
   poList: { id: string; no_po: string }[];
+  defaultBulan: string;
+  defaultTahun: string;
 }
 
 // ─── DEFAULT FORM ────────────────────────────────────────────────────────────
@@ -82,7 +84,7 @@ const defaultForm = {
 
 // ─── COMPONENT ───────────────────────────────────────────────────────────────
 
-export default function JurnalClient({ initialEntries, kategoriList, poList }: Props) {
+export default function JurnalClient({ initialEntries, kategoriList, poList, defaultBulan, defaultTahun }: Props) {
   const router = useRouter();
 
   // Map PO ID to no_po for quick lookup
@@ -94,8 +96,8 @@ export default function JurnalClient({ initialEntries, kategoriList, poList }: P
 
   // Entries & filter state
   const [entries, setEntries] = useState<JurnalEntry[]>(initialEntries);
-  const [filterBulan, setFilterBulan] = useState('');
-  const [filterTahun, setFilterTahun] = useState(String(new Date().getFullYear()));
+  const [filterBulan, setFilterBulan] = useState(defaultBulan);
+  const [filterTahun, setFilterTahun] = useState(defaultTahun);
   const [filterJenis, setFilterJenis] = useState('');
   const [filtering, setFiltering] = useState(false);
 

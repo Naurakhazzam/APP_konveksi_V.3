@@ -43,6 +43,8 @@ const labelCls  = 'block text-[10px] font-bold text-[#9aa0a6] uppercase tracking
 interface Props {
   initialInvoices: InvoiceRow[];
   klienList: { id: string; nama: string }[];
+  defaultBulan: string;
+  defaultTahun: string;
 }
 
 const defaultBayarForm = (invoice_id: string) => ({
@@ -55,15 +57,15 @@ const defaultBayarForm = (invoice_id: string) => ({
 
 // ─── COMPONENT ───────────────────────────────────────────────────────────────
 
-export default function InvoiceClient({ initialInvoices, klienList }: Props) {
+export default function InvoiceClient({ initialInvoices, klienList, defaultBulan, defaultTahun }: Props) {
   const [invoices, setInvoices]     = useState<InvoiceRow[]>(initialInvoices);
   const [filtering, setFiltering]   = useState(false);
 
   // Filter
   const [filterStatus, setFilterStatus] = useState('');
   const [filterKlien, setFilterKlien]   = useState('');
-  const [filterBulan, setFilterBulan]   = useState('');
-  const [filterTahun, setFilterTahun]   = useState(String(new Date().getFullYear()));
+  const [filterBulan, setFilterBulan]   = useState(defaultBulan);
+  const [filterTahun, setFilterTahun]   = useState(defaultTahun);
 
   // Expand detail inline
   const [expandedId, setExpandedId]         = useState<string | null>(null);
@@ -267,7 +269,7 @@ export default function InvoiceClient({ initialInvoices, klienList }: Props) {
           Terapkan
         </Button>
         <Button variant="ghost"
-          onClick={() => { setFilterStatus(''); setFilterKlien(''); setFilterBulan(''); setFilterTahun(String(new Date().getFullYear())); }}
+          onClick={() => { setFilterStatus(''); setFilterKlien(''); setFilterBulan(defaultBulan); setFilterTahun(defaultTahun); }}
           className="h-9 text-xs text-[#9aa0a6] hover:text-[#e8eaed]">
           Reset
         </Button>
