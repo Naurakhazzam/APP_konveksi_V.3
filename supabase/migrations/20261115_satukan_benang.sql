@@ -1,0 +1,8 @@
+-- Catatan: sudah dijalankan langsung lewat Supabase (15 Nov 2026).
+-- Benang tidak distok lagi (saldo Bahan Pembantu "Benang" mencakup benang jahit + obras,
+-- karena HPP Benang sudah termasuk obras). Inventory disederhanakan:
+--   * item baru "Benang Jahit" (pembantu, pcs, beli per lusin isi 12, ref Rp 2.125)
+--   * "benang obras" -> "Benang Obras"
+--   * 24 item benang per warna/ukuran dinonaktifkan (aktif=false)
+-- Cadangan: inventory_item_backup_20261115_benang.
+-- Isian benang di Serah Terima Jahit dihapus, menu Ambil Benang disembunyikan.

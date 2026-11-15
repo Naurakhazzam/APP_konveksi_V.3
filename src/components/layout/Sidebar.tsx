@@ -118,7 +118,6 @@ const NAV_MENU = [
       { label: 'Pemakaian Bahan',  path: '/app/inventory/pemakaian-bahan' },
       { label: 'Detail LOT',       path: '/app/inventory/detail-lot' },
       { label: 'Stock Opname',     path: '/app/inventory/stock-opname' },
-      { label: 'Ambil Benang',     path: '/app/inventory/ambil-benang' },
       { label: 'Harga Referensi',  path: '/app/inventory/harga-referensi' },
     ]
   },

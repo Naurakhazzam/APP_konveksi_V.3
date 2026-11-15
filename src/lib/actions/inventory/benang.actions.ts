@@ -58,6 +58,7 @@ export async function getBenangItems(): Promise<BenangItem[]> {
     .from('inventory_item')
     .select('id, nama, satuan, satuan_beli, faktor_konversi, stok_aktual, harga_referensi')
     .eq('tenant_id', TENANT_ID)
+    .eq('aktif', true)
     .ilike('nama', '%benang%')
     .order('nama');
 

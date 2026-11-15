@@ -5,9 +5,8 @@ import { type AntrianJahitBundle } from '@/lib/actions/produksi/scan.actions';
 import { serahTerimaJahitBatch } from '@/lib/actions/produksi/jahit.actions';
 import { getAlasanQty, type AlasanQty } from '@/lib/actions/produksi/qty-approval.actions';
 import { getAksesoriForKartuKerja, type ModelAksesori } from '@/lib/actions/produksi/model-aksesori.actions';
-import { getBenangItems, type BenangItem } from '@/lib/actions/inventory/benang.actions';
 import PrintKartuKerjaLayout, { type KartuBundle, type AksesoriItem } from '@/app/(dashboard)/app/produksi/antrian-cutting/PrintKartuKerjaLayout';
-import { X, User, Printer, Loader2, AlertCircle, Tag, PackageCheck, Wind, Plus, Trash2, CheckCircle } from 'lucide-react';
+import { X, User, Printer, Loader2, AlertCircle, Tag, PackageCheck, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface Props {
@@ -27,30 +26,12 @@ interface AggregatedAksesori {
   tahap_pakai: string;
 }
 
-// Row benang yang dipilih user
-interface BenangRow {
-  uid              : string;  // key lokal
-  inventory_item_id: string;
-  nama             : string;
-  satuan           : string;
-  qty              : string;  // string agar input bisa kosong
-}
-
-function genUid() {
-  return Math.random().toString(36).slice(2);
-}
-
 export default function ModalSerahTerimaJahit({ selectedBundles, karyawanList, onSuccess, onClose }: Props) {
   const [karyawanId, setKaryawanId]     = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [kartuData, setKartuData]       = useState<KartuBundle[]>([]);
   const [aksesoriMap, setAksesoriMap]   = useState<Record<string, ModelAksesori[]>>({});
   const [loadingAksesori, setLoadingAksesori] = useState(true);
-
-  // State benang
-  const [benangItems, setBenangItems]   = useState<BenangItem[]>([]);
-  const [loadingBenang, setLoadingBenang] = useState(true);
-  const [benangRows, setBenangRows]     = useState<BenangRow[]>([]);
 
   // Input susulan: barang sudah jadi → terima + selesai sekaligus
   const [langsungSelesai, setLangsungSelesai] = useState(false);
@@ -81,7 +62,7 @@ export default function ModalSerahTerimaJahit({ selectedBundles, karyawanList, o
   }
   const adaErrorSelesai = Object.values(errorSelesai).some(Boolean);
 
-  // Load aksesori + benang saat modal dibuka
+  // Load aksesori saat modal dibuka
   useEffect(() => {
     if (!selectedBundles.length) return;
 
@@ -93,12 +74,6 @@ export default function ModalSerahTerimaJahit({ selectedBundles, karyawanList, o
       .catch(() => setAksesoriMap({}))
       .finally(() => setLoadingAksesori(false));
 
-    // Load daftar item benang dari inventory
-    setLoadingBenang(true);
-    getBenangItems()
-      .then(items => setBenangItems(items))
-      .catch(() => setBenangItems([]))
-      .finally(() => setLoadingBenang(false));
   }, []);  // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Agregasi aksesori jahit ──────────────────────────────────────────────
@@ -127,45 +102,11 @@ export default function ModalSerahTerimaJahit({ selectedBundles, karyawanList, o
 
   const totalPcs = selectedBundles.reduce((s, b) => s + b.qty_per_bundle, 0);
 
-  // ── Handlers benang rows ─────────────────────────────────────────────────
-  function addBenangRow() {
-    setBenangRows(prev => [...prev, { uid: genUid(), inventory_item_id: '', nama: '', satuan: '', qty: '' }]);
-  }
-
-  function removeBenangRow(uid: string) {
-    setBenangRows(prev => prev.filter(r => r.uid !== uid));
-  }
-
-  function updateBenangRowItem(uid: string, itemId: string) {
-    const item = benangItems.find(b => b.id === itemId);
-    setBenangRows(prev => prev.map(r =>
-      r.uid === uid
-        ? { ...r, inventory_item_id: itemId, nama: item?.nama ?? '', satuan: item?.satuan ?? '', qty: r.qty }
-        : r
-    ));
-  }
-
-  function updateBenangRowQty(uid: string, qty: string) {
-    setBenangRows(prev => prev.map(r => r.uid === uid ? { ...r, qty } : r));
-  }
-
   // ── Submit ───────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
     if (!karyawanId) {
       toast.error('Pilih karyawan penjahit terlebih dahulu');
       return;
-    }
-
-    // Validasi benang rows — item harus dipilih dan qty harus diisi (min 0)
-    for (const row of benangRows) {
-      if (!row.inventory_item_id) {
-        toast.error('Pilih item benang atau hapus baris yang kosong');
-        return;
-      }
-      if (row.qty === '' || row.qty === null || isNaN(parseFloat(row.qty)) || parseFloat(row.qty) < 0) {
-        toast.error(`Qty benang untuk ${row.nama || 'item'} harus diisi (minimal 0)`);
-        return;
-      }
     }
 
     const selectedKaryawan = karyawanList.find(k => k.id === karyawanId);
@@ -177,7 +118,8 @@ export default function ModalSerahTerimaJahit({ selectedBundles, karyawanList, o
 
     setIsSubmitting(true);
     try {
-      // 1. Serah terima (+ selesai bila input susulan) + benang — satu transaksi
+      // 1. Serah terima (+ selesai bila input susulan) — satu transaksi
+      //    Benang tidak dicatat di sini lagi: belanja benang masuk saldo Bahan Pembantu (Buku Kas)
       const res = await serahTerimaJahitBatch({
         bundle_ids: selectedBundles.map(b => b.id),
         karyawan_id: karyawanId,
@@ -189,9 +131,7 @@ export default function ModalSerahTerimaJahit({ selectedBundles, karyawanList, o
               alasan_qty_id: alasanQty[b.id] || null,
             }))
           : [],
-        benang: benangRows
-          .filter(r => parseFloat(r.qty) > 0)
-          .map(r => ({ inventory_item_id: r.inventory_item_id, qty: parseFloat(r.qty) })),
+        benang: [],
       });
 
       if (res.stok_warnings.length > 0) {
@@ -410,116 +350,6 @@ export default function ModalSerahTerimaJahit({ selectedBundles, karyawanList, o
                       ))}
                     </tbody>
                   </table>
-                </div>
-              )}
-            </div>
-
-            {/* ── Benang yang Diserahkan ── */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[#e5c17b] flex items-center gap-2">
-                  <Wind size={14} /> Benang yang Diserahkan
-                </label>
-                <button
-                  type="button"
-                  onClick={addBenangRow}
-                  disabled={isSubmitting || loadingBenang}
-                  className="flex items-center gap-1 text-xs font-semibold text-[#e5c17b] hover:text-[#d4b06a] disabled:opacity-50 transition-colors"
-                >
-                  <Plus size={14} /> Tambah Benang
-                </button>
-              </div>
-
-              {loadingBenang ? (
-                <div className="flex items-center justify-center py-4 border border-[#2A2D31] rounded-xl bg-[#16181A]">
-                  <Loader2 className="w-4 h-4 animate-spin text-[#9aa0a6]" />
-                  <span className="ml-2 text-xs text-[#9aa0a6]">Memuat daftar benang...</span>
-                </div>
-              ) : benangRows.length === 0 ? (
-                <button
-                  type="button"
-                  onClick={addBenangRow}
-                  disabled={isSubmitting}
-                  className="w-full border border-dashed border-[#2A2D31] rounded-xl p-4 text-center bg-[#16181A] hover:border-[#e5c17b]/40 hover:bg-[#1e2022] transition-colors group"
-                >
-                  <Wind className="w-7 h-7 text-[#9aa0a6] group-hover:text-[#e5c17b]/60 mx-auto mb-1.5 transition-colors" />
-                  <p className="text-xs text-[#9aa0a6] group-hover:text-[#e8eaed] transition-colors">
-                    Klik untuk menambahkan benang yang diserahkan
-                  </p>
-                  <p className="text-[10px] text-[#9aa0a6]/50 mt-0.5">Opsional — stok akan berkurang saat submit</p>
-                </button>
-              ) : (
-                <div className="border border-[#2A2D31] rounded-xl overflow-hidden bg-[#16181A]">
-                  {/* Header */}
-                  <div className="grid grid-cols-[1fr_120px_32px] gap-2 px-4 py-2 bg-[#1A1D1F] border-b border-[#2A2D31]">
-                    <span className="text-[10px] uppercase tracking-wider text-[#9aa0a6] font-bold">Item Benang</span>
-                    <span className="text-[10px] uppercase tracking-wider text-[#9aa0a6] font-bold text-center">Qty</span>
-                    <span />
-                  </div>
-
-                  {/* Rows */}
-                  <div className="divide-y divide-[#2A2D31]">
-                    {benangRows.map((row) => {
-                      const selectedItem = benangItems.find(b => b.id === row.inventory_item_id);
-                      return (
-                        <div key={row.uid} className="grid grid-cols-[1fr_120px_32px] gap-2 px-4 py-2.5 items-center">
-                          {/* Pilih item */}
-                          <select
-                            value={row.inventory_item_id}
-                            onChange={e => updateBenangRowItem(row.uid, e.target.value)}
-                            disabled={isSubmitting}
-                            className="bg-[#0D0E10] border border-[#2A2D31] rounded-lg px-3 py-1.5 text-[#e8eaed] text-xs focus:ring-1 focus:ring-[#e5c17b] outline-none w-full"
-                          >
-                            <option value="">-- Pilih benang --</option>
-                            {benangItems.map(b => (
-                              <option key={b.id} value={b.id}>
-                                {b.nama} {b.stok_aktual < 0 ? `⚠ stok ${b.stok_aktual}` : `(stok: ${b.stok_aktual} ${b.satuan})`}
-                              </option>
-                            ))}
-                          </select>
-
-                          {/* Qty + satuan */}
-                          <div className="flex items-center gap-1">
-                            <input
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              value={row.qty}
-                              onChange={e => updateBenangRowQty(row.uid, e.target.value)}
-                              disabled={isSubmitting}
-                              placeholder="wajib isi"
-                              className={`bg-[#0D0E10] border rounded-lg px-2 py-1.5 text-[#e8eaed] text-xs focus:ring-1 focus:ring-[#e5c17b] outline-none w-full text-right ${
-                                row.qty === '' ? 'border-red-500/60' : 'border-[#2A2D31]'
-                              }`}
-                            />
-                            {selectedItem && (
-                              <span className="text-[10px] text-[#9aa0a6] shrink-0">{selectedItem.satuan}</span>
-                            )}
-                          </div>
-
-                          {/* Hapus */}
-                          <button
-                            type="button"
-                            onClick={() => removeBenangRow(row.uid)}
-                            disabled={isSubmitting}
-                            className="flex items-center justify-center w-7 h-7 rounded-lg text-[#9aa0a6] hover:text-[#e65c5c] hover:bg-[#2A2D31] transition-colors"
-                          >
-                            <Trash2 size={13} />
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Tombol tambah di bawah */}
-                  <button
-                    type="button"
-                    onClick={addBenangRow}
-                    disabled={isSubmitting}
-                    className="w-full px-4 py-2 text-xs text-[#9aa0a6] hover:text-[#e5c17b] hover:bg-[#1A1D1F] transition-colors flex items-center gap-1 justify-center border-t border-[#2A2D31]"
-                  >
-                    <Plus size={12} /> Tambah baris
-                  </button>
                 </div>
               )}
             </div>
