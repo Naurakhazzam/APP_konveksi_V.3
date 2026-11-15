@@ -633,6 +633,8 @@ export async function getInventoryItemsForCutting(): Promise<InventoryItemOption
     .from('inventory_item')
     .select('id, nama, satuan, stok_aktual')
     .eq('tenant_id', TENANT_ID)
+    .eq('aktif', true)
+    .eq('jenis', 'utama')
     .order('nama', { ascending: true });
 
   if (error) throw new Error(`Gagal fetch inventory: ${error.message}`);

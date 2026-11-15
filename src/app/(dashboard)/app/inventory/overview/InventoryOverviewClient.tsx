@@ -335,7 +335,15 @@ export default function InventoryOverviewClient({ items, kategoriTrxList, warnaL
             ) : (
               filteredItems.map((item) => (
                 <TableRow key={item.id} className="border-[#2A2D31] hover:bg-[#1E2124]/50 transition-colors">
-                  <TableCell className="font-semibold text-[#e8eaed]">{item.nama}</TableCell>
+                  <TableCell className="font-semibold text-[#e8eaed]">
+                    {item.nama}
+                    {item.jenis === 'pembantu' && (
+                      <span className="ml-2 text-[10px] font-normal px-1.5 py-0.5 rounded border border-sky-500/30 text-sky-300"
+                        title="Bahan pembantu: tidak dipotong otomatis, pemakaian dihitung lewat Stock Opname">
+                        pembantu
+                      </span>
+                    )}
+                  </TableCell>
                   <TableCell className="text-[#9aa0a6]">{item.satuan}</TableCell>
                   <TableCell>
                     {item.warna_nama ? (

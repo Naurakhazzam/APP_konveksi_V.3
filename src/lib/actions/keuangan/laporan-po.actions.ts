@@ -120,6 +120,16 @@ export async function getLaporanPOList(filters?: {
       )
     : {};
 
+  // Biaya tidak langsung per PO = patokan HPP × qty order:
+  // overhead (makan, sewa, listrik, operasional) + bahan pembantu (benang, kancing, karet, dll.)
+  const { data: patokanData, error: patokanErr } = await supabase
+    .rpc('get_patokan_tidak_langsung_per_po', { p_tenant_id: TENANT_ID });
+  if (patokanErr) throw new Error(patokanErr.message);
+  const patokanMap = new Map<string, number>();
+  (patokanData ?? []).forEach((r: any) => {
+    patokanMap.set(String(r.po_id), Number(r.patokan_overhead ?? 0) + Number(r.patokan_pembantu ?? 0));
+  });
+
   const result: POLaporanItem[] = filteredData.map((po: any) => {
     // HPP Estimasi — dari BOM
     const hpp_estimasi = (po.po_item ?? []).reduce((sum: number, pi: any) => {
@@ -152,7 +162,7 @@ export async function getLaporanPOList(filters?: {
       : 0;
 
     const qty_shipped        = qtyShippedMap[po.id] ?? 0;
-    const alokasi_overhead   = rateInfo.overhead_rate * qty_shipped;
+    const alokasi_overhead   = Math.round(patokanMap.get(po.id) ?? 0);
     const hpp_aktual_final   = hpp_aktual + alokasi_overhead;
     const profit_final       = nilai_project - hpp_aktual_final;
     const margin_pct_final   = nilai_project > 0
@@ -292,7 +302,13 @@ export async function getPOHPPDetail(po_id: string): Promise<POHPPDetail> {
     ? await getQtyShippedPerPO(rateInfo.period.tanggal_mulai, rateInfo.period.tanggal_akhir)
     : {};
   const qty_shipped_po   = qtyShippedMap[po_id] ?? 0;
-  const alokasi_overhead = Math.round(rateInfo.overhead_rate * qty_shipped_po);
+  const { data: patokanRows, error: patokanErr } = await supabase
+    .rpc('get_patokan_tidak_langsung_per_po', { p_tenant_id: TENANT_ID });
+  if (patokanErr) throw new Error(patokanErr.message);
+  const patokanPo = (patokanRows ?? []).find((r: any) => String(r.po_id) === po_id);
+  const patokan_overhead = Math.round(Number(patokanPo?.patokan_overhead ?? 0));
+  const patokan_pembantu = Math.round(Number(patokanPo?.patokan_pembantu ?? 0));
+  const alokasi_overhead = patokan_overhead + patokan_pembantu;
 
   // Gabung aktual_breakdown: pemakaian + upah (gaji_ledger) + overhead
   const aktual_breakdown = [
@@ -313,12 +329,20 @@ export async function getPOHPPDetail(po_id: string): Promise<POHPPDetail> {
       nominal_po   : Number(u.total),
     })),
     // Overhead alokasi
-    ...(alokasi_overhead > 0 ? [{
+    // Biaya tidak langsung: patokan HPP × qty order
+    ...(patokan_overhead > 0 ? [{
       jenis        : 'overhead',
-      keterangan   : `Alokasi Overhead — ${qty_shipped_po} pcs × Rp ${Math.round(rateInfo.overhead_rate).toLocaleString('id-ID')}`,
-      tanggal      : rateInfo.period?.tanggal_mulai ?? '',
-      nominal_penuh: alokasi_overhead,
-      nominal_po   : alokasi_overhead,
+      keterangan   : 'Overhead (makan, sewa, listrik, operasional) — patokan HPP × qty order',
+      tanggal      : '',
+      nominal_penuh: patokan_overhead,
+      nominal_po   : patokan_overhead,
+    }] : []),
+    ...(patokan_pembantu > 0 ? [{
+      jenis        : 'overhead',
+      keterangan   : 'Bahan pembantu (benang, kancing, karet, mata itik, dll.) — patokan HPP × qty order',
+      tanggal      : '',
+      nominal_penuh: patokan_pembantu,
+      nominal_po   : patokan_pembantu,
     }] : []),
   ];
 

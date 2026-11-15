@@ -29,6 +29,8 @@ export interface InventoryOverviewItem {
   warna_nama     : string | null;
   satuan_beli    : string | null;
   faktor_konversi: number | null;
+  /** utama = dipotong otomatis (FIFO); pembantu = dihitung lewat stock opname */
+  jenis?: 'utama' | 'pembantu';
 }
 
 export interface InventoryBatch {
@@ -81,8 +83,9 @@ export async function getInventoryOverview(): Promise<InventoryOverviewItem[]> {
   // A. Fetch items (tanpa embedded join warna — pakai lookup manual agar tidak bergantung schema cache)
   const { data: items, error: itemError } = await supabase
     .from('inventory_item')
-    .select('id, nama, satuan, stok_aktual, stok_minimum, warna_id, satuan_beli, faktor_konversi')
+    .select('id, nama, satuan, stok_aktual, stok_minimum, warna_id, satuan_beli, faktor_konversi, jenis')
     .eq('tenant_id', TENANT_ID)
+    .eq('aktif', true)
     .order('nama');
 
   if (itemError) throw new Error(itemError.message);
@@ -130,6 +133,7 @@ export async function getInventoryOverview(): Promise<InventoryOverviewItem[]> {
       batch_count:   batchCountMap[item.id] ?? 0,
       satuan_beli:   item.satuan_beli    ?? null,
       faktor_konversi: item.faktor_konversi != null ? Number(item.faktor_konversi) : null,
+      jenis:         (item.jenis ?? 'utama') as 'utama' | 'pembantu',
     };
   });
 }

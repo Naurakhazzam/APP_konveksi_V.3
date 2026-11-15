@@ -41,5 +41,6 @@ export const KATEGORI_KELUAR = [
   'Pembayaran Gaji',
   'Biaya Overhead',
   'Biaya Operasional',
+  'Biaya Peralatan',
   'Lainnya',
 ] as const;

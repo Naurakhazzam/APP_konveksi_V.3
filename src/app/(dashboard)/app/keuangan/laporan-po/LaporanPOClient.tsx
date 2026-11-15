@@ -259,60 +259,13 @@ export default function LaporanPOClient({ initialData, overheadRateInfo, default
   return (
     <div className="space-y-6">
 
-      {/* Info Bar Overhead + Rekonsiliasi */}
-      {overheadRateInfo.period ? (
-        <div className="rounded-xl bg-amber-500/10 border border-amber-500/20 overflow-hidden">
-          {/* Baris atas: rate & periode */}
-          <div className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-2 border-b border-amber-500/20">
-            <div>
-              <p className="text-sm font-bold text-amber-400">
-                Overhead Rate: {idrFmt(Math.round(overheadRateInfo.overhead_rate))} / pcs
-              </p>
-              <p className="text-xs text-amber-400/80 mt-1">
-                Periode: {overheadRateInfo.period.label} ({dateFmt(overheadRateInfo.period.tanggal_mulai)} s/d {dateFmt(overheadRateInfo.period.tanggal_akhir)})
-              </p>
-            </div>
-            <div className="text-left md:text-right">
-              <p className="text-xs font-mono text-amber-400/80">
-                Total Shipped: {overheadRateInfo.total_qty_shipped.toLocaleString('id-ID')} pcs
-              </p>
-            </div>
-          </div>
-          {/* Rekonsiliasi overhead */}
-          <div className="px-4 py-3 grid grid-cols-3 gap-4">
-            <div>
-              <p className="text-[10px] uppercase tracking-widest text-amber-400/60 font-bold mb-1">OH Aktual Keluar</p>
-              <p className="text-sm font-bold text-amber-400">{idrFmt(overheadRateInfo.total_overhead)}</p>
-              <p className="text-[10px] text-amber-400/60">dari buku kas</p>
-            </div>
-            <div>
-              <p className="text-[10px] uppercase tracking-widest text-amber-400/60 font-bold mb-1">Total Dialokasikan ke PO</p>
-              <p className="text-sm font-bold text-amber-400">{idrFmt(overheadRateInfo.total_dialokasikan)}</p>
-              <p className="text-[10px] text-amber-400/60">rate x qty shipped</p>
-            </div>
-            <div>
-              <p className="text-[10px] uppercase tracking-widest font-bold mb-1 text-amber-400/60">Selisih</p>
-              {overheadRateInfo.selisih === 0 ? (
-                <p className="text-sm font-bold text-green-400">Rp 0 — Pas</p>
-              ) : overheadRateInfo.selisih > 0 ? (
-                <>
-                  <p className="text-sm font-bold text-green-400">+{idrFmt(overheadRateInfo.selisih)}</p>
-                  <p className="text-[10px] text-green-400/70">over absorbed — rate sedikit tinggi</p>
-                </>
-              ) : (
-                <>
-                  <p className="text-sm font-bold text-red-400">{idrFmt(overheadRateInfo.selisih)}</p>
-                  <p className="text-[10px] text-red-400/70">under absorbed — ada OH belum ter-cover</p>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      ) : (
-        <div className="p-4 rounded-xl bg-[#1A1D1F] border border-[#2A2D31]">
-          <p className="text-sm font-bold text-orange-400">Overhead belum dikonfigurasi — profit belum include overhead</p>
-        </div>
-      )}
+      {/* Info: cara hitung biaya tidak langsung */}
+      <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300/90 leading-relaxed">
+        <b className="text-amber-300">Biaya per PO = biaya langsung aktual + biaya tidak langsung (patokan HPP).</b>{' '}
+        Biaya langsung: kain, puring, sleting (FIFO) dan upah. Biaya tidak langsung: overhead (makan, sewa, listrik, operasional)
+        dan bahan pembantu (benang, kancing, karet, mata itik, stoper, tali, variasi) = patokan per pcs di HPP × qty order.
+        Laba rugi sesungguhnya per bulan ada di <b>Laporan Laba Rugi</b> (uang masuk − uang keluar).
+      </div>
 
       {/* Summary Bar */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
@@ -390,7 +343,7 @@ export default function LaporanPOClient({ initialData, overheadRateInfo, default
               <SortableHeader label="Qty Shipped" sortKey="qty_shipped" align="right" />
               <SortableHeader label="HPP Estimasi" sortKey="hpp_estimasi" align="right" />
               <SortableHeader label="HPP Aktual" sortKey="hpp_aktual" align="right" />
-              <SortableHeader label="Alokasi OH" sortKey="alokasi_overhead" align="right" />
+              <SortableHeader label="Overhead + Pembantu" sortKey="alokasi_overhead" align="right" />
               <SortableHeader label="Gap" sortKey="gap" align="right" />
               <SortableHeader label="Nilai Project" sortKey="nilai_project" align="right" />
               <SortableHeader label="Profit" sortKey="profit_final" align="right" />

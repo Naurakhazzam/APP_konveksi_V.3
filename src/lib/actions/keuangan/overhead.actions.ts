@@ -60,7 +60,7 @@ export async function getOverheadRateInfo(): Promise<OverheadRateInfo> {
     .select('nominal')
     .eq('tenant_id', TENANT_ID)
     .eq('tipe', 'keluar')
-    .in('kategori', ['Biaya Overhead', 'Biaya Operasional'])
+    .in('kategori', ['Biaya Overhead', 'Biaya Operasional', 'Biaya Peralatan'])
     .gte('tanggal', period.tanggal_mulai)
     .lte('tanggal', period.tanggal_akhir);
 

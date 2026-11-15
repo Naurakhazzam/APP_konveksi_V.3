@@ -1,0 +1,13 @@
+-- 15 Nov 2026 (diterapkan lewat migrasi Supabase: bahan_pembantu_opname_gaji_kas, fix_trg_gaji_lunas_ke_kas)
+-- 1. inventory_item.jenis ('utama'|'pembantu') & aktif.
+--    Pembantu: benang, mata itik, stoper, tali, kepala sleting, kancing, kain keras, kain saku, karet.
+--    Nonaktif: jarum (dicatat sebagai Biaya Peralatan di Buku Kas) & sleting yang tidak dipakai.
+-- 2. Aturan potong-otomatis (model_aksesori/warna_aksesori) untuk bahan pembantu dihapus
+--    (cadangan: model_aksesori_backup_20261115). Pemakaiannya dihitung lewat stock opname.
+-- 3. Tabel stock_opname + RPC simpan_stock_opname(items, tanggal, catatan, user, tenant):
+--    selisih negatif dikeluarkan FIFO dari LOT, positif ditambah LOT (tanpa uang keluar).
+-- 4. Trigger trg_gaji_lunas_ke_kas pada gaji_ledger: upah yang dilunaskan otomatis menjadi
+--    Buku Kas keluar 'Pembayaran Gaji' (1 baris per karyawan per tanggal bayar, kolom sumber_gaji);
+--    batal lunas mengurangi/menghapus. pay_salary_atomic (jalur lama, sudah menulis Buku Kas)
+--    menyetel konveksi.lewati_kas_gaji agar tidak dobel.
+-- 5. RPC get_patokan_tidak_langsung_per_po: overhead & bahan pembantu = patokan HPP × qty order.

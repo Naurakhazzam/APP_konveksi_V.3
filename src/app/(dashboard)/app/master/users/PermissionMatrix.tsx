@@ -43,6 +43,7 @@ const ALL_MENUS = [
   { group: 'Inventory',     path: '/app/inventory/overview',           label: '└ Overview Stok' },
   { group: 'Inventory',     path: '/app/inventory/transaksi-keluar',   label: '└ Transaksi Keluar' },
   { group: 'Inventory',     path: '/app/inventory/alert-order',        label: '└ Alert Order' },
+  { group: 'Inventory',     path: '/app/inventory/stock-opname',       label: '└ Stock Opname' },
   { group: 'Keuangan',      path: '/app/keuangan/ringkasan',           label: '└ Ringkasan' },
   { group: 'Keuangan',      path: '/app/keuangan/jurnal-produksi',     label: '└ Jurnal Produksi' },
   { group: 'Keuangan',      path: '/app/keuangan/buku-kas',            label: '└ Buku Kas' },

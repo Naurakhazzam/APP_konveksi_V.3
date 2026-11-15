@@ -156,7 +156,8 @@ export async function getLaporanLR(
     switch (k.kategori) {
       case 'Pembelian Bahan':   row.pembelian_bahan   += nominal; break;
       case 'Pembayaran Gaji':   row.pembayaran_gaji   += nominal; break;
-      case 'Biaya Overhead':    row.biaya_overhead    += nominal; break;
+      case 'Biaya Overhead':
+      case 'Biaya Peralatan':   row.biaya_overhead    += nominal; break;
       case 'Biaya Operasional': row.biaya_operasional += nominal; break;
       default:                  row.biaya_lainnya     += nominal; break;
     }
