@@ -1,7 +1,14 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
-import { getOverheadRateInfo, getQtyShippedPerPO } from './overhead.actions';
+import { hitungKinerja, type KinerjaPO } from '@/lib/keuangan/kinerja.server';
+import { poPeriodeBaru } from '@/lib/keuangan/periode-po';
+
+/** Angka per PO dari mesin Kinerja Keuangan (overhead aktual, nilai jual hasil potong, laba) */
+async function kinerjaPerPo(supabase: any): Promise<Map<string, KinerjaPO>> {
+  const k = await hitungKinerja(supabase, 'semua');
+  return new Map(k.po.map(p => [p.po_id, p]));
+}
 
 const TENANT_ID = 'STX-001';
 
@@ -110,27 +117,14 @@ export async function getLaporanPOList(filters?: {
     upahMap.set(String(u.po_id), Number(u.biaya_upah) || 0);
   });
 
-  const filteredData = poData ?? [];
+  // Hanya PO periode baru (plus PO lama yang bundelnya ikut periode baru, mis. PO-0097)
+  const filteredData = (poData ?? []);
 
-  const rateInfo = await getOverheadRateInfo();
-  const qtyShippedMap = rateInfo.period
-    ? await getQtyShippedPerPO(
-        rateInfo.period.tanggal_mulai,
-        rateInfo.period.tanggal_akhir
-      )
-    : {};
-
-  // Biaya tidak langsung per PO = patokan HPP × qty order:
-  // overhead (makan, sewa, listrik, operasional) + bahan pembantu (benang, kancing, karet, dll.)
-  const { data: patokanData, error: patokanErr } = await supabase
-    .rpc('get_patokan_tidak_langsung_per_po', { p_tenant_id: TENANT_ID });
-  if (patokanErr) throw new Error(patokanErr.message);
-  const patokanMap = new Map<string, number>();
-  (patokanData ?? []).forEach((r: any) => {
-    patokanMap.set(String(r.po_id), Number(r.patokan_overhead ?? 0) + Number(r.patokan_pembantu ?? 0));
-  });
-
-  const result: POLaporanItem[] = filteredData.map((po: any) => {
+  // Overhead, nilai jual & laba = sama dengan Kinerja Keuangan (satu mesin hitung)
+  const kinerja = await kinerjaPerPo(supabase);
+  const result: POLaporanItem[] = filteredData
+    .filter((po: any) => poPeriodeBaru(po.no_po) || kinerja.has(po.id))
+    .map((po: any) => {
     // HPP Estimasi — dari BOM
     const hpp_estimasi = (po.po_item ?? []).reduce((sum: number, pi: any) => {
       const qtyOrder  = Number(pi.qty_order) || 0;
@@ -153,7 +147,9 @@ export async function getLaporanPOList(filters?: {
     const hpp_aktual = biaya_bahan + biaya_upah;
     const gap        = hpp_aktual - hpp_estimasi;
 
-    const nilai_project = (po.po_item ?? []).reduce((sum: number, pi: any) =>
+    const k = kinerja.get(po.id);
+    // Nilai jual: hasil potong × harga (sama dengan Kinerja); PO yang belum dipotong: qty order × harga
+    const nilai_project = k ? k.nilai_jual : (po.po_item ?? []).reduce((sum: number, pi: any) =>
       sum + (Number(pi.produk?.harga_jual ?? 0) * Number(pi.qty_order)), 0);
 
     const profit     = nilai_project - hpp_aktual;
@@ -161,11 +157,12 @@ export async function getLaporanPOList(filters?: {
       ? Math.round((profit / nilai_project) * 100)
       : 0;
 
-    const qty_shipped        = qtyShippedMap[po.id] ?? 0;
-    const alokasi_overhead   = Math.round(patokanMap.get(po.id) ?? 0);
-    const hpp_aktual_final   = hpp_aktual + alokasi_overhead;
-    const profit_final       = nilai_project - hpp_aktual_final;
-    const margin_pct_final   = nilai_project > 0
+    const qty_shipped        = k?.pcs_kirim ?? 0;
+    const alokasi_overhead   = Math.round(k?.overhead ?? 0);
+    // Laba final = laba PO di Kinerja Keuangan (termasuk perkiraan upah tahap yang belum dikerjakan)
+    const profit_final       = k ? Math.round(k.laba) : 0;
+    const hpp_aktual_final   = k ? nilai_project - profit_final : hpp_aktual;
+    const margin_pct_final   = nilai_project > 0 && k
       ? Math.round((profit_final / nilai_project) * 100)
       : 0;
 
@@ -296,19 +293,9 @@ export async function getPOHPPDetail(po_id: string): Promise<POHPPDetail> {
 
   if (upahErr) throw new Error(upahErr.message);
 
-  // 4. Overhead alokasi untuk PO ini
-  const rateInfo = await getOverheadRateInfo();
-  const qtyShippedMap = rateInfo.period
-    ? await getQtyShippedPerPO(rateInfo.period.tanggal_mulai, rateInfo.period.tanggal_akhir)
-    : {};
-  const qty_shipped_po   = qtyShippedMap[po_id] ?? 0;
-  const { data: patokanRows, error: patokanErr } = await supabase
-    .rpc('get_patokan_tidak_langsung_per_po', { p_tenant_id: TENANT_ID });
-  if (patokanErr) throw new Error(patokanErr.message);
-  const patokanPo = (patokanRows ?? []).find((r: any) => String(r.po_id) === po_id);
-  const patokan_overhead = Math.round(Number(patokanPo?.patokan_overhead ?? 0));
-  const patokan_pembantu = Math.round(Number(patokanPo?.patokan_pembantu ?? 0));
-  const alokasi_overhead = patokan_overhead + patokan_pembantu;
+  // 4. Overhead aktual yang melekat ke PO ini (sama dengan Kinerja Keuangan)
+  const kPo = (await kinerjaPerPo(supabase)).get(po_id);
+  const alokasi_overhead = Math.round(kPo?.overhead ?? 0);
 
   // Gabung aktual_breakdown: pemakaian + upah (gaji_ledger) + overhead
   const aktual_breakdown = [
@@ -328,21 +315,13 @@ export async function getPOHPPDetail(po_id: string): Promise<POHPPDetail> {
       nominal_penuh: Number(u.total),
       nominal_po   : Number(u.total),
     })),
-    // Overhead alokasi
-    // Biaya tidak langsung: patokan HPP × qty order
-    ...(patokan_overhead > 0 ? [{
+    // Overhead produksi aktual (Buku Kas + sewa per hari) dibagi ke pcs yang dipotong di bulan yang sama
+    ...(alokasi_overhead > 0 ? [{
       jenis        : 'overhead',
-      keterangan   : 'Overhead (makan, sewa, listrik, operasional) — patokan HPP × qty order',
+      keterangan   : `Overhead produksi (sewa, listrik, makan, bahan pembantu, peralatan) — ${Number(kPo?.pcs ?? 0)} pcs dipotong`,
       tanggal      : '',
-      nominal_penuh: patokan_overhead,
-      nominal_po   : patokan_overhead,
-    }] : []),
-    ...(patokan_pembantu > 0 ? [{
-      jenis        : 'overhead',
-      keterangan   : 'Bahan pembantu (benang, kancing, karet, mata itik, dll.) — patokan HPP × qty order',
-      tanggal      : '',
-      nominal_penuh: patokan_pembantu,
-      nominal_po   : patokan_pembantu,
+      nominal_penuh: alokasi_overhead,
+      nominal_po   : alokasi_overhead,
     }] : []),
   ];
 
@@ -422,7 +401,7 @@ export interface POHPPPerSizeRow extends HPPPerSizeRow {
  *              harga = inventory_item.harga_referensi (retroactive)
  *   Upah     : gaji_ledger.sumber_id = bundle_id → bundle.po_item_id → po_item
  *              tipe IN ('selesai','rework'), EXCLUDE 'reject_potong'
- *   Overhead : overhead_rate × qty_order per size
+ *   Overhead : overhead aktual per pcs PO (Kinerja Keuangan) × qty_order per size
  */
 export async function getPOHPPPerSize(po_id: string): Promise<POHPPPerSizeRow[]> {
   const supabase = await createClient();
@@ -448,7 +427,7 @@ export async function getPOHPPPerSize(po_id: string): Promise<POHPPPerSizeRow[]>
   const [
     { data: bundles,   error: bErr     },
     { data: bahanRows, error: bahanErr },
-    rateInfo,
+    kinerja,
   ] = await Promise.all([
     supabase.from('bundle')
       .select('id, po_item_id')
@@ -458,7 +437,7 @@ export async function getPOHPPPerSize(po_id: string): Promise<POHPPPerSizeRow[]>
       .select('po_item_id, harga_pakai, qty_pakai, inventory_item:inventory_item_id ( harga_referensi )')
       .in('po_item_id', poItemIds)
       .eq('tenant_id', TENANT_ID),
-    getOverheadRateInfo(),
+    kinerjaPerPo(supabase),
   ]);
 
   if (bahanErr) throw new Error('pemakaian_bahan: ' + bahanErr.message);
@@ -524,8 +503,9 @@ export async function getPOHPPPerSize(po_id: string): Promise<POHPPPerSizeRow[]>
     }
   }
 
-  // ── 6. Overhead rate sudah di-fetch paralel di atas
-  const overhead_rate = rateInfo.overhead_rate;
+  // ── 6. Overhead per pcs PO ini (aktual, sama dengan Kinerja Keuangan)
+  const kPo = kinerja.get(po_id);
+  const overhead_rate = kPo && kPo.pcs > 0 ? kPo.overhead / kPo.pcs : 0;
 
   // ── 7. Build rows ─────────────────────────────────────────────────────────
   const rows: POHPPPerSizeRow[] = (poItems as any[]).map((pi: any) => {
@@ -613,10 +593,12 @@ export async function getPOHPPPerSize(po_id: string): Promise<POHPPPerSizeRow[]>
  * Wrapper untuk mendapat HPPPerSizeResult (sesuai interface baru di Step 2).
  */
 export async function getPOHPPPerSizeResult(po_id: string): Promise<HPPPerSizeResult> {
-  const [rows, rateInfo] = await Promise.all([
+  const supabase = await createClient();
+  const [rows, kinerja] = await Promise.all([
     getPOHPPPerSize(po_id),
-    getOverheadRateInfo(),
+    kinerjaPerPo(supabase),
   ]);
+  const kPo = kinerja.get(po_id);
   return {
     rows: rows.map(r => ({
       warna          : r.warna,
@@ -629,6 +611,6 @@ export async function getPOHPPPerSizeResult(po_id: string): Promise<HPPPerSizeRe
       total_hpp      : r.total_hpp,
       hpp_per_pcs    : r.hpp_per_pcs,
     })),
-    overhead_rate_per_pcs: rateInfo.overhead_rate,
+    overhead_rate_per_pcs: kPo && kPo.pcs > 0 ? kPo.overhead / kPo.pcs : 0,
   };
 }

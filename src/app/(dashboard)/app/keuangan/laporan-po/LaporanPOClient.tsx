@@ -18,7 +18,6 @@ import {
   type POHPPDetail,
   type HPPPerSizeResult,
 } from '@/lib/actions/keuangan/laporan-po.actions';
-import { type OverheadRateInfo } from '@/lib/actions/keuangan/overhead.actions';
 import { PO_AWAL_PERIODE, poPeriodeBaru } from '@/lib/keuangan/periode-po';
 
 // ─── CONSTANTS ──────────────────────────────────────────────────────────────
@@ -65,14 +64,13 @@ const JENIS_LABEL: Record<string, string> = {
 
 interface Props {
   initialData: POLaporanItem[];
-  overheadRateInfo: OverheadRateInfo;
   defaultBulan: string;
   defaultTahun: string;
 }
 
 // ─── COMPONENT ───────────────────────────────────────────────────────────────
 
-export default function LaporanPOClient({ initialData, overheadRateInfo, defaultBulan, defaultTahun }: Props) {
+export default function LaporanPOClient({ initialData, defaultBulan, defaultTahun }: Props) {
   const [data, setData] = useState<POLaporanItem[]>(initialData);
   const [filterBulan, setFilterBulan] = useState(defaultBulan);
   const [filterTahun, setFilterTahun] = useState(defaultTahun);
@@ -261,10 +259,10 @@ export default function LaporanPOClient({ initialData, overheadRateInfo, default
 
       {/* Info: cara hitung biaya tidak langsung */}
       <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300/90 leading-relaxed">
-        <b className="text-amber-300">Biaya per PO = biaya langsung aktual + biaya tidak langsung (patokan HPP).</b>{' '}
-        Biaya langsung: kain, puring, sleting (FIFO) dan upah. Biaya tidak langsung: overhead (makan, sewa, listrik, operasional)
-        dan bahan pembantu (benang, kancing, karet, mata itik, stoper, tali, variasi) = patokan per pcs di HPP × qty order.
-        Laba rugi sesungguhnya per bulan ada di <b>Laporan Laba Rugi</b> (uang masuk − uang keluar).
+        <b className="text-amber-300">Menu ini untuk kontrol biaya: patokan HPP vs biaya aktual.</b>{' '}
+        Patokan = HPP di sheet × qty order. Aktual = kain, puring, sleting & aksesori yang terpakai (FIFO) + upah yang sudah dikerjakan.
+        Status hemat/boros membandingkan keduanya. Overhead & laba per PO memakai angka yang sama dengan <b>Kinerja Keuangan</b>
+        (overhead aktual dibagi ke pcs yang dipotong; laba sudah termasuk perkiraan upah tahap yang belum dikerjakan).
       </div>
 
       {/* Summary Bar */}
@@ -338,7 +336,7 @@ export default function LaporanPOClient({ initialData, overheadRateInfo, default
               <SortableHeader label="Qty Shipped" sortKey="qty_shipped" align="right" />
               <SortableHeader label="HPP Estimasi" sortKey="hpp_estimasi" align="right" />
               <SortableHeader label="HPP Aktual" sortKey="hpp_aktual" align="right" />
-              <SortableHeader label="Overhead + Pembantu" sortKey="alokasi_overhead" align="right" />
+              <SortableHeader label="Overhead" sortKey="alokasi_overhead" align="right" />
               <SortableHeader label="Gap" sortKey="gap" align="right" />
               <SortableHeader label="Nilai Project" sortKey="nilai_project" align="right" />
               <SortableHeader label="Profit" sortKey="profit_final" align="right" />
@@ -648,7 +646,7 @@ export default function LaporanPOClient({ initialData, overheadRateInfo, default
                     <>
                       {/* Overhead rate info */}
                       <div className="mb-4 px-3 py-2 rounded-lg bg-[#2A2D31] border border-[#3a3d41] text-xs text-[#9aa0a6]">
-                        Overhead rate aktual: <span className="text-[#e5c17b] font-semibold">
+                        Overhead aktual PO ini: <span className="text-[#e5c17b] font-semibold">
                           {idrFmt(hppPerSizeData.overhead_rate_per_pcs)}/pcs
                         </span>
                       </div>

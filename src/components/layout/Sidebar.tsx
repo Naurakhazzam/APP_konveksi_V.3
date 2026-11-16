@@ -135,13 +135,10 @@ const NAV_MENU = [
       { label: 'Saldo Bahan Pembantu', path: '/app/keuangan/saldo-pembantu' },
       { label: 'Biaya Overhead',       path: '/app/keuangan/biaya-overhead' },
       { label: 'Invoice & Tagihan',    path: '/app/keuangan/invoice' },
-      // Disembunyikan 16 Nov 2026: digantikan bagian Laba Rugi (akrual) di Kinerja Keuangan.
-      // Halaman & getLaporanLR tetap ada — dipakai Kinerja Keuangan untuk pendapatan per bulan.
-      // { label: 'Laporan Laba Rugi',    path: '/app/keuangan/laporan-lr' },
+      // 16 Nov 2026: Laporan Laba Rugi & Laporan Per Bulan digantikan Kinerja Keuangan, Setting Overhead
+      // digantikan Biaya Overhead — alamat lamanya dialihkan otomatis (lihat page.tsx masing-masing).
       { label: 'Kinerja Keuangan',    path: '/app/keuangan/proyeksi-surplus' },
       { label: 'Laporan Per PO',      path: '/app/keuangan/laporan-po' },
-      { label: 'Setting Overhead',    path: '/app/keuangan/overhead-setting' },
-      { label: 'Laporan Per Bulan',   path: '/app/keuangan/laporan-bulan' },
       { label: 'Laporan Gaji',        path: '/app/keuangan/laporan-gaji' },
       { label: 'Laporan Koreksi QTY', path: '/app/keuangan/laporan-reject' },
     ]

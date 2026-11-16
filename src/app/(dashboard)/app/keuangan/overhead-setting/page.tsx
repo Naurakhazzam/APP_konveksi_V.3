@@ -1,23 +1,9 @@
-import { PageWrapper } from '@/components/ui/PageWrapper';
-import { getOverheadRateInfo } from '@/lib/actions/keuangan/overhead.actions';
-import OverheadSettingClient from './OverheadSettingClient';
+import { redirect } from 'next/navigation';
 
-export const metadata = {
-  title: 'Setting Overhead | Stitchlyx',
-  description: 'Konfigurasi periode dan rate overhead',
-};
-
-export default async function OverheadSettingPage() {
-  const rateInfo = await getOverheadRateInfo();
-
-  return (
-    <PageWrapper
-      title="Setting Overhead"
-      subtitle="Konfigurasi periode dan perhitungan rate overhead per pcs"
-    >
-      <div className="mt-6 max-w-2xl">
-        <OverheadSettingClient initialRateInfo={rateInfo} />
-      </div>
-    </PageWrapper>
-  );
+/**
+ * Setting Overhead (tarif overhead per periode, tabel overhead_period) tidak dipakai lagi sejak 16 Nov 2026.
+ * Overhead resmi dari menu Biaya Overhead (Buku Kas + kontrak sewa per hari) — alamat lama dialihkan ke sana.
+ */
+export default function Page() {
+  redirect('/app/keuangan/biaya-overhead');
 }
