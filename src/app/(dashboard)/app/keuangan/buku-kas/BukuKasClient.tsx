@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import TogglePoLama from '@/components/keuangan/TogglePoLama';
 import { poPeriodeBaru } from '@/lib/keuangan/periode-po';
 import { toast } from 'sonner';
-import { Plus, Trash2, Loader2, Filter, TrendingUp, TrendingDown, Minus, Pencil, Lock } from 'lucide-react';
+import { Plus, Trash2, Loader2, Filter, TrendingUp, TrendingDown, Minus, Pencil, Lock, CalendarDays } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -27,6 +27,7 @@ import {
   addBukuKas,
   updateBukuKas,
   deleteBukuKas,
+  ubahTanggalStokMasuk,
 } from '@/lib/actions/keuangan/buku-kas.actions';
 
 // ─── CONSTANTS ───────────────────────────────────────────────────────────────
@@ -102,6 +103,11 @@ export default function BukuKasClient({ initialEntries, poList, kompoList, pemba
   // Delete state
   const [deleteTarget, setDeleteTarget] = useState<BukuKasEntry | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  // Ubah tanggal (baris dari Stok Masuk)
+  const [tanggalTarget, setTanggalTarget] = useState<BukuKasEntry | null>(null);
+  const [tanggalBaru, setTanggalBaru] = useState('');
+  const [simpanTanggal, setSimpanTanggal] = useState(false);
 
   // ─── DERIVED ──────────────────────────────────────────────────────────────
 
@@ -213,6 +219,32 @@ export default function BukuKasClient({ initialEntries, poList, kompoList, pemba
     toast.success('Entri dihapus');
     setEntries(prev => prev.filter(e => e.id !== deleteTarget.id));
     setDeleteTarget(null);
+  };
+
+  // ─── UBAH TANGGAL ─────────────────────────────────────────────────────────
+
+  const openUbahTanggal = (entry: BukuKasEntry) => {
+    setTanggalTarget(entry);
+    setTanggalBaru(entry.tanggal.slice(0, 10));
+  };
+
+  const handleUbahTanggal = async () => {
+    if (!tanggalTarget || !tanggalBaru) return;
+    setSimpanTanggal(true);
+    const result = await ubahTanggalStokMasuk(tanggalTarget.id, tanggalBaru);
+    setSimpanTanggal(false);
+    if (!result.success) {
+      toast.error(result.error || 'Gagal mengubah tanggal');
+      return;
+    }
+    toast.success('Tanggal diperbarui (LOT stok & jurnal ikut diubah)');
+    setTanggalTarget(null);
+    const fresh = await getBukuKasEntries({
+      bulan: filterBulan || undefined,
+      tahun: filterTahun || undefined,
+      tipe:  filterTipe  || undefined,
+    });
+    setEntries(fresh);
   };
 
   // ─── RENDER ───────────────────────────────────────────────────────────────
@@ -388,7 +420,17 @@ export default function BukuKasClient({ initialEntries, poList, kompoList, pemba
                   {entry.tipe === 'keluar' ? '-' : '+'}{idrFmt(entry.nominal)}
                 </TableCell>
                 <TableCell className="text-center whitespace-nowrap">
-                  {entry.dikunci ? (
+                  {entry.dikunci && entry.bisa_ubah_tanggal ? (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => openUbahTanggal(entry)}
+                      className="h-8 w-8 text-[#9aa0a6] hover:text-[#e5c17b] hover:bg-[#e5c17b]/10"
+                      title="Ubah tanggal (nominal dari Stok Masuk tetap terkunci)"
+                    >
+                      <CalendarDays className="h-4 w-4" />
+                    </Button>
+                  ) : entry.dikunci ? (
                     <span title={entry.dikunci} className="inline-flex h-8 w-8 items-center justify-center text-[#5f6368]">
                       <Lock className="h-4 w-4" />
                     </span>
@@ -614,6 +656,51 @@ export default function BukuKasClient({ initialEntries, poList, kompoList, pemba
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── UBAH TANGGAL (STOK MASUK) ──────────────────────────────────── */}
+      <Dialog open={!!tanggalTarget} onOpenChange={open => { if (!open) setTanggalTarget(null); }}>
+        <DialogContent className="bg-[#16181A] border-[#2A2D31] text-[#e8eaed] sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Ubah Tanggal</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-[#9aa0a6]">
+            <span className="text-[#e8eaed] font-semibold">{tanggalTarget?.keterangan}</span>
+          </p>
+          <div>
+            <label className={labelCls}>Tanggal</label>
+            <input
+              type="date"
+              value={tanggalBaru}
+              onChange={e => setTanggalBaru(e.target.value)}
+              className={inputCls}
+            />
+            {tanggalBaru && (
+              <p className="text-[11px] text-[#9aa0a6] mt-1">{hariFmt(tanggalBaru)}</p>
+            )}
+          </div>
+          <p className="text-[11px] text-[#9aa0a6]">
+            Entri ini dari Stok Masuk. Tanggal LOT stok dan jurnal pembelian ikut diubah; nominal dan jumlah tidak berubah.
+          </p>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setTanggalTarget(null)}
+              className="border-[#2A2D31] bg-transparent text-[#e8eaed]"
+              disabled={simpanTanggal}
+            >
+              Batal
+            </Button>
+            <Button
+              onClick={handleUbahTanggal}
+              disabled={simpanTanggal || !tanggalBaru}
+              className="bg-[#e5c17b] hover:bg-[#d4b06a] text-black font-bold"
+            >
+              {simpanTanggal && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+              {simpanTanggal ? 'Menyimpan...' : 'Simpan'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

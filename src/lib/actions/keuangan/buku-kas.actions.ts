@@ -59,6 +59,7 @@ export async function getBukuKasEntries(filters?: {
     qty: item.qty == null ? null : Number(item.qty),
     satuan: item.satuan ?? null,
     dikunci: alasanKunci(item),
+    bisa_ubah_tanggal: !!item.inventory_batch_id && !item.sumber_gaji,
     created_at: item.created_at,
   }));
 }
@@ -127,6 +128,28 @@ export async function updateBukuKas(
 
   revalidatePath('/app/keuangan/buku-kas');
   revalidatePath('/app/keuangan/saldo-pembantu');
+  return { success: true };
+}
+
+/** Ubah tanggal baris dari Stok Masuk (owner saja); tanggal LOT & jurnal pembelian ikut diubah */
+export async function ubahTanggalStokMasuk(
+  id: string,
+  tanggal: string
+): Promise<{ success: boolean; error?: string }> {
+  const profile = await getCurrentUserProfile();
+  if (!profile) return { success: false, error: 'Unauthorized.' };
+  if (profile.role !== 'owner')
+    return { success: false, error: 'Hanya owner yang dapat mengubah tanggal.' };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(tanggal)) return { success: false, error: 'Tanggal tidak valid.' };
+
+  const supabase = await createClient();
+  const { error } = await supabase.rpc('ubah_tanggal_stok_masuk', {
+    p_buku_kas_id: id, p_tanggal: tanggal, p_tenant_id: TENANT_ID,
+  });
+  if (error) return { success: false, error: error.message };
+
+  revalidatePath('/app/keuangan/buku-kas');
+  revalidatePath('/app/inventory');
   return { success: true };
 }
 

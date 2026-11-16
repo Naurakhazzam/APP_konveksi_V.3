@@ -16,6 +16,8 @@ export interface BukuKasEntry {
   satuan: string | null;
   /** Diisi bila baris dibuat otomatis (Stok Masuk / gaji) → tidak bisa diedit dari Buku Kas */
   dikunci: string | null;
+  /** Baris dari Stok Masuk: nominal dikunci, tapi tanggal boleh diubah (LOT & jurnal ikut) */
+  bisa_ubah_tanggal: boolean;
   created_at: string;
 }
 
