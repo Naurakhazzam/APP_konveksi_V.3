@@ -5,6 +5,7 @@ import TogglePoLama from '@/components/keuangan/TogglePoLama';
 import { poPeriodeBaru } from '@/lib/keuangan/periode-po';
 import { toast } from 'sonner';
 import Link from 'next/link';
+import { tanggalWIB } from '@/lib/waktu';
 import { Plus, Trash2, Loader2, Filter, TrendingUp, TrendingDown, Minus, Pencil, Lock, CalendarDays, ChevronDown, ChevronRight, ChevronLeft, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -88,7 +89,8 @@ interface Props {
 // ─── DEFAULT FORM ─────────────────────────────────────────────────────────────
 
 const makeDefaultForm = (tipe: 'masuk' | 'keluar') => ({
-  tanggal: '',
+  // Default hari ini (WIB); tetap bisa diganti
+  tanggal: tanggalWIB(),
   tipe,
   kategori: '',
   nominal: '',
