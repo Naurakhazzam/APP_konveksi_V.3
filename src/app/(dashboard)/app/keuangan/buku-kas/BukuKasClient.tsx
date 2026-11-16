@@ -117,7 +117,7 @@ const hitungNominal = (f: FormKas): FormKas => {
 
 /** Pilihan satuan untuk kas keluar umum; "Lainnya" = ketik sendiri */
 const SATUAN_UMUM = [
-  'orang', 'hari', 'orang/hari', 'bulan', 'kali',
+  'orang', 'hari', 'orang/hari', 'minggu', 'bulan', 'kali',
   'pcs', 'kg', 'liter', 'tabung', 'galon', 'karung', 'pack', 'meter',
 ];
 const SATUAN_LAINNYA = '__lainnya__';
