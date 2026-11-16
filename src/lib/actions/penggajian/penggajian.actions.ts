@@ -141,13 +141,16 @@ export async function getGajiDetail(
   // Step 2: Fetch bundle → po_item (warna, size, produk_id, qty)
   const bundleIds = [...new Set(data.map((r: any) => r.sumber_id).filter(Boolean))];
 
-  let bundleMap: Record<string, { warna: string; size: string; modelNama: string; qty: number }> = {};
+  let bundleMap: Record<string, {
+    warna: string; size: string; modelNama: string; qty: number;
+    statusTahap: Record<string, any> | null;
+  }> = {};
 
   if (bundleIds.length > 0) {
-    // 2a. Fetch bundles (just po_item_id)
+    // 2a. Fetch bundles (po_item_id + hasil per tahap untuk qty sebenarnya)
     const { data: bundleData, error: bundleErr } = await supabase
       .from('bundle')
-      .select('id, po_item_id')
+      .select('id, po_item_id, qty_rencana, status_tahap')
       .in('id', bundleIds);
 
     if (bundleErr) throw new Error('Bundle fetch error: ' + bundleErr.message);
@@ -207,7 +210,9 @@ export async function getGajiDetail(
         warna: poItem?.warna ?? '',
         size: poItem?.size ?? '',
         modelNama,
-        qty: poItem?.qty_per_bundle ?? 0,
+        // Cadangan bila hasil tahap tidak ditemukan: rencana bundle, lalu rencana PO
+        qty: Number(b.qty_rencana) || poItem?.qty_per_bundle || 0,
+        statusTahap: b.status_tahap ?? null,
       };
     });
   }
@@ -215,13 +220,20 @@ export async function getGajiDetail(
   // Step 3: Map + enrich keterangan
   return data.map((row: any) => {
     const bundle = bundleMap[row.sumber_id];
-    const { modelNama, warna, size, qty: bundleQty } = bundle ?? {};
+    const { modelNama, warna, size } = bundle ?? {};
 
     const total = Number(row.total);
-    const qty = bundleQty || 0;
-    const upah_per_pcs = qty > 0 ? Math.round(total / qty) : 0;
-
     const tahapPrefix = row.keterangan?.split(' - ')?.[0] ?? row.keterangan;
+
+    // Qty = hasil sebenarnya di tahap yang dibayar ("Upah cutting - ..." → status_tahap.cutting),
+    // bukan qty_per_bundle rencana PO. Bundle yang dipotong 9 dari rencana 10 → 9 pcs × @1.000, bukan 10 × @900.
+    const tahapKey = /^Upah\s+(\S+)/i.exec(String(row.keterangan ?? ''))?.[1]?.toLowerCase();
+    const st = tahapKey ? bundle?.statusTahap?.[tahapKey] : null;
+    const qtyTahap = Number(tahapKey === 'cutting' ? st?.qty_aktual : (st?.qty_selesai ?? st?.qty_terima)) || 0;
+    const qty = qtyTahap || bundle?.qty || 0;
+    // Rincian "pcs × @harga" hanya ditampilkan bila pas dibagi; selain itu cukup total
+    const upah_per_pcs = qty > 0 && total % qty === 0 ? total / qty : 0;
+
     const keteranganBaru = modelNama
       ? `${tahapPrefix} - ${modelNama} / ${warna} / ${size}`
       : row.keterangan;
