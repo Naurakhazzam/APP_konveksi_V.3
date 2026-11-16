@@ -2,11 +2,8 @@
 
 import { createClient } from '@/lib/supabase/server';
 import { poPeriodeBaru, TANGGAL_AWAL_PERIODE } from '@/lib/keuangan/periode-po';
-import { getBundleIdsPeriodeBaru } from '@/lib/keuangan/periode-po.server';
+import { pendapatanSjPerBulan, KATEGORI_BAYAR_KLIEN } from '@/lib/keuangan/pendapatan.server';
 import { KATEGORI_SETORAN_MODAL } from './buku-kas.types';
-
-/** Uang dari klien (DP/pelunasan) = pembayaran tagihan, BUKAN pendapatan (pendapatan diakui dari surat jalan) */
-const KATEGORI_BAYAR_KLIEN = ['DP Klien', 'Pelunasan Klien'];
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -154,51 +151,12 @@ export async function getLaporanLR(
     }
   });
 
-  // Pendapatan dari surat jalan: invoice otomatis (qty kirim × harga jual saat SJ dibuat),
-  // dikoreksi saat Validasi Kirim (qty diterima, qty lebih disetujui) dan dipotong reject kantor.
-  const { data: invRaw, error: invErr } = await supabase
-    .from('invoice')
-    .select('id, tanggal, total_nilai, potongan_reject, surat_jalan_id, surat_jalan:surat_jalan_id(tanggal_validasi)')
-    .eq('tenant_id', TENANT_ID)
-    .gte('tanggal', dariEfektif)
-    .lte('tanggal', date_sampai);
-  if (invErr) throw new Error(invErr.message);
-  const invData = (invRaw ?? []) as any[];
-
-  // Porsi PO periode baru per SJ = nilai barang bundle periode baru ÷ nilai seluruh barang SJ
-  const porsiSj = new Map<string, number>();
-  if (hanyaPeriodeBaru) {
-    const sjIds = [...new Set(invData.map(i => i.surat_jalan_id).filter(Boolean))] as string[];
-    if (sjIds.length) {
-      const bundleBaru = await getBundleIdsPeriodeBaru(supabase);
-      const { data: sjItems, error: sjErr } = await supabase
-        .from('surat_jalan_item')
-        .select('sj_id, bundle_id, qty_kirim, qty_diterima, harga_satuan')
-        .in('sj_id', sjIds);
-      if (sjErr) throw new Error(sjErr.message);
-      const nilai = new Map<string, { baru: number; semua: number }>();
-      ((sjItems ?? []) as any[]).forEach(it => {
-        const kirim = Number(it.qty_kirim ?? 0);
-        const akui  = it.qty_diterima == null ? kirim : Math.min(Number(it.qty_diterima), kirim);
-        const v     = akui * Number(it.harga_satuan ?? 0);
-        const cur   = nilai.get(it.sj_id) ?? { baru: 0, semua: 0 };
-        cur.semua += v;
-        if (bundleBaru.has(String(it.bundle_id))) cur.baru += v;
-        nilai.set(it.sj_id, cur);
-      });
-      nilai.forEach((n, id) => porsiSj.set(id, n.semua > 0 ? n.baru / n.semua : 0));
-    }
-  }
-
-  invData.forEach(i => {
-    const netto = Math.max(0, Number(i.total_nilai ?? 0) - Number(i.potongan_reject ?? 0));
-    const porsi = hanyaPeriodeBaru ? (porsiSj.get(i.surat_jalan_id) ?? 0) : 1;
-    const v = Math.round(netto * porsi);
-    if (!v) return;
-    const row = ensure(Number(String(i.tanggal).slice(5, 7)));
-    row.pendapatan += v;
-    const sj = Array.isArray(i.surat_jalan) ? i.surat_jalan[0] : i.surat_jalan;
-    if (!sj?.tanggal_validasi) row.pendapatan_belum_validasi += v;
+  // Pendapatan dari surat jalan (invoice netto setelah validasi kirim & reject kantor)
+  const sjPerBulan = await pendapatanSjPerBulan(supabase, date_dari, date_sampai, hanyaPeriodeBaru);
+  sjPerBulan.forEach((p, ym) => {
+    const row = ensure(Number(ym.slice(5, 7)));
+    row.pendapatan += p.nilai;
+    row.pendapatan_belum_validasi += p.belumValidasi;
   });
 
   // Sewa per bulan → Biaya Operasional. Mulai bulan awal periode (mode default), sampai bulan berjalan.

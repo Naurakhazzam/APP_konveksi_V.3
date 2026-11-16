@@ -102,6 +102,7 @@ export default function RingkasanClient({ initialData }: Props) {
         <div className="p-4 rounded-xl bg-[#1A1D1F] border border-green-500/20">
           <p className="text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold mb-1">Total Pemasukan</p>
           <p className="text-lg font-bold font-mono text-green-400">{idrFmt(bd.total_pemasukan)}</p>
+          <p className="text-[10px] text-[#5f6368] mt-0.5">nilai Surat Jalan + pendapatan lain (DP klien tidak dihitung)</p>
         </div>
         <div className="p-4 rounded-xl bg-[#1A1D1F] border border-red-500/20">
           <p className="text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold mb-1">Total Pengeluaran</p>

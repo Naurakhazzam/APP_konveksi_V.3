@@ -37,7 +37,7 @@ export default function LaporanBulanClient({ initialData }: Props) {
     }
   };
 
-  const isEmpty = data.pemasukan.length === 0 && data.pengeluaran.length === 0;
+  const isEmpty = data.pemasukan.length === 0 && data.pengeluaran.length === 0 && !data.kas_dari_klien;
   const bulanLabel = BULAN[parseInt(data.bulan) - 1] ?? data.bulan;
 
   return (
@@ -104,6 +104,17 @@ export default function LaporanBulanClient({ initialData }: Props) {
                     <span className="text-xs font-bold text-[#9aa0a6] uppercase">Total Pemasukan</span>
                     <span className="text-sm font-bold font-mono text-green-400">{idrFmt(data.total_pemasukan)}</span>
                   </div>
+                </div>
+              )}
+              {data.pendapatan_belum_validasi > 0 && (
+                <p className="text-[11px] text-amber-400 mt-3">
+                  {idrFmt(data.pendapatan_belum_validasi)} dari Surat Jalan yang belum divalidasi kantor (sementara pakai qty kirim)
+                </p>
+              )}
+              {data.kas_dari_klien > 0 && (
+                <div className="mt-3 pt-3 border-t border-[#2A2D31] flex justify-between items-center">
+                  <span className="text-xs text-[#9aa0a6]">DP / pelunasan klien diterima <span className="text-[#5f6368]">(info kas, bukan pemasukan)</span></span>
+                  <span className="text-xs font-mono text-sky-300">{idrFmt(data.kas_dari_klien)}</span>
                 </div>
               )}
             </div>

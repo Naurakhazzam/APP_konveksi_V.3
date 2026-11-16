@@ -5,6 +5,7 @@ import { KATEGORI_SETORAN_MODAL } from './buku-kas.types';
 import { PO_AWAL_PERIODE, batasAwalPeriode, rentangPeriodeBaru } from '@/lib/keuangan/periode-po';
 import { getBundleIdsPeriodeBaru, getPoIdsPeriodeBaru } from '@/lib/keuangan/periode-po.server';
 import { overheadPerBulan, pembantuPerBulan } from '@/lib/keuangan/biaya-bulanan.server';
+import { pendapatanSjPerBulan, KATEGORI_BAYAR_KLIEN, LABEL_PENDAPATAN_SJ } from '@/lib/keuangan/pendapatan.server';
 
 const TENANT_ID = 'STX-001';
 
@@ -28,6 +29,10 @@ export interface LaporanBulanData {
   total_pengeluaran: number;
 
   saldo: number;
+  /** DP/pelunasan klien yang masuk Buku Kas bulan ini — info kas, tidak masuk pemasukan */
+  kas_dari_klien: number;
+  /** Bagian pemasukan Surat Jalan yang belum divalidasi kantor */
+  pendapatan_belum_validasi: number;
 }
 
 const JENIS_LABEL: Record<string, string> = {
@@ -84,11 +89,17 @@ export async function getLaporanBulan(
     : (gajiLedgerRaw ?? []);
 
   // ─── Pemasukan: group by kategori ───
+  // Sama dengan Laporan Laba Rugi: pendapatan = nilai Surat Jalan (setelah validasi kirim & reject)
+  // + Pendapatan Lain. DP/pelunasan klien = pembayaran tagihan → hanya info (kas_dari_klien).
   const pemasukanMap: Record<string, number> = {};
+  const sjMap = await pendapatanSjPerBulan(supabase, awal, akhir, hanyaPeriodeBaru);
+  const sjBulan = sjMap.get(`${tahun}-${mm}`) ?? { nilai: 0, belumValidasi: 0 };
+  if (sjBulan.nilai > 0) pemasukanMap[LABEL_PENDAPATAN_SJ] = sjBulan.nilai;
 
-  // Gabungkan pemasukan dari buku_kas
+  let kas_dari_klien = 0;
   (bukuKasData ?? []).forEach((k: any) => {
     const nama = (k.kategori as string) || 'Lainnya';
+    if (KATEGORI_BAYAR_KLIEN.includes(nama)) { kas_dari_klien += Number(k.nominal); return; }
     pemasukanMap[nama] = (pemasukanMap[nama] || 0) + Number(k.nominal);
   });
 
@@ -148,5 +159,7 @@ export async function getLaporanBulan(
     pengeluaran,
     total_pengeluaran,
     saldo: total_pemasukan - total_pengeluaran,
+    kas_dari_klien,
+    pendapatan_belum_validasi: sjBulan.belumValidasi,
   };
 }

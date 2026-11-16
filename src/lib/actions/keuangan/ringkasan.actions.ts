@@ -6,6 +6,7 @@ import { getLaporanPOList } from './laporan-po.actions';
 import { PO_AWAL_PERIODE, poPeriodeBaru, batasAwalPeriode, rentangPeriodeBaru, tanggalLaporan } from '@/lib/keuangan/periode-po';
 import { getBundleIdsPeriodeBaru, getPoIdsPeriodeBaru } from '@/lib/keuangan/periode-po.server';
 import { overheadPerBulan, pembantuPerBulan } from '@/lib/keuangan/biaya-bulanan.server';
+import { pendapatanSjPerBulan, KATEGORI_BAYAR_KLIEN } from '@/lib/keuangan/pendapatan.server';
 
 const TENANT_ID = 'STX-001';
 
@@ -74,6 +75,8 @@ export async function getRingkasanKeuangan(
     .eq('tenant_id', TENANT_ID)
     .eq('tipe', 'masuk')
     .neq('kategori', KATEGORI_SETORAN_MODAL) // modal pemilik bukan pendapatan
+    // DP/pelunasan klien = pembayaran tagihan; pendapatan diakui dari Surat Jalan (sama dengan Laba Rugi)
+    .not('kategori', 'in', `(${KATEGORI_BAYAR_KLIEN.map(k => `"${k}"`).join(',')})`)
     .gte('tanggal', mulai(`${currentTahun}-${mm}-01`))
     .lte('tanggal', `${currentTahun}-${mm}-${String(lastDayCurrent).padStart(2, '0')}`);
 
@@ -113,7 +116,9 @@ export async function getRingkasanKeuangan(
     (s: number, r: any) => s + Number(r.biaya_kain ?? 0) + Number(r.biaya_aksesori ?? 0), 0)
     + (pembantuBulanIni.get(bulanIni) ?? 0));
 
-  // Gabungkan pemasukan dari buku_kas
+  // Pemasukan = nilai Surat Jalan (setelah validasi kirim & reject) + Pendapatan Lain Buku Kas
+  const sjBulanIni = await pendapatanSjPerBulan(supabase, awalBulan, akhirBulan, hanyaPeriodeBaru);
+  total_pemasukan += sjBulanIni.get(bulanIni)?.nilai ?? 0;
   saringKas(bukuKasBulanIni).forEach((k: any) => {
     total_pemasukan += Number(k.nominal);
   });
@@ -149,9 +154,10 @@ export async function getRingkasanKeuangan(
   const lastDayOfRange = new Date(Number(lastMonth.yyyy), Number(lastMonth.mm), 0).getDate();
   const awalRange = `${firstMonth.yyyy}-${firstMonth.mm}-01`;
   const akhirRange = `${lastMonth.yyyy}-${lastMonth.mm}-${String(lastDayOfRange).padStart(2, '0')}`;
-  const [ov6Bulan, pembantu6Bulan] = await Promise.all([
+  const [ov6Bulan, pembantu6Bulan, sj6Bulan] = await Promise.all([
     overheadPerBulan(supabase, awalRange, akhirRange, hanyaPeriodeBaru),
     pembantuPerBulan(supabase, awalRange, akhirRange, hanyaPeriodeBaru),
+    pendapatanSjPerBulan(supabase, awalRange, akhirRange, hanyaPeriodeBaru),
   ]);
 
   // Buku kas tipe='masuk' untuk 6 bulan terakhir
@@ -161,6 +167,8 @@ export async function getRingkasanKeuangan(
     .eq('tenant_id', TENANT_ID)
     .eq('tipe', 'masuk')
     .neq('kategori', KATEGORI_SETORAN_MODAL) // modal pemilik bukan pendapatan
+    // DP/pelunasan klien = pembayaran tagihan; pendapatan diakui dari Surat Jalan (sama dengan Laba Rugi)
+    .not('kategori', 'in', `(${KATEGORI_BAYAR_KLIEN.map(k => `"${k}"`).join(',')})`)
     .gte('tanggal', mulai(`${firstMonth.yyyy}-${firstMonth.mm}-01`))
     .lte('tanggal', `${lastMonth.yyyy}-${lastMonth.mm}-${String(lastDayOfRange).padStart(2, '0')}`);
 
@@ -202,7 +210,7 @@ export async function getRingkasanKeuangan(
     const key = `${month.yyyy}-${month.mm}`;
     const db = Math.round((bahanPerBulan.get(key) ?? 0) + (pembantu6Bulan.get(key) ?? 0));
     const ov = Math.round(ov6Bulan.get(key) ?? 0);
-    let pm = 0;
+    let pm = sj6Bulan.get(key)?.nilai ?? 0;
 
     // Gabungkan pemasukan dari buku_kas
     monthBukuKas.forEach((k: any) => {
