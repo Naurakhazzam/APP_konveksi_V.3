@@ -11,6 +11,9 @@ export interface BukuKasEntry {
   po_id: string | null;
   po_no: string | null;
   komponen_id: string | null;
+  /** Sub-kelompok Biaya Overhead (Gaji Staff, Uang Makan, ...) */
+  overhead_sub_id: string | null;
+  overhead_sub_nama: string | null;
   pembantu_jenis_id: string | null;
   qty: number | null;
   satuan: string | null;
@@ -32,6 +35,8 @@ export interface AddBukuKasInput {
   no_referensi?: string;
   po_id?: string;
   komponen_id?: string | null;
+  /** Wajib bila kategori = 'Biaya Overhead' */
+  overhead_sub_id?: string | null;
   /** Wajib bila kategori = 'Bahan Pembantu' */
   pembantu_jenis_id?: string | null;
   qty?: number | null;
@@ -52,6 +57,15 @@ export interface PembantuJenisOption {
 }
 
 export const KATEGORI_BAHAN_PEMBANTU = 'Bahan Pembantu';
+export const KATEGORI_OVERHEAD = 'Biaya Overhead';
+
+/** Sub-kelompok Biaya Overhead (tabel overhead_sub) */
+export interface OverheadSubOption {
+  id: string;
+  nama: string;
+  /** true = berasal dari komponen overhead HPP (bisa dibandingkan dengan patokan HPP) */
+  dari_hpp: boolean;
+}
 
 export const SATUAN_BELI = ['pcs', 'lusin', 'gross', 'pack', 'roll', 'kg', 'meter', 'yard'] as const;
 

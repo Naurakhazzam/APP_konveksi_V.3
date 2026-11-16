@@ -3,10 +3,10 @@
 import { createClient } from '@/lib/supabase/server';
 import { getCurrentUserProfile } from '@/lib/auth/permissions';
 import { revalidatePath } from 'next/cache';
-import type { BukuKasEntry, AddBukuKasInput, HppKomponenOption, PembantuJenisOption } from './buku-kas.types';
-import { KATEGORI_BAHAN_PEMBANTU } from './buku-kas.types';
+import type { BukuKasEntry, AddBukuKasInput, HppKomponenOption, PembantuJenisOption, OverheadSubOption } from './buku-kas.types';
+import { KATEGORI_BAHAN_PEMBANTU, KATEGORI_OVERHEAD } from './buku-kas.types';
 
-export type { BukuKasEntry, AddBukuKasInput, HppKomponenOption, PembantuJenisOption } from './buku-kas.types';
+export type { BukuKasEntry, AddBukuKasInput, HppKomponenOption, PembantuJenisOption, OverheadSubOption } from './buku-kas.types';
 
 const TENANT_ID = 'STX-001';
 
@@ -22,7 +22,7 @@ export async function getBukuKasEntries(filters?: {
 
   let query = supabase
     .from('buku_kas')
-    .select('id, tanggal, tipe, kategori, nominal, keterangan, no_referensi, po_id, komponen_id, pembantu_jenis_id, qty, satuan, inventory_batch_id, sumber_gaji, created_at, po:po_id(no_po)')
+    .select('id, tanggal, tipe, kategori, nominal, keterangan, no_referensi, po_id, komponen_id, overhead_sub_id, pembantu_jenis_id, qty, satuan, inventory_batch_id, sumber_gaji, created_at, po:po_id(no_po), overhead_sub:overhead_sub_id(nama)')
     .eq('tenant_id', TENANT_ID)
     .order('tanggal', { ascending: false })
     .order('created_at', { ascending: false });
@@ -61,6 +61,8 @@ export async function getBukuKasEntries(filters?: {
     po_id: item.po_id ?? null,
     po_no: (Array.isArray(item.po) ? item.po[0]?.no_po : item.po?.no_po) ?? null,
     komponen_id: item.komponen_id ?? null,
+    overhead_sub_id: item.overhead_sub_id ?? null,
+    overhead_sub_nama: (Array.isArray(item.overhead_sub) ? item.overhead_sub[0]?.nama : item.overhead_sub?.nama) ?? null,
     pembantu_jenis_id: item.pembantu_jenis_id ?? null,
     qty: item.qty == null ? null : Number(item.qty),
     satuan: item.satuan ?? null,
@@ -173,7 +175,19 @@ async function siapkanBaris(
   if (!input.kategori) return { error: 'Kategori tidak boleh kosong.' };
 
   const pembantu = input.tipe === 'keluar' && input.kategori === KATEGORI_BAHAN_PEMBANTU;
+  const overhead = input.tipe === 'keluar' && input.kategori === KATEGORI_OVERHEAD;
   let keterangan = input.keterangan?.trim() ?? '';
+
+  // Overhead wajib punya sub-kelompok; komponen HPP diturunkan dari sub-kelompok itu
+  let komponenOverhead: string | null = null;
+  if (overhead) {
+    if (!input.overhead_sub_id) return { error: 'Pilih sub-kelompok overhead.' };
+    const { data: sub } = await supabase
+      .from('overhead_sub').select('id, hpp_komponen_id')
+      .eq('id', input.overhead_sub_id).eq('tenant_id', TENANT_ID).maybeSingle();
+    if (!sub) return { error: 'Sub-kelompok overhead tidak ditemukan.' };
+    komponenOverhead = sub.hpp_komponen_id ?? null;
+  }
 
   if (pembantu) {
     if (!input.pembantu_jenis_id) return { error: 'Pilih jenis bahan pembantu.' };
@@ -197,7 +211,8 @@ async function siapkanBaris(
       keterangan,
       no_referensi: input.no_referensi || null,
       po_id:        input.po_id || null,
-      komponen_id:  pembantu ? null : (input.komponen_id || null),
+      komponen_id:  overhead ? komponenOverhead : null,
+      overhead_sub_id: overhead ? input.overhead_sub_id : null,
       pembantu_jenis_id: pembantu ? input.pembantu_jenis_id : null,
       qty:          pembantu ? input.qty : null,
       satuan:       pembantu ? input.satuan!.trim() : null,
@@ -269,6 +284,48 @@ export async function getPOListForKas(): Promise<{ id: string; no_po: string }[]
     .order('created_at', { ascending: false });
   if (error) throw new Error(error.message);
   return data ?? [];
+}
+
+/** Daftar sub-kelompok Biaya Overhead: komponen HPP dulu, lalu buatan sendiri (abjad) */
+export async function getOverheadSub(): Promise<OverheadSubOption[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('overhead_sub')
+    .select('id, nama, hpp_komponen_id, urutan')
+    .eq('tenant_id', TENANT_ID)
+    .eq('aktif', true)
+    .order('urutan')
+    .order('nama');
+  if (error) throw new Error(error.message);
+  return (data ?? []).map(s => ({ id: s.id, nama: s.nama, dari_hpp: !!s.hpp_komponen_id }));
+}
+
+/** Tambah sub-kelompok overhead baru (mis. "Gaji Staff"); nama kembar dipakai ulang */
+export async function tambahOverheadSub(
+  nama: string
+): Promise<{ success: boolean; error?: string; data?: OverheadSubOption }> {
+  const profile = await getCurrentUserProfile();
+  if (!profile) return { success: false, error: 'Unauthorized.' };
+  const bersih = nama.trim().replace(/\s+/g, ' ');
+  if (bersih.length < 2) return { success: false, error: 'Nama sub-kelompok terlalu pendek.' };
+
+  const supabase = await createClient();
+  const { data: ada } = await supabase
+    .from('overhead_sub').select('id, nama, hpp_komponen_id, aktif')
+    .eq('tenant_id', TENANT_ID).ilike('nama', bersih).maybeSingle();
+  if (ada) {
+    if (!ada.aktif) await supabase.from('overhead_sub').update({ aktif: true }).eq('id', ada.id);
+    return { success: true, data: { id: ada.id, nama: ada.nama, dari_hpp: !!ada.hpp_komponen_id } };
+  }
+
+  const { data, error } = await supabase
+    .from('overhead_sub')
+    .insert({ tenant_id: TENANT_ID, nama: bersih, urutan: 100 })
+    .select('id, nama')
+    .single();
+  if (error) return { success: false, error: error.message };
+  revalidatePath('/app/keuangan/buku-kas');
+  return { success: true, data: { id: data.id, nama: data.nama, dari_hpp: false } };
 }
 
 export async function getHppKomponenOverhead(): Promise<HppKomponenOption[]> {

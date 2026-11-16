@@ -16,11 +16,12 @@ import {
 import {
   type BukuKasEntry,
   type AddBukuKasInput,
-  type HppKomponenOption,
+  type OverheadSubOption,
   type PembantuJenisOption,
   KATEGORI_MASUK,
   KATEGORI_KELUAR,
   KATEGORI_BAHAN_PEMBANTU,
+  KATEGORI_OVERHEAD,
   SATUAN_BELI,
 } from '@/lib/actions/keuangan/buku-kas.types';
 import {
@@ -29,6 +30,7 @@ import {
   updateBukuKas,
   deleteBukuKas,
   ubahTanggalStokMasuk,
+  tambahOverheadSub,
 } from '@/lib/actions/keuangan/buku-kas.actions';
 
 // ─── CONSTANTS ───────────────────────────────────────────────────────────────
@@ -76,7 +78,7 @@ const linkSlip = (karyawanId: string, tanggalBayar: string) => {
 interface Props {
   initialEntries: BukuKasEntry[];
   poList: { id: string; no_po: string }[];
-  kompoList: HppKomponenOption[];
+  overheadSubList: OverheadSubOption[];
   pembantuList: PembantuJenisOption[];
   /** Bulan berjalan "MM" & tahun "YYYY" — filter awal */
   defaultBulan: string;
@@ -94,6 +96,7 @@ const makeDefaultForm = (tipe: 'masuk' | 'keluar') => ({
   no_referensi: '',
   po_id: '',
   komponen_id: '',
+  overhead_sub_id: '',
   pembantu_jenis_id: '',
   qty: '',
   satuan: '',
@@ -101,8 +104,12 @@ const makeDefaultForm = (tipe: 'masuk' | 'keluar') => ({
 
 // ─── COMPONENT ───────────────────────────────────────────────────────────────
 
-export default function BukuKasClient({ initialEntries, poList, kompoList, pembantuList, defaultBulan, defaultTahun }: Props) {
+export default function BukuKasClient({ initialEntries, poList, overheadSubList, pembantuList, defaultBulan, defaultTahun }: Props) {
   const [entries, setEntries] = useState<BukuKasEntry[]>(initialEntries);
+  // Sub-kelompok overhead (bisa bertambah dari form)
+  const [subList, setSubList] = useState<OverheadSubOption[]>(overheadSubList);
+  const [subBaru, setSubBaru] = useState<string | null>(null);
+  const [menambahSub, setMenambahSub] = useState(false);
   /** Entri bertanda PO lama (sebelum PO-0100) disembunyikan kecuali dicentang; tanpa tag PO selalu tampil */
   const [tampilkanLama, setTampilkanLama] = useState(false);
   const tampil = tampilkanLama ? entries : entries.filter(e => !e.po_no || poPeriodeBaru(e.po_no));
@@ -137,6 +144,31 @@ export default function BukuKasClient({ initialEntries, poList, kompoList, pemba
   }, [poList]);
 
   const isPembantu = form.tipe === 'keluar' && form.kategori === KATEGORI_BAHAN_PEMBANTU;
+  const isOverhead = form.tipe === 'keluar' && form.kategori === KATEGORI_OVERHEAD;
+
+  const simpanSubBaru = async () => {
+    if (!subBaru?.trim()) return;
+    setMenambahSub(true);
+    const res = await tambahOverheadSub(subBaru);
+    setMenambahSub(false);
+    if (!res.success || !res.data) { toast.error(res.error || 'Gagal menambah sub-kelompok'); return; }
+    const baru = res.data;
+    setSubList(prev => prev.some(s => s.id === baru.id) ? prev : [...prev, baru]);
+    setForm(f => ({ ...f, overhead_sub_id: baru.id }));
+    setSubBaru(null);
+    toast.success(`Sub-kelompok "${baru.nama}" siap dipakai`);
+  };
+
+  /** Rekap Biaya Overhead per sub-kelompok (data yang sedang tampil) */
+  const rekapOverhead = (() => {
+    const m = new Map<string, number>();
+    tampil.forEach(e => {
+      if (e.tipe !== 'keluar' || e.kategori !== KATEGORI_OVERHEAD) return;
+      const k = e.overhead_sub_nama ?? 'Tanpa sub-kelompok';
+      m.set(k, (m.get(k) ?? 0) + e.nominal);
+    });
+    return [...m.entries()].sort((a, b) => b[1] - a[1]);
+  })();
 
   /** Baris tabel: pembayaran gaji otomatis pada tanggal yang sama disatukan jadi satu baris */
   const barisTabel = (() => {
@@ -215,6 +247,7 @@ export default function BukuKasClient({ initialEntries, poList, kompoList, pemba
           Hari: hariFmt(e.tanggal),
           Tipe: e.tipe === 'masuk' ? 'Masuk' : 'Keluar',
           Kategori: e.kategori,
+          'Sub-kelompok': e.overhead_sub_nama ?? '',
           Keterangan: e.keterangan ?? '',
           'No. Referensi': e.no_referensi ?? '',
           'Tag PO': e.po_no ?? '',
@@ -230,10 +263,10 @@ export default function BukuKasClient({ initialEntries, poList, kompoList, pemba
       const ws = XLSX.utils.json_to_sheet(isi);
       XLSX.utils.sheet_add_aoa(ws, [
         [],
-        ['', '', '', '', 'TOTAL', '', '', totMasuk, totKeluar, totMasuk - totKeluar],
+        ['', '', '', '', '', 'TOTAL', '', '', totMasuk, totKeluar, totMasuk - totKeluar],
       ], { origin: -1 });
       ws['!cols'] = [
-        { wch: 11 }, { wch: 9 }, { wch: 8 }, { wch: 18 }, { wch: 42 },
+        { wch: 11 }, { wch: 9 }, { wch: 8 }, { wch: 18 }, { wch: 18 }, { wch: 42 },
         { wch: 14 }, { wch: 9 }, { wch: 13 }, { wch: 13 }, { wch: 14 },
       ];
       const wb = XLSX.utils.book_new();
@@ -291,11 +324,12 @@ export default function BukuKasClient({ initialEntries, poList, kompoList, pemba
       tanggal:      entry.tanggal.slice(0, 10),
       tipe:         entry.tipe,
       kategori:     entry.kategori,
-      nominal:      String(entry.nominal),
+      nominal:      String(Math.round(entry.nominal)),
       keterangan:   entry.keterangan ?? '',
       no_referensi: entry.no_referensi ?? '',
       po_id:        entry.po_id ?? '',
       komponen_id:  entry.komponen_id ?? '',
+      overhead_sub_id: entry.overhead_sub_id ?? '',
       pembantu_jenis_id: entry.pembantu_jenis_id ?? '',
       qty:          entry.qty == null ? '' : String(entry.qty),
       satuan:       entry.satuan ?? '',
@@ -316,7 +350,7 @@ export default function BukuKasClient({ initialEntries, poList, kompoList, pemba
       keterangan:   form.keterangan,
       no_referensi: form.no_referensi || undefined,
       po_id:        form.po_id        || undefined,
-      komponen_id:  isPembantu ? undefined : (form.komponen_id || undefined),
+      overhead_sub_id: isOverhead ? form.overhead_sub_id || null : null,
       pembantu_jenis_id: isPembantu ? form.pembantu_jenis_id || null : null,
       qty:          isPembantu ? parseFloat(form.qty) || null : null,
       satuan:       isPembantu ? form.satuan || null : null,
@@ -435,6 +469,26 @@ export default function BukuKasClient({ initialEntries, poList, kompoList, pemba
           </p>
         </div>
       </div>
+
+      {/* ─── REKAP OVERHEAD PER SUB-KELOMPOK ─────────────────────────────── */}
+      {rekapOverhead.length > 0 && (
+        <div className="p-4 rounded-xl bg-[#1A1D1F] border border-[#2A2D31]">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold">Biaya Overhead per Sub-kelompok</p>
+            <p className="text-xs font-bold text-red-400">
+              {idrFmt(rekapOverhead.reduce((s, [, v]) => s + v, 0))}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {rekapOverhead.map(([nama, total]) => (
+              <span key={nama} className="inline-flex items-center gap-2 rounded-lg border border-[#2A2D31] bg-[#16181A] px-3 py-1.5 text-xs">
+                <span className={nama === 'Tanpa sub-kelompok' ? 'text-[#5f6368] italic' : 'text-[#e8eaed]'}>{nama}</span>
+                <span className="font-bold text-red-400">{idrFmt(total)}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ─── FILTER BAR ─────────────────────────────────────────────────── */}
       <div className="flex flex-wrap gap-3 items-end p-4 rounded-xl bg-[#1A1D1F] border border-[#2A2D31]">
@@ -643,7 +697,12 @@ export default function BukuKasClient({ initialEntries, poList, kompoList, pemba
                     {entry.tipe === 'masuk' ? 'Masuk' : 'Keluar'}
                   </span>
                 </TableCell>
-                <TableCell className="text-sm text-[#9aa0a6]">{entry.kategori}</TableCell>
+                <TableCell className="text-sm text-[#9aa0a6]">
+                  <div>{entry.kategori}</div>
+                  {entry.overhead_sub_nama && (
+                    <div className="text-[11px] text-[#e5c17b]">{entry.overhead_sub_nama}</div>
+                  )}
+                </TableCell>
                 <TableCell className="text-sm text-[#e8eaed] max-w-[200px] truncate">
                   {entry.keterangan}
                 </TableCell>
@@ -840,16 +899,78 @@ export default function BukuKasClient({ initialEntries, poList, kompoList, pemba
               </div>
             )}
 
+            {isOverhead && (
+              <div className="space-y-2 p-3 rounded-lg border border-[#e5c17b]/30 bg-[#e5c17b]/5">
+                <label className={labelCls}>Sub-kelompok Overhead *</label>
+                {subBaru === null ? (
+                  <div className="flex gap-2">
+                    <select
+                      required
+                      className={inputCls}
+                      value={form.overhead_sub_id}
+                      onChange={e => setForm(f => ({ ...f, overhead_sub_id: e.target.value }))}
+                    >
+                      <option value="">-- Pilih --</option>
+                      {subList.map(s => (
+                        <option key={s.id} value={s.id}>{s.nama}{s.dari_hpp ? ' (HPP)' : ''}</option>
+                      ))}
+                    </select>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() => setSubBaru('')}
+                      className="h-10 px-3 shrink-0 text-xs text-[#e5c17b] hover:bg-[#e5c17b]/10"
+                      title="Buat sub-kelompok baru"
+                    >
+                      <Plus className="h-4 w-4 mr-1" /> Baru
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      autoFocus
+                      placeholder="Nama sub-kelompok baru, mis. Parkir"
+                      className={inputCls}
+                      value={subBaru}
+                      onChange={e => setSubBaru(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); simpanSubBaru(); } }}
+                    />
+                    <Button
+                      type="button"
+                      onClick={simpanSubBaru}
+                      disabled={menambahSub || !subBaru.trim()}
+                      className="h-10 px-3 shrink-0 bg-[#e5c17b] hover:bg-[#d4b06a] text-black text-xs font-bold"
+                    >
+                      {menambahSub ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Simpan'}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() => setSubBaru(null)}
+                      className="h-10 px-3 shrink-0 text-xs text-[#9aa0a6]"
+                    >
+                      Batal
+                    </Button>
+                  </div>
+                )}
+                <p className="text-[11px] text-[#9aa0a6]">
+                  Untuk mengelompokkan biaya overhead. Tanda (HPP) = bisa dibandingkan dengan patokan di sheet HPP.
+                </p>
+              </div>
+            )}
+
             <div>
               <label className={labelCls}>Nominal (Rp) *</label>
               <input
-                type="number"
+                type="text"
+                inputMode="numeric"
                 required
-                min="1"
-                placeholder="contoh: 1000000"
+                placeholder="contoh: 1.000.000"
                 className={inputCls}
-                value={form.nominal}
-                onChange={e => setForm(f => ({ ...f, nominal: e.target.value }))}
+                value={form.nominal ? Number(form.nominal).toLocaleString('id-ID') : ''}
+                // Tampil "300.000", disimpan sebagai angka murni "300000"
+                onChange={e => setForm(f => ({ ...f, nominal: e.target.value.replace(/\D/g, '').replace(/^0+/, '') }))}
               />
             </div>
 
@@ -891,22 +1012,6 @@ export default function BukuKasClient({ initialEntries, poList, kompoList, pemba
                 ))}
               </select>
             </div>
-
-            {modalTipe === 'keluar' && !isPembantu && (
-              <div>
-                <label className={labelCls}>HPP Komponen Overhead <span className="text-[#5f6368] normal-case font-normal">(opsional)</span></label>
-                <select
-                  className={inputCls}
-                  value={form.komponen_id}
-                  onChange={e => setForm(f => ({ ...f, komponen_id: e.target.value }))}
-                >
-                  <option value="">-- Tidak ada --</option>
-                  {kompoList.map(k => (
-                    <option key={k.id} value={k.id}>{k.nama}</option>
-                  ))}
-                </select>
-              </div>
-            )}
 
             <DialogFooter className="pt-2">
               <Button

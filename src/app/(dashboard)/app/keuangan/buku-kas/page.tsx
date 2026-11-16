@@ -1,4 +1,4 @@
-import { getBukuKasEntries, getPOListForKas, getHppKomponenOverhead, getPembantuJenis } from '@/lib/actions/keuangan/buku-kas.actions';
+import { getBukuKasEntries, getPOListForKas, getOverheadSub, getPembantuJenis } from '@/lib/actions/keuangan/buku-kas.actions';
 import { bulanBerjalan } from '@/lib/bulan-berjalan';
 import BukuKasClient from './BukuKasClient';
 
@@ -10,13 +10,13 @@ export default async function BukuKasPage() {
   try {
     // Default: bulan berjalan (WIB)
     const { bulan, tahun } = bulanBerjalan();
-    const [entries, poList, kompoList, pembantuList] = await Promise.all([
+    const [entries, poList, overheadSubList, pembantuList] = await Promise.all([
       getBukuKasEntries({ bulan, tahun }),
       getPOListForKas(),
-      getHppKomponenOverhead(),
+      getOverheadSub(),
       getPembantuJenis(),
     ]);
-    return <BukuKasClient initialEntries={entries} poList={poList} kompoList={kompoList} pembantuList={pembantuList} defaultBulan={bulan} defaultTahun={tahun} />;
+    return <BukuKasClient initialEntries={entries} poList={poList} overheadSubList={overheadSubList} pembantuList={pembantuList} defaultBulan={bulan} defaultTahun={tahun} />;
   } catch (e) {
     return (
       <div className="p-8 text-red-400">
