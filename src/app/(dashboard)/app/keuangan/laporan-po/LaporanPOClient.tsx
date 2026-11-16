@@ -78,7 +78,7 @@ export default function LaporanPOClient({ initialData, overheadRateInfo, default
   const [filterTahun, setFilterTahun] = useState(defaultTahun);
   const [filtering, setFiltering] = useState(false);
   /** PO sebelum PO-0100 disembunyikan kecuali dicentang */
-  const [tampilkanLama, setTampilkanLama] = useState(false);
+  const tampilkanLama = false;
   const jumlahLama = React.useMemo(() => data.filter(p => !poPeriodeBaru(p.no_po)).length, [data]);
   const visible = React.useMemo(
     () => (tampilkanLama ? data : data.filter(p => poPeriodeBaru(p.no_po))),
@@ -323,12 +323,7 @@ export default function LaporanPOClient({ initialData, overheadRateInfo, default
         >
           Reset
         </Button>
-        <label className="flex items-center gap-2 h-9 ml-auto text-xs text-[#9aa0a6] cursor-pointer select-none">
-          <input type="checkbox" checked={tampilkanLama} onChange={e => setTampilkanLama(e.target.checked)}
-            className="accent-[#e5c17b]" />
-          Tampilkan PO sebelum PO-{String(PO_AWAL_PERIODE).padStart(4, '0')}
-          {jumlahLama > 0 && <span className="text-[#5f6368]">({jumlahLama} disembunyikan)</span>}
-        </label>
+        {/* PO sebelum periode baru disembunyikan permanen (permintaan user 16 Nov 2026) */}
       </div>
 
       {/* Tabel */}

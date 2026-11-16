@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import TogglePoLama from '@/components/keuangan/TogglePoLama';
+import { tanggalPeriodeBaru } from '@/lib/keuangan/periode-po';
 import { toast } from 'sonner';
 import {
   Trash2, Loader2, Filter, ChevronDown, ChevronUp,
@@ -62,7 +63,7 @@ export default function InvoiceClient({ initialInvoices, klienList, defaultBulan
   const [invoices, setInvoices]     = useState<InvoiceRow[]>(initialInvoices);
   /** Invoice PO lama (sebelum PO-0100) disembunyikan kecuali dicentang */
   const [tampilkanLama, setTampilkanLama] = useState(false);
-  const tampil = tampilkanLama ? invoices : invoices.filter(i => i.periode_baru !== false);
+  const tampil = tampilkanLama ? invoices : invoices.filter(i => i.periode_baru !== false && tanggalPeriodeBaru(i.tanggal));
   const jumlahLama = invoices.length - tampil.length;
   const [filtering, setFiltering]   = useState(false);
 

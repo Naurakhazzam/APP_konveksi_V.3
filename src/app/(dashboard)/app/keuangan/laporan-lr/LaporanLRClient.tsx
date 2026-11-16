@@ -8,7 +8,6 @@ import {
   type LaporanLRData,
   type LaporanLRBulan,
 } from '@/lib/actions/keuangan/laporan-lr.actions';
-import { PO_AWAL_PERIODE } from '@/lib/keuangan/periode-po';
 
 // ─── HELPERS ────────────────────────────────────────────────────────────────
 
@@ -70,7 +69,7 @@ const EXPENSE_ROWS: ExpenseRow[] = [
   },
   {
     label    : 'Biaya Operasional',
-    desc     : 'ongkir, service motor/mesin, dll',
+    desc     : 'sewa rumah (biaya tetap), ongkir, service motor/mesin, dll',
     color    : 'text-yellow-300',
     getTotal : (d) => d.total_biaya_operasional,
     getVal   : (b) => b.biaya_operasional,
@@ -94,8 +93,8 @@ interface Props {
 export default function LaporanLRClient({ initialData, initialTahun }: Props) {
   const [data,    setData]   = useState<LaporanLRData>(initialData);
   const [tahun,   setTahun]  = useState(initialTahun);
-  /** PO sebelum PO-0100 disembunyikan kecuali dicentang */
-  const [tampilkanLama, setTampilkanLama] = useState(false);
+  /** Data sebelum periode baru (14 Nov 2026 / PO-0099) selalu disembunyikan */
+  const tampilkanLama = false;
   const [pending, startTransition] = useTransition();
 
   const TAHUN_OPTIONS = Array.from({ length: 5 }, (_, i) => initialTahun - i);
@@ -116,11 +115,6 @@ export default function LaporanLRClient({ initialData, initialTahun }: Props) {
     muat(t, tampilkanLama);
   }
 
-  function handleLamaChange(lama: boolean) {
-    setTampilkanLama(lama);
-    muat(tahun, lama);
-  }
-
   const maxLaba = Math.max(...data.bulan_list.map(b => Math.abs(b.laba_bersih)), 1);
 
   // ─── RENDER ───────────────────────────────────────────────────────────────
@@ -132,17 +126,11 @@ export default function LaporanLRClient({ initialData, initialTahun }: Props) {
         <div>
           <h1 className="text-xl font-bold">Laporan Laba Rugi</h1>
           <p className="text-[#9aa0a6] text-sm mt-0.5">
-            Kas masuk vs semua pengeluaran — rincian per kategori
+            Nilai barang terkirim (Surat Jalan) vs semua pengeluaran — rincian per kategori
           </p>
         </div>
         <div className="flex items-center gap-3">
           {pending && <Loader2 className="w-4 h-4 animate-spin text-[#9aa0a6]" />}
-          <label className="flex items-center gap-2 text-xs text-[#9aa0a6] cursor-pointer select-none"
-            title="Default hanya PO periode baru: pendapatan dari invoice barang PO-0100 ke atas; pengeluaran yang ditandai ke PO lama disembunyikan">
-            <input type="checkbox" checked={tampilkanLama} onChange={e => handleLamaChange(e.target.checked)}
-              className="accent-[#e5c17b]" />
-            Tampilkan PO sebelum PO-{String(PO_AWAL_PERIODE).padStart(4, '0')}
-          </label>
           <select
             value={tahun}
             onChange={(e) => handleTahunChange(Number(e.target.value))}
@@ -167,10 +155,41 @@ export default function LaporanLRClient({ initialData, initialTahun }: Props) {
             <p className="text-2xl font-bold text-green-400">
               {idr(data.total_pendapatan)}
             </p>
-            <p className="text-[10px] text-[#5f6368] mt-0.5">dari pembayaran invoice klien</p>
+            <p className="text-[10px] text-[#5f6368] mt-0.5">nilai surat jalan × harga jual, dicocokkan dengan Validasi Kirim</p>
+            {data.total_pendapatan_belum_validasi > 0 && (
+              <p className="text-[10px] text-amber-400 mt-1">
+                {idr(data.total_pendapatan_belum_validasi)} dari SJ yang belum divalidasi kantor (sementara pakai qty kirim)
+              </p>
+            )}
           </div>
           <TrendingUp className="w-10 h-10 text-green-400/20" />
         </div>
+
+        {/* Info kas klien — bukan pendapatan */}
+        {(data.total_kas_dari_klien > 0 || data.total_pendapatan > 0) && (
+          <div className="px-6 py-3 border-b border-[#2A2D31] grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-[#5f6368]">DP / Pelunasan Klien diterima</p>
+              <p className="font-semibold text-sky-300">{idr(data.total_kas_dari_klien)}</p>
+              <p className="text-[10px] text-[#5f6368]">uang kas dari klien — pembayaran tagihan, tidak menambah laba</p>
+            </div>
+            <div>
+              {data.total_kas_dari_klien > data.total_pendapatan ? (
+                <>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-[#5f6368]">DP titipan (barang belum dikirim)</p>
+                  <p className="font-semibold text-amber-300">{idr(data.total_kas_dari_klien - data.total_pendapatan)}</p>
+                  <p className="text-[10px] text-[#5f6368]">uang klien yang belum ada barangnya — utang barang</p>
+                </>
+              ) : (
+                <>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-[#5f6368]">Sisa tagihan (piutang)</p>
+                  <p className="font-semibold text-amber-300">{idr(data.total_pendapatan - data.total_kas_dari_klien)}</p>
+                  <p className="text-[10px] text-[#5f6368]">barang sudah dikirim, uangnya belum masuk</p>
+                </>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Subheader Pengeluaran */}
         <div className="px-6 py-2.5 bg-[#16181A]">
@@ -249,11 +268,12 @@ export default function LaporanLRClient({ initialData, initialTahun }: Props) {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[960px]">
+          <table className="w-full text-sm min-w-[1060px]">
             <thead>
               <tr className="border-b border-[#2A2D31] text-[10px] uppercase tracking-wider">
                 <th className="text-left px-4 py-3 text-[#9aa0a6] w-20">Bulan</th>
                 <th className="text-right px-3 py-3 text-green-400">Pendapatan</th>
+                <th className="text-right px-3 py-3 text-sky-300">DP/Pelunasan</th>
                 <th className="text-right px-3 py-3 text-blue-300">Bahan</th>
                 <th className="text-right px-3 py-3 text-purple-300">Gaji</th>
                 <th className="text-right px-3 py-3 text-orange-300">Overhead</th>
@@ -268,7 +288,7 @@ export default function LaporanLRClient({ initialData, initialTahun }: Props) {
             </thead>
             <tbody>
               {data.bulan_list.map((b) => {
-                const ada = b.pendapatan > 0 || b.total_pengeluaran > 0;
+                const ada = b.pendapatan > 0 || b.total_pengeluaran > 0 || b.kas_dari_klien > 0;
                 return (
                   <tr
                     key={b.bulan}
@@ -284,6 +304,10 @@ export default function LaporanLRClient({ initialData, initialTahun }: Props) {
 
                     <td className="px-3 py-2.5 text-right font-mono text-xs text-green-400">
                       {ada ? idr(b.pendapatan) : '—'}
+                    </td>
+
+                    <td className="px-3 py-2.5 text-right font-mono text-xs text-sky-300">
+                      {b.kas_dari_klien > 0 ? idr(b.kas_dari_klien) : <span className="text-[#3a3d41]">-</span>}
                     </td>
 
                     {EXPENSE_ROWS.map((row) => {
@@ -331,6 +355,9 @@ export default function LaporanLRClient({ initialData, initialTahun }: Props) {
                 <td className="px-3 py-3 text-right font-mono text-green-400">
                   {idr(data.total_pendapatan)}
                 </td>
+                <td className="px-3 py-3 text-right font-mono text-sky-300">
+                  {idr(data.total_kas_dari_klien)}
+                </td>
                 <td className="px-3 py-3 text-right font-mono text-blue-300">
                   {idr(data.total_pembelian_bahan)}
                 </td>
@@ -371,11 +398,12 @@ export default function LaporanLRClient({ initialData, initialTahun }: Props) {
       {/* Catatan Metodologi */}
       <div className="bg-[#1A1C1E] border border-[#2A2D31] rounded-xl p-4 text-[11px] text-[#9aa0a6] space-y-1.5">
         <p className="font-bold text-white mb-2">Metodologi Perhitungan</p>
-        <p><span className="text-green-400 font-semibold">Pendapatan</span>{' '}= pembayaran invoice yang diterima dari klien (berdasarkan tanggal bayar)</p>
+        <p><span className="text-green-400 font-semibold">Pendapatan</span>{' '}= nilai Surat Jalan (qty × harga jual) pada tanggal SJ dibuat, lalu dicocokkan saat Validasi Kirim: qty kurang mengurangi, qty lebih yang disetujui menambah, reject kantor memotong sampai dikirim ulang. Ditambah Pendapatan Lain dari Buku Kas.</p>
+        <p><span className="text-sky-300 font-semibold">DP/Pelunasan</span>{' '}= uang klien di Buku Kas — hanya info kas (pembayaran tagihan), tidak dihitung ke laba. Setoran Modal juga tidak dihitung.</p>
         <p><span className="text-blue-300 font-semibold">Pembelian Bahan</span>{' '}= kas keluar untuk beli kain dan aksesori</p>
         <p><span className="text-purple-300 font-semibold">Pembayaran Gaji</span>{' '}= kas keluar untuk upah karyawan</p>
         <p><span className="text-orange-300 font-semibold">Biaya Overhead</span>{' '}= uang makan, galon, gas, listrik, internet, sampah</p>
-        <p><span className="text-yellow-300 font-semibold">Biaya Operasional</span>{' '}= ongkos kirim, service motor/mesin, biaya sampel, dll</p>
+        <p><span className="text-yellow-300 font-semibold">Biaya Operasional</span>{' '}= sewa rumah (nilai kontrak dibagi rata per hari, tetap tiap bulan) + ongkos kirim, service motor/mesin, biaya sampel, dll</p>
         <p className="pt-1 border-t border-[#2A2D31]">
           <span className="text-white font-semibold">Laba Bersih</span>{' '}= Pendapatan - (Bahan + Gaji + Overhead + Operasional + Lainnya)
         </p>

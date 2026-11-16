@@ -1,8 +1,12 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
-import { poPeriodeBaru } from '@/lib/keuangan/periode-po';
+import { poPeriodeBaru, TANGGAL_AWAL_PERIODE } from '@/lib/keuangan/periode-po';
 import { getBundleIdsPeriodeBaru } from '@/lib/keuangan/periode-po.server';
+import { KATEGORI_SETORAN_MODAL } from './buku-kas.types';
+
+/** Uang dari klien (DP/pelunasan) = pembayaran tagihan, BUKAN pendapatan (pendapatan diakui dari surat jalan) */
+const KATEGORI_BAYAR_KLIEN = ['DP Klien', 'Pelunasan Klien'];
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -12,7 +16,12 @@ export interface LaporanLRBulan {
   label            : string;
   bulan            : number;
   tahun            : number;
+  /** Nilai surat jalan (invoice netto setelah validasi & potongan reject) + Pendapatan Lain Buku Kas */
   pendapatan       : number;
+  /** Bagian pendapatan dari SJ yang belum divalidasi kantor (masih pakai qty kirim) */
+  pendapatan_belum_validasi: number;
+  /** Uang DP/pelunasan klien yang masuk Buku Kas — info kas, tidak menambah laba */
+  kas_dari_klien   : number;
   pembelian_bahan  : number;
   pembayaran_gaji  : number;
   biaya_overhead   : number;
@@ -26,6 +35,8 @@ export interface LaporanLRBulan {
 export interface LaporanLRData {
   bulan_list              : LaporanLRBulan[];
   total_pendapatan        : number;
+  total_pendapatan_belum_validasi: number;
+  total_kas_dari_klien    : number;
   total_pembelian_bahan   : number;
   total_pembayaran_gaji   : number;
   total_biaya_overhead    : number;
@@ -41,12 +52,18 @@ const BULAN_LABEL = [
   'Jul','Agt','Sep','Okt','Nov','Des',
 ];
 
+const keUtc = (d: string) => Date.UTC(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10));
+/** Selisih hari inklusif antara dua tanggal 'YYYY-MM-DD' */
+const hariInklusif = (a: string, b: string) => Math.round((keUtc(b) - keUtc(a)) / 86_400_000) + 1;
+
 function emptyBulan(bln: number, tahun: number): LaporanLRBulan {
   return {
     label            : BULAN_LABEL[bln] + ' ' + tahun,
     bulan            : bln,
     tahun,
     pendapatan       : 0,
+    pendapatan_belum_validasi: 0,
+    kas_dari_klien   : 0,
     pembelian_bahan  : 0,
     pembayaran_gaji  : 0,
     biaya_overhead   : 0,
@@ -74,69 +91,38 @@ export async function getLaporanLR(
   const lastDay     = new Date(tahun, bln_sampai, 0).getDate();
   const date_sampai = tahun + '-' + String(bln_sampai).padStart(2, '0') + '-' + String(lastDay).padStart(2, '0');
 
-  const { data: pembayaranData, error: pembayaranError } = await supabase
-    .from('invoice_pembayaran')
-    .select('jumlah, tanggal, invoice_id')
-    .eq('tenant_id', TENANT_ID)
-    .gte('tanggal', date_dari)
-    .lte('tanggal', date_sampai);
+  // Default (periode baru): Buku Kas sebelum TANGGAL_AWAL_PERIODE diabaikan (data lama)
+  const dariEfektif = hanyaPeriodeBaru && date_dari < TANGGAL_AWAL_PERIODE ? TANGGAL_AWAL_PERIODE : date_dari;
 
-  if (pembayaranError) throw new Error(pembayaranError.message);
-
+  // Uang masuk & keluar = Buku Kas saja (fitur pembayaran invoice belum dipakai; jangan dijumlah dua kali)
   const { data: kasRaw, error: kasError } = await supabase
     .from('buku_kas')
-    .select('nominal, tanggal, kategori, po:po_id(no_po)')
+    .select('tipe, nominal, tanggal, kategori, overhead_sub_id, po:po_id(no_po)')
     .eq('tenant_id', TENANT_ID)
-    .eq('tipe', 'keluar')
-    .gte('tanggal', date_dari)
+    .gte('tanggal', dariEfektif)
     .lte('tanggal', date_sampai);
 
   if (kasError) throw new Error(kasError.message);
 
-  // Pengeluaran yang ditandai ke PO lama ikut disembunyikan; yang tanpa PO tetap dihitung
+  // Biaya tetap (kontrak sewa rumah): dialokasikan per hari, bukan saat dibayar.
+  // Pembayaran Buku Kas untuk sub-kelompok berkontrak diabaikan supaya tidak terhitung dua kali.
+  const { data: btRaw, error: btError } = await supabase
+    .from('biaya_tetap')
+    .select('nominal, tanggal_mulai, tanggal_selesai, overhead_sub_id')
+    .eq('tenant_id', TENANT_ID);
+  if (btError) throw new Error(btError.message);
+  const btData = (btRaw ?? []) as any[];
+  const subKontrak = new Set(btData.map(b => String(b.overhead_sub_id)));
+
+  // Baris yang ditandai ke PO lama ikut disembunyikan; yang tanpa PO tetap dihitung
+  const kasTanpaKontrak = (kasRaw ?? []).filter((k: any) =>
+    !(k.kategori === 'Biaya Overhead' && k.overhead_sub_id && subKontrak.has(String(k.overhead_sub_id))));
   const kasData = hanyaPeriodeBaru
-    ? (kasRaw ?? []).filter((k: any) => {
+    ? kasTanpaKontrak.filter((k: any) => {
         const noPo = (Array.isArray(k.po) ? k.po[0]?.no_po : k.po?.no_po) as string | undefined;
         return !noPo || poPeriodeBaru(noPo);
       })
-    : (kasRaw ?? []);
-
-  // Porsi pendapatan PO periode baru per invoice = nilai barang PO-0100+ ÷ nilai seluruh barang di surat jalannya
-  const porsiInvoice = new Map<string, number>();
-  if (hanyaPeriodeBaru) {
-    const invoiceIds = [...new Set((pembayaranData ?? []).map((p: any) => p.invoice_id).filter(Boolean))] as string[];
-    if (invoiceIds.length) {
-      const { data: invData, error: invErr } = await supabase
-        .from('invoice').select('id, surat_jalan_id').in('id', invoiceIds);
-      if (invErr) throw new Error(invErr.message);
-      const sjIds = [...new Set((invData ?? []).map((i: any) => i.surat_jalan_id).filter(Boolean))] as string[];
-      const nilaiSj = new Map<string, { baru: number; semua: number }>();
-      if (sjIds.length) {
-        // Per bundle, supaya pengecualian khusus (periode_baru_bundle_khusus) ikut terhitung
-        const bundleBaru = await getBundleIdsPeriodeBaru(supabase);
-        const { data: sjItems, error: sjErr } = await supabase
-          .from('surat_jalan_item')
-          .select('sj_id, qty_kirim, bundle_id, bundle:bundle_id(po_item:po_item_id(produk:produk_id(harga_jual)))')
-          .in('sj_id', sjIds);
-        if (sjErr) throw new Error(sjErr.message);
-        (sjItems ?? []).forEach((it: any) => {
-          const bundle = Array.isArray(it.bundle) ? it.bundle[0] : it.bundle;
-          const pi     = Array.isArray(bundle?.po_item) ? bundle.po_item[0] : bundle?.po_item;
-          const produk = Array.isArray(pi?.produk) ? pi.produk[0] : pi?.produk;
-          const nilai  = Number(it.qty_kirim ?? 0) * Number(produk?.harga_jual ?? 0);
-          const cur    = nilaiSj.get(it.sj_id) ?? { baru: 0, semua: 0 };
-          cur.semua += nilai;
-          if (bundleBaru.has(String(it.bundle_id))) cur.baru += nilai;
-          nilaiSj.set(it.sj_id, cur);
-        });
-      }
-      (invData ?? []).forEach((i: any) => {
-        const n = nilaiSj.get(i.surat_jalan_id);
-        // Invoice tanpa surat jalan / tanpa nilai: tidak bisa ditelusuri ke PO → tetap dihitung
-        porsiInvoice.set(i.id, n && n.semua > 0 ? n.baru / n.semua : 1);
-      });
-    }
-  }
+    : kasTanpaKontrak;
 
   const bulanMap: Record<number, LaporanLRBulan> = {};
 
@@ -145,16 +131,18 @@ export async function getLaporanLR(
     return bulanMap[bln];
   };
 
-  (pembayaranData ?? []).forEach((p: any) => {
-    const bln = new Date(p.tanggal).getMonth() + 1;
-    const porsi = hanyaPeriodeBaru ? (porsiInvoice.get(p.invoice_id) ?? 1) : 1;
-    ensure(bln).pendapatan += Math.round(Number(p.jumlah) * porsi);
-  });
-
   kasData.forEach((k: any) => {
-    const bln     = new Date(k.tanggal).getMonth() + 1;
+    const bln     = Number(String(k.tanggal).slice(5, 7));
     const row     = ensure(bln);
     const nominal = Number(k.nominal);
+    if (k.tipe === 'masuk') {
+      // Setoran modal pemilik bukan pendapatan; DP/pelunasan klien = pembayaran tagihan SJ
+      if (k.kategori === KATEGORI_SETORAN_MODAL) return;
+      if (KATEGORI_BAYAR_KLIEN.includes(k.kategori)) row.kas_dari_klien += nominal;
+      else row.pendapatan += nominal;
+      return;
+    }
+    if (k.tipe !== 'keluar') return;
     switch (k.kategori) {
       case 'Pembelian Bahan':
       case 'Bahan Pembantu':    row.pembelian_bahan   += nominal; break;
@@ -165,6 +153,70 @@ export async function getLaporanLR(
       default:                  row.biaya_lainnya     += nominal; break;
     }
   });
+
+  // Pendapatan dari surat jalan: invoice otomatis (qty kirim × harga jual saat SJ dibuat),
+  // dikoreksi saat Validasi Kirim (qty diterima, qty lebih disetujui) dan dipotong reject kantor.
+  const { data: invRaw, error: invErr } = await supabase
+    .from('invoice')
+    .select('id, tanggal, total_nilai, potongan_reject, surat_jalan_id, surat_jalan:surat_jalan_id(tanggal_validasi)')
+    .eq('tenant_id', TENANT_ID)
+    .gte('tanggal', dariEfektif)
+    .lte('tanggal', date_sampai);
+  if (invErr) throw new Error(invErr.message);
+  const invData = (invRaw ?? []) as any[];
+
+  // Porsi PO periode baru per SJ = nilai barang bundle periode baru ÷ nilai seluruh barang SJ
+  const porsiSj = new Map<string, number>();
+  if (hanyaPeriodeBaru) {
+    const sjIds = [...new Set(invData.map(i => i.surat_jalan_id).filter(Boolean))] as string[];
+    if (sjIds.length) {
+      const bundleBaru = await getBundleIdsPeriodeBaru(supabase);
+      const { data: sjItems, error: sjErr } = await supabase
+        .from('surat_jalan_item')
+        .select('sj_id, bundle_id, qty_kirim, qty_diterima, harga_satuan')
+        .in('sj_id', sjIds);
+      if (sjErr) throw new Error(sjErr.message);
+      const nilai = new Map<string, { baru: number; semua: number }>();
+      ((sjItems ?? []) as any[]).forEach(it => {
+        const kirim = Number(it.qty_kirim ?? 0);
+        const akui  = it.qty_diterima == null ? kirim : Math.min(Number(it.qty_diterima), kirim);
+        const v     = akui * Number(it.harga_satuan ?? 0);
+        const cur   = nilai.get(it.sj_id) ?? { baru: 0, semua: 0 };
+        cur.semua += v;
+        if (bundleBaru.has(String(it.bundle_id))) cur.baru += v;
+        nilai.set(it.sj_id, cur);
+      });
+      nilai.forEach((n, id) => porsiSj.set(id, n.semua > 0 ? n.baru / n.semua : 0));
+    }
+  }
+
+  invData.forEach(i => {
+    const netto = Math.max(0, Number(i.total_nilai ?? 0) - Number(i.potongan_reject ?? 0));
+    const porsi = hanyaPeriodeBaru ? (porsiSj.get(i.surat_jalan_id) ?? 0) : 1;
+    const v = Math.round(netto * porsi);
+    if (!v) return;
+    const row = ensure(Number(String(i.tanggal).slice(5, 7)));
+    row.pendapatan += v;
+    const sj = Array.isArray(i.surat_jalan) ? i.surat_jalan[0] : i.surat_jalan;
+    if (!sj?.tanggal_validasi) row.pendapatan_belum_validasi += v;
+  });
+
+  // Sewa per bulan → Biaya Operasional. Mulai bulan awal periode (mode default), sampai bulan berjalan.
+  const sekarang = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Jakarta' }).slice(0, 7);
+  const blnAwalSewa = hanyaPeriodeBaru ? TANGGAL_AWAL_PERIODE.slice(0, 7) : '0000-00';
+  for (let bln = bln_dari; bln <= bln_sampai; bln++) {
+    const ym = tahun + '-' + String(bln).padStart(2, '0');
+    if (ym < blnAwalSewa || ym > sekarang) continue;
+    const awalBln  = ym + '-01';
+    const akhirBln = ym + '-' + String(new Date(tahun, bln, 0).getDate()).padStart(2, '0');
+    const sewa = btData.reduce((s, b) => {
+      const awal  = b.tanggal_mulai > awalBln ? b.tanggal_mulai : awalBln;
+      const akhir = b.tanggal_selesai < akhirBln ? b.tanggal_selesai : akhirBln;
+      if (akhir < awal) return s;
+      return s + Number(b.nominal) / hariInklusif(b.tanggal_mulai, b.tanggal_selesai) * hariInklusif(awal, akhir);
+    }, 0);
+    if (sewa > 0) ensure(bln).biaya_operasional += Math.round(sewa);
+  }
 
   Object.values(bulanMap).forEach((row) => {
     row.total_pengeluaran =
@@ -184,6 +236,8 @@ export async function getLaporanLR(
     .map(bln => bulanMap[bln] ?? emptyBulan(bln, tahun));
 
   const total_pendapatan        = bulan_list.reduce((s, b) => s + b.pendapatan, 0);
+  const total_pendapatan_belum_validasi = bulan_list.reduce((s, b) => s + b.pendapatan_belum_validasi, 0);
+  const total_kas_dari_klien    = bulan_list.reduce((s, b) => s + b.kas_dari_klien, 0);
   const total_pembelian_bahan   = bulan_list.reduce((s, b) => s + b.pembelian_bahan, 0);
   const total_pembayaran_gaji   = bulan_list.reduce((s, b) => s + b.pembayaran_gaji, 0);
   const total_biaya_overhead    = bulan_list.reduce((s, b) => s + b.biaya_overhead, 0);
@@ -198,6 +252,8 @@ export async function getLaporanLR(
   return {
     bulan_list,
     total_pendapatan,
+    total_pendapatan_belum_validasi,
+    total_kas_dari_klien,
     total_pembelian_bahan,
     total_pembayaran_gaji,
     total_biaya_overhead,

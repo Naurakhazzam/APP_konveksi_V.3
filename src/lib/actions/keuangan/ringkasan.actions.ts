@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { KATEGORI_SETORAN_MODAL } from './buku-kas.types';
 import { getLaporanPOList } from './laporan-po.actions';
-import { PO_AWAL_PERIODE, poPeriodeBaru } from '@/lib/keuangan/periode-po';
+import { PO_AWAL_PERIODE, poPeriodeBaru, batasAwalPeriode, rentangPeriodeBaru, tanggalLaporan } from '@/lib/keuangan/periode-po';
 import { getBundleIdsPeriodeBaru, getPoIdsPeriodeBaru } from '@/lib/keuangan/periode-po.server';
 import { overheadPerBulan, pembantuPerBulan } from '@/lib/keuangan/biaya-bulanan.server';
 
@@ -53,6 +53,10 @@ export async function getRingkasanKeuangan(
   const supabase = await createClient();
   const poBaru = hanyaPeriodeBaru ? await getPoIdsPeriodeBaru(supabase) : null;
   const bundleBaru = hanyaPeriodeBaru ? await getBundleIdsPeriodeBaru(supabase) : null;
+  // Uang sebelum TANGGAL_AWAL_PERIODE tidak dihitung (catatan lama tidak disiplin)
+  const mulai = (d: string) => hanyaPeriodeBaru ? batasAwalPeriode(d) : d;
+  // Upah PO periode baru sebelum awal periode dilaporkan di awal periode (November)
+  const rentangUpah = (d: string, s: string) => hanyaPeriodeBaru ? rentangPeriodeBaru(d, s) : [d, s];
   const saringKas = (rows: any[] | null) => !poBaru ? (rows ?? [])
     : (rows ?? []).filter((k: any) => !k.po_id || poBaru.has(String(k.po_id)));
   const saringUpah = (rows: any[] | null) => !bundleBaru ? (rows ?? [])
@@ -70,7 +74,7 @@ export async function getRingkasanKeuangan(
     .eq('tenant_id', TENANT_ID)
     .eq('tipe', 'masuk')
     .neq('kategori', KATEGORI_SETORAN_MODAL) // modal pemilik bukan pendapatan
-    .gte('tanggal', `${currentTahun}-${mm}-01`)
+    .gte('tanggal', mulai(`${currentTahun}-${mm}-01`))
     .lte('tanggal', `${currentTahun}-${mm}-${String(lastDayCurrent).padStart(2, '0')}`);
 
   if (bukuKasBulanErr) throw new Error(bukuKasBulanErr.message);
@@ -81,7 +85,7 @@ export async function getRingkasanKeuangan(
     .select('total, tipe, sumber_id')
     .eq('tenant_id', TENANT_ID)
     .in('status', ['belum_lunas', 'lunas'])
-    .gte('tanggal', `${currentTahun}-${mm}-01`)
+    .gte('tanggal', rentangUpah(`${currentTahun}-${mm}-01`, `${currentTahun}-${mm}-${String(lastDayCurrent).padStart(2, '0')}`)[0])
     .lte('tanggal', `${currentTahun}-${mm}-${String(lastDayCurrent).padStart(2, '0')}`);
 
   if (gajiLedgerBulanErr) throw new Error(gajiLedgerBulanErr.message);
@@ -157,7 +161,7 @@ export async function getRingkasanKeuangan(
     .eq('tenant_id', TENANT_ID)
     .eq('tipe', 'masuk')
     .neq('kategori', KATEGORI_SETORAN_MODAL) // modal pemilik bukan pendapatan
-    .gte('tanggal', `${firstMonth.yyyy}-${firstMonth.mm}-01`)
+    .gte('tanggal', mulai(`${firstMonth.yyyy}-${firstMonth.mm}-01`))
     .lte('tanggal', `${lastMonth.yyyy}-${lastMonth.mm}-${String(lastDayOfRange).padStart(2, '0')}`);
 
   if (bukuKas6Err) throw new Error(bukuKas6Err.message);
@@ -168,7 +172,7 @@ export async function getRingkasanKeuangan(
     .select('total, tipe, tanggal, sumber_id')
     .eq('tenant_id', TENANT_ID)
     .in('status', ['belum_lunas', 'lunas'])
-    .gte('tanggal', `${firstMonth.yyyy}-${firstMonth.mm}-01`)
+    .gte('tanggal', rentangUpah(`${firstMonth.yyyy}-${firstMonth.mm}-01`, `${lastMonth.yyyy}-${lastMonth.mm}-${String(lastDayOfRange).padStart(2, '0')}`)[0])
     .lte('tanggal', `${lastMonth.yyyy}-${lastMonth.mm}-${String(lastDayOfRange).padStart(2, '0')}`);
 
   if (gajiLedger6Err) throw new Error(gajiLedger6Err.message);
@@ -191,7 +195,7 @@ export async function getRingkasanKeuangan(
     });
 
     const monthGajiLedger = saringUpah(gajiLedger6Bulan).filter((g: any) => {
-      const d = g.tanggal as string;
+      const d = hanyaPeriodeBaru ? tanggalLaporan(g.tanggal) : (g.tanggal as string);
       return d.startsWith(`${month.yyyy}-${month.mm}`);
     });
 

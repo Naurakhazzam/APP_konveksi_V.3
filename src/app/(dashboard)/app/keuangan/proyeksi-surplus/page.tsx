@@ -23,7 +23,7 @@ export default async function ProyeksiSurplusPage() {
   return (
     <PageWrapper
       title="Proyeksi Surplus"
-      subtitle="Realisasi (uang yang benar-benar masuk & keluar) + proyeksi sisa hasil potong yang belum dibayar"
+      subtitle="Realisasi (sama dengan Laba Rugi) + proyeksi hasil potong yang belum dikirim"
     >
       <ProyeksiSurplusClient data={data} />
     </PageWrapper>

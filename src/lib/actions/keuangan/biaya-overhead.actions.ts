@@ -4,7 +4,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { getCurrentUserProfile } from '@/lib/auth/permissions';
 import { revalidatePath } from 'next/cache';
-import { PO_AWAL_PERIODE, TANGGAL_AWAL_PERIODE } from '@/lib/keuangan/periode-po';
+import { PO_AWAL_PERIODE, TANGGAL_AWAL_PERIODE, batasAwalPeriode } from '@/lib/keuangan/periode-po';
 import { getBukuKasEntries, getOverheadSub } from './buku-kas.actions';
 import type { BukuKasEntry, OverheadSubOption } from './buku-kas.types';
 
@@ -182,6 +182,10 @@ export async function getBiayaOverhead(opts: {
   const { dari, sampai } = opts;
   const hanyaPeriodeBaru = opts.hanyaPeriodeBaru ?? true;
   const poMulai = hanyaPeriodeBaru ? PO_AWAL_PERIODE : null;
+  // Periode baru: transaksi sebelum TANGGAL_AWAL_PERIODE tidak ditampilkan; sewa dihitung sejak awal bulan periode
+  const dariKas = hanyaPeriodeBaru ? batasAwalPeriode(dari) : dari;
+  const awalBulanPeriode = TANGGAL_AWAL_PERIODE.slice(0, 7) + '-01';
+  const dariSewa = hanyaPeriodeBaru && dari < awalBulanPeriode ? awalBulanPeriode : dari;
 
   // Tren: 6 bulan kalender yang berakhir di bulan "sampai"
   const [ys, ms] = sampai.split('-').map(Number);
@@ -193,13 +197,13 @@ export async function getBiayaOverhead(opts: {
   const [rows, rowsTren, transaksiSemua, subList, komponenRes, tanpaSubRes, biayaTetap] = await Promise.all([
     ambil(dari, sampai, poMulai),
     ambil(trenDari, trenSampai, poMulai),
-    getBukuKasEntries({ dari, sampai, tipe: 'keluar' }),
+    getBukuKasEntries({ dari: dariKas, sampai, tipe: 'keluar' }),
     getOverheadSub(),
     supabase.from('hpp_komponen').select('id, nama').eq('tenant_id', TENANT_ID).eq('kategori', 'overhead').order('nama'),
     supabase.from('buku_kas').select('id').eq('tenant_id', TENANT_ID)
       .eq('tipe', 'keluar').eq('kategori', 'Biaya Overhead').is('overhead_sub_id', null)
       .gte('tanggal', TANGGAL_AWAL_PERIODE),
-    ambilBiayaTetap(dari, sampai),
+    ambilBiayaTetap(dariSewa, sampai),
   ]);
   if (komponenRes.error) throw new Error(komponenRes.error.message);
 

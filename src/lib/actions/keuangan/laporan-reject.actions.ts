@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server';
 import { getBundleIdsPeriodeBaru } from '@/lib/keuangan/periode-po.server';
+import { rentangPeriodeBaru } from '@/lib/keuangan/periode-po';
 
 const TENANT_ID = 'STX-001';
 
@@ -33,6 +34,9 @@ export async function getLaporanReject(filters?: {
 }): Promise<LaporanRejectSummary> {
   const supabase = await createClient();
   const bundleBaru = filters?.hanyaPeriodeBaru ? await getBundleIdsPeriodeBaru(supabase) : null;
+  // Upah/potongan PO periode baru sebelum awal periode dilaporkan di bulan awal periode (November)
+  const rentang = (d: string, sp: string): [string, string] =>
+    filters?.hanyaPeriodeBaru ? rentangPeriodeBaru(d, sp) : [d, sp];
 
   let query = supabase
     .from('gaji_ledger')
@@ -47,13 +51,11 @@ export async function getLaporanReject(filters?: {
   if (filters?.bulan && filters?.tahun) {
     const mm = filters.bulan.padStart(2, '0');
     const lastDay = new Date(Number(filters.tahun), Number(mm), 0).getDate();
-    query = query
-      .gte('tanggal', `${filters.tahun}-${mm}-01`)
-      .lte('tanggal', `${filters.tahun}-${mm}-${String(lastDay).padStart(2, '0')}`);
+    const [d, sp] = rentang(`${filters.tahun}-${mm}-01`, `${filters.tahun}-${mm}-${String(lastDay).padStart(2, '0')}`);
+    query = query.gte('tanggal', d).lte('tanggal', sp);
   } else if (filters?.tahun) {
-    query = query
-      .gte('tanggal', `${filters.tahun}-01-01`)
-      .lte('tanggal', `${filters.tahun}-12-31`);
+    const [d, sp] = rentang(`${filters.tahun}-01-01`, `${filters.tahun}-12-31`);
+    query = query.gte('tanggal', d).lte('tanggal', sp);
   }
 
   if (filters?.karyawan_id) {

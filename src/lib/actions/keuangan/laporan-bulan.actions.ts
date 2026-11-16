@@ -2,7 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server';
 import { KATEGORI_SETORAN_MODAL } from './buku-kas.types';
-import { PO_AWAL_PERIODE } from '@/lib/keuangan/periode-po';
+import { PO_AWAL_PERIODE, batasAwalPeriode, rentangPeriodeBaru } from '@/lib/keuangan/periode-po';
 import { getBundleIdsPeriodeBaru, getPoIdsPeriodeBaru } from '@/lib/keuangan/periode-po.server';
 import { overheadPerBulan, pembantuPerBulan } from '@/lib/keuangan/biaya-bulanan.server';
 
@@ -60,7 +60,7 @@ export async function getLaporanBulan(
     .eq('tenant_id', TENANT_ID)
     .eq('tipe', 'masuk')
     .neq('kategori', KATEGORI_SETORAN_MODAL) // modal pemilik bukan pendapatan
-    .gte('tanggal', `${tahun}-${mm}-01`)
+    .gte('tanggal', hanyaPeriodeBaru ? batasAwalPeriode(`${tahun}-${mm}-01`) : `${tahun}-${mm}-01`)
     .lte('tanggal', `${tahun}-${mm}-${String(lastDay).padStart(2, '0')}`);
 
   if (bukuKasErr) throw new Error(bukuKasErr.message);
@@ -74,7 +74,8 @@ export async function getLaporanBulan(
     .select('total, tipe, sumber_id')
     .eq('tenant_id', TENANT_ID)
     .in('status', ['belum_lunas', 'lunas'])
-    .gte('tanggal', `${tahun}-${mm}-01`)
+    // Upah PO periode baru sebelum awal periode dilaporkan di bulan awal periode
+    .gte('tanggal', hanyaPeriodeBaru ? rentangPeriodeBaru(awal, akhir)[0] : `${tahun}-${mm}-01`)
     .lte('tanggal', `${tahun}-${mm}-${String(lastDay).padStart(2, '0')}`);
 
   if (gajiLedgerErr) throw new Error(gajiLedgerErr.message);

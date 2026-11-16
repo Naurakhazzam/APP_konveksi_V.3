@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import TogglePoLama from '@/components/keuangan/TogglePoLama';
-import { poPeriodeBaru } from '@/lib/keuangan/periode-po';
+import { poPeriodeBaru, tanggalPeriodeBaru } from '@/lib/keuangan/periode-po';
 import { toast } from 'sonner';
 import Link from 'next/link';
 import { tanggalWIB } from '@/lib/waktu';
@@ -132,7 +132,7 @@ export default function BukuKasClient({ initialEntries, poList, overheadSubList,
   const [menambahSub, setMenambahSub] = useState(false);
   /** Entri bertanda PO lama (sebelum PO-0100) disembunyikan kecuali dicentang; tanpa tag PO selalu tampil */
   const [tampilkanLama, setTampilkanLama] = useState(false);
-  const tampil = tampilkanLama ? entries : entries.filter(e => !e.po_no || poPeriodeBaru(e.po_no));
+  const tampil = tampilkanLama ? entries : entries.filter(e => tanggalPeriodeBaru(e.tanggal) && (!e.po_no || poPeriodeBaru(e.po_no)));
   const jumlahLama = entries.length - tampil.length;
   const [filterBulan, setFilterBulan] = useState(defaultBulan);
   const [filterTahun, setFilterTahun] = useState(defaultTahun);
@@ -234,7 +234,7 @@ export default function BukuKasClient({ initialEntries, poList, overheadSubList,
     setMengunduh(true);
     try {
       const data = await getBukuKasEntries({ dari: unduhDari, sampai: unduhSampai });
-      const rows = (tampilkanLama ? data : data.filter(e => !e.po_no || poPeriodeBaru(e.po_no)))
+      const rows = (tampilkanLama ? data : data.filter(e => tanggalPeriodeBaru(e.tanggal) && (!e.po_no || poPeriodeBaru(e.po_no))))
         .slice()
         .sort((a, b) => a.tanggal.localeCompare(b.tanggal) || a.created_at.localeCompare(b.created_at));
       if (!rows.length) { toast.error('Tidak ada transaksi pada rentang tanggal itu'); return; }
@@ -612,7 +612,7 @@ export default function BukuKasClient({ initialEntries, poList, overheadSubList,
         </Button>
         <p className="text-[11px] text-[#9aa0a6]">
           Semua tipe transaksi pada rentang tanggal itu, dengan saldo berjalan dan total.
-          {!tampilkanLama && ' Entri bertanda PO lama ikut disembunyikan, sama seperti tabel.'}
+          {!tampilkanLama && ' Entri sebelum periode baru & bertanda PO lama ikut disembunyikan, sama seperti tabel.'}
         </p>
       </div>
 

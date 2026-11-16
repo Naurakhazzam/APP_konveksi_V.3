@@ -2,7 +2,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { createClient } from '@/lib/supabase/server';
-import { PO_AWAL_PERIODE, TANGGAL_AWAL_PERIODE } from '@/lib/keuangan/periode-po';
+import { PO_AWAL_PERIODE, TANGGAL_AWAL_PERIODE, poPeriodeBaru } from '@/lib/keuangan/periode-po';
+import { getLaporanLR } from './laporan-lr.actions';
 import { KATEGORI_SETORAN_MODAL } from './buku-kas.types';
 import { bulanBerjalan } from '@/lib/bulan-berjalan';
 
@@ -11,7 +12,7 @@ const TENANT_ID = 'STX-001';
 /** Kategori Buku Kas keluar yang dibagi rata per pcs ke tiap PO (bukan kain & bukan upah borongan) */
 const KATEGORI_DIBAGI = ['Biaya Overhead', 'Bahan Pembantu', 'Biaya Operasional', 'Biaya Peralatan', 'Lainnya'];
 
-/** Uang masuk dari klien (mengurangi sisa tagihan). Pendapatan Lain tidak termasuk. */
+/** Uang dari klien = pembayaran tagihan (bukan pendapatan; pendapatan diakui dari Surat Jalan). */
 const KATEGORI_MASUK_KLIEN = ['DP Klien', 'Pelunasan Klien'];
 
 export type StatusPO = 'produksi' | 'kirim_sebagian' | 'terkirim';
@@ -40,7 +41,10 @@ export interface ProyeksiPO {
 export interface RealisasiBulan {
   /** 'YYYY-MM' */
   bulan: string;
+  /** Pendapatan (sama dengan Laporan Laba Rugi): nilai SJ setelah validasi + Pendapatan Lain */
   masuk: number;
+  /** Uang DP/pelunasan klien yang masuk Buku Kas — info, tidak masuk hasil */
+  kasKlien: number;
   keluar: number;
   sewa: number;
   hasil: number;
@@ -49,8 +53,16 @@ export interface RealisasiBulan {
 
 export interface ProyeksiSurplusData {
   sejak: string;
-  /** Uang masuk Buku Kas per kategori, tanpa setoran modal */
+  /** Uang masuk Buku Kas per kategori, tanpa setoran modal (info kas) */
   masuk: { kategori: string; nominal: number }[];
+  /** Pendapatan dari Surat Jalan (invoice netto setelah validasi & potongan reject) */
+  pendapatanSj: number;
+  /** Bagian pendapatanSj dari SJ yang belum divalidasi kantor */
+  pendapatanBelumValidasi: number;
+  /** Buku Kas kategori Pendapatan Lain */
+  pendapatanLain: number;
+  /** Nilai jual hasil potong yang belum dikirim (Σ per PO) */
+  nilaiBelumKirim: number;
   /** DP + Pelunasan Klien */
   masukKlien: number;
   /** Uang klien yang tidak ditandai ke PO mana pun */
@@ -66,15 +78,15 @@ export interface ProyeksiSurplusData {
   totalNilaiKirim: number;
   upahBelumLunas: number;
   upahSisa: number;
-  /** A. uang masuk − uang keluar − sewa (yang benar-benar terjadi) */
+  /** A. pendapatan (Surat Jalan + Pendapatan Lain) − uang keluar − sewa = laba Laporan L/R */
   realisasi: number;
-  /** B. sisa tagihan − upah yang masih harus dibayar */
+  /** B. nilai jual hasil potong yang belum dikirim − upah yang masih harus dibayar */
   proyeksiSisa: number;
   /** A + B */
   totalPerkiraan: number;
-  /** max(0, nilai jual hasil potong − uang klien) */
+  /** Piutang: pendapatan SJ yang uangnya belum diterima = max(0, pendapatanSj − uang klien) */
   sisaTagihan: number;
-  /** Uang klien yang melebihi nilai jual hasil potong (mis. DP untuk beli bahan) = utang barang ke klien */
+  /** DP titipan: uang klien melebihi barang yang sudah dikirim = utang barang ke klien */
   dpLebih: number;
   perBulan: RealisasiBulan[];
   /** Bahan utama yang sudah dibeli tapi belum terpakai (LOT qty_sisa × harga) */
@@ -113,7 +125,7 @@ export async function getProyeksiSurplus(): Promise<ProyeksiSurplusData> {
 
   const [poRes, kasRes, lotRes, btRes] = await Promise.all([
     supabase.rpc('get_proyeksi_surplus_po', { p_tenant_id: TENANT_ID, p_po_mulai: PO_AWAL_PERIODE }),
-    supabase.from('buku_kas').select('tanggal, tipe, kategori, nominal, overhead_sub_id, po_id')
+    supabase.from('buku_kas').select('tanggal, tipe, kategori, nominal, overhead_sub_id, po_id, po:po_id(no_po)')
       .eq('tenant_id', TENANT_ID).gte('tanggal', TANGGAL_AWAL_PERIODE),
     supabase.from('inventory_batch')
       .select('qty_sisa, harga_satuan, item:inventory_item_id(nama, satuan, jenis)')
@@ -131,8 +143,12 @@ export async function getProyeksiSurplus(): Promise<ProyeksiSurplusData> {
   const btData = (btRes.data ?? []) as any[];
   const subKontrak = new Set(btData.map(b => String(b.overhead_sub_id)));
 
-  const kas = ((kasRes.data ?? []) as any[]).filter(k =>
-    !(k.kategori === 'Biaya Overhead' && k.overhead_sub_id && subKontrak.has(String(k.overhead_sub_id))));
+  // Sama dengan Laporan L/R: baris yang ditandai ke PO lama tidak dihitung
+  const kas = ((kasRes.data ?? []) as any[]).filter(k => {
+    if (k.kategori === 'Biaya Overhead' && k.overhead_sub_id && subKontrak.has(String(k.overhead_sub_id))) return false;
+    const noPo = (Array.isArray(k.po) ? k.po[0]?.no_po : k.po?.no_po) as string | undefined;
+    return !noPo || poPeriodeBaru(noPo);
+  });
   const masukSemua = kas.filter(k => k.tipe === 'masuk');
   const setoranModal = masukSemua.filter(k => k.kategori === KATEGORI_SETORAN_MODAL)
     .reduce((s, k) => s + Number(k.nominal), 0);
@@ -166,17 +182,31 @@ export async function getProyeksiSurplus(): Promise<ProyeksiSurplusData> {
   }).filter(b => b.hari > 0);
   const totalBiayaTetap = biayaTetap.reduce((s, b) => s + b.nominal, 0);
 
-  // Realisasi per bulan
+  // Realisasi per bulan = laba Laporan Laba Rugi (pendapatan diakui dari Surat Jalan)
+  const tahunList = [...new Set(daftarBulan(blnAwal, blnSekarang).map(ym => +ym.slice(0, 4)))];
+  const lrList = await Promise.all(tahunList.map(t => getLaporanLR(t, undefined, undefined, true)));
+  const lrBulan = new Map<string, { pendapatan: number; belumValidasi: number }>();
+  lrList.forEach(lr => lr.bulan_list.forEach(b =>
+    lrBulan.set(`${b.tahun}-${String(b.bulan).padStart(2, '0')}`, { pendapatan: b.pendapatan, belumValidasi: b.pendapatan_belum_validasi })));
+
   let kumulatif = 0;
+  let pendapatanTotal = 0;
+  let pendapatanBelumValidasi = 0;
   const perBulan: RealisasiBulan[] = daftarBulan(blnAwal, blnSekarang).map(ym => {
     const diBulan = (k: any) => String(k.tanggal).slice(0, 7) === ym;
-    const m = masukTanpaModal.filter(diBulan).reduce((s, k) => s + Number(k.nominal), 0);
+    const lr = lrBulan.get(ym) ?? { pendapatan: 0, belumValidasi: 0 };
+    const kk = masukKlienRows.filter(diBulan).reduce((s, k) => s + Number(k.nominal), 0);
     const kl = keluarRows.filter(diBulan).reduce((s, k) => s + Number(k.nominal), 0);
-    const sw = btData.reduce((s, b) => s + perHariOf(b) * sewaDalam(b, `${ym}-01`, akhirBulan(ym)), 0);
-    const hasil = m - kl - sw;
+    const sw = Math.round(btData.reduce((s, b) => s + perHariOf(b) * sewaDalam(b, `${ym}-01`, akhirBulan(ym)), 0));
+    const hasil = lr.pendapatan - kl - sw;
     kumulatif += hasil;
-    return { bulan: ym, masuk: m, keluar: kl, sewa: sw, hasil, kumulatif };
+    pendapatanTotal += lr.pendapatan;
+    pendapatanBelumValidasi += lr.belumValidasi;
+    return { bulan: ym, masuk: lr.pendapatan, kasKlien: kk, keluar: kl, sewa: sw, hasil, kumulatif };
   });
+  const pendapatanLain = masukTanpaModal.filter(k => !KATEGORI_MASUK_KLIEN.includes(k.kategori))
+    .reduce((s, k) => s + Number(k.nominal), 0);
+  const pendapatanSj = pendapatanTotal - pendapatanLain;
 
   const poolDibagi = keluar.filter(k => KATEGORI_DIBAGI.includes(k.kategori)).reduce((s, k) => s + k.nominal, 0)
     + totalBiayaTetap;
@@ -217,18 +247,18 @@ export async function getProyeksiSurplus(): Promise<ProyeksiSurplusData> {
   const totalNilaiJual = po.reduce((s, p) => s + p.nilai_jual, 0);
   const upahBelumLunas = po.reduce((s, p) => s + p.upah_belum_lunas, 0);
   const upahSisa = po.reduce((s, p) => s + p.upah_sisa, 0);
-  const totalMasuk = masuk.reduce((s, m) => s + m.nominal, 0);
-  const totalKeluar = keluar.reduce((s, k) => s + k.nominal, 0);
-  const realisasi = totalMasuk - totalKeluar - totalBiayaTetap;
-  // DP bisa lebih besar dari nilai barang yang sudah dipotong (klien membiayai pembelian bahan di depan).
-  // Kelebihannya = titipan klien yang nanti dibayar dengan barang.
-  const sisaTagihan = Math.max(0, totalNilaiJual - masukKlien);
-  const dpLebih = Math.max(0, masukKlien - totalNilaiJual);
-  const proyeksiSisa = sisaTagihan - dpLebih - upahBelumLunas - upahSisa;
+  const realisasi = perBulan.reduce((s, b) => s + b.hasil, 0);
+  // B: barang hasil potong yang belum dikirim akan jadi pendapatan saat SJ-nya dibuat
+  const nilaiBelumKirim = po.reduce((s, p) => s + Math.max(0, p.nilai_jual - p.nilai_kirim), 0);
+  const proyeksiSisa = nilaiBelumKirim - upahBelumLunas - upahSisa;
+  // Info kas klien (tidak masuk A/B/C): DP bisa lebih besar dari barang terkirim (klien membiayai bahan di depan)
+  const sisaTagihan = Math.max(0, pendapatanSj - masukKlien);
+  const dpLebih = Math.max(0, masukKlien - pendapatanSj);
 
   return {
     sejak: TANGGAL_AWAL_PERIODE,
-    masuk, masukKlien, masukKlienTanpaPo, setoranModal, keluar,
+    masuk, pendapatanSj, pendapatanBelumValidasi, pendapatanLain, nilaiBelumKirim,
+    masukKlien, masukKlienTanpaPo, setoranModal, keluar,
     biayaTetap, totalBiayaTetap, biayaTetapDari: sewaDari, biayaTetapSampai: sewaSampai,
     totalNilaiJual,
     totalNilaiKirim: po.reduce((s, p) => s + p.nilai_kirim, 0),

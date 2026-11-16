@@ -84,7 +84,6 @@ export default function ProyeksiSurplusClient({ data }: { data: ProyeksiSurplusD
   const [tampilSemua, setTampilSemua] = useState(false);
   const [poDipilih, setPoDipilih] = useState<PoDipilih | null>(null);
   const buka = (p: ProyeksiPO) => () => setPoDipilih({ po_id: p.po_id, no_po: p.no_po, klien: p.klien });
-  const totalMasuk = data.masuk.reduce((s, m) => s + m.nominal, 0);
   const totalKeluar = data.keluar.reduce((s, k) => s + k.nominal, 0);
   const totalPcs = data.po.reduce((s, p) => s + p.pcs, 0);
   const poTerkirim = data.po.filter(p => p.status === 'terkirim');
@@ -97,23 +96,37 @@ export default function ProyeksiSurplusClient({ data }: { data: ProyeksiSurplusD
       {/* A + B = C */}
       <div className="grid gap-3 md:grid-cols-3">
         <Kartu huruf="A" judul="Realisasi" nilai={data.realisasi}
-          ket={`Uang yang benar-benar masuk − keluar − sewa, sejak ${tglFmt(data.sejak)}`
-            + (data.dpLebih > 0 ? ` · termasuk DP titipan ${idr(data.dpLebih)} untuk barang yang belum dipotong` : '')} />
+          ket={`Sama dengan laba Laporan Laba Rugi: nilai barang terkirim (Surat Jalan) − uang keluar − sewa, sejak ${tglFmt(data.sejak)}`} />
         <Kartu huruf="B" judul="Proyeksi sisa" nilai={data.proyeksiSisa}
-          ket={data.dpLebih > 0
-            ? 'DP sudah melebihi nilai hasil potong: sisa ini = DP titipan (utang barang) + upah yang masih harus dibayar'
-            : 'Sisa tagihan hasil potong − upah yang masih harus dibayar'} />
+          ket="Nilai jual hasil potong yang belum dikirim − upah yang masih harus dibayar" />
         <Kartu huruf="C" judul="Total perkiraan (A + B)" nilai={data.totalPerkiraan} utama
-          ket={`Bila ${totalPcs.toLocaleString('id-ID')} pcs hasil potong terkirim & dibayar semua`} />
+          ket={`Bila ${totalPcs.toLocaleString('id-ID')} pcs hasil potong terkirim semua`} />
       </div>
       <p className="text-xs text-[#9aa0a6] -mt-3">
-        Setiap kali uang klien masuk, nilainya pindah dari B ke A — totalnya (C) tetap.
+        Setiap kali Surat Jalan dibuat, nilainya pindah dari B ke A — totalnya (C) tetap. DP/pelunasan klien tidak mengubah A, B, atau C.
       </p>
+      <div className="grid gap-3 md:grid-cols-2">
+        <div className="rounded-xl border border-[#2A2D31] bg-[#1A1D1F] px-4 py-3">
+          <p className="text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold mb-1">Uang klien diterima (DP + pelunasan)</p>
+          <p className="text-lg font-bold font-mono text-sky-300">{idr(data.masukKlien)}</p>
+          <p className="text-xs text-[#9aa0a6] mt-1">Pembayaran tagihan — info kas, bukan pendapatan</p>
+        </div>
+        <div className="rounded-xl border border-[#2A2D31] bg-[#1A1D1F] px-4 py-3">
+          {data.dpLebih > 0 ? (<>
+            <p className="text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold mb-1">DP titipan (barang belum dikirim)</p>
+            <p className="text-lg font-bold font-mono text-amber-300">{idr(data.dpLebih)}</p>
+            <p className="text-xs text-[#9aa0a6] mt-1">Uang klien yang belum ada barangnya — utang barang, dibayar dengan kiriman berikutnya</p>
+          </>) : (<>
+            <p className="text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold mb-1">Sisa tagihan (piutang)</p>
+            <p className="text-lg font-bold font-mono text-amber-300">{idr(data.sisaTagihan)}</p>
+            <p className="text-xs text-[#9aa0a6] mt-1">Barang sudah dikirim, uangnya belum masuk</p>
+          </>)}
+        </div>
+      </div>
       {data.stokTersisa > 0 && (
         <div className="rounded-xl border border-[#2A2D31] bg-[#1A1D1F] px-4 py-3 flex flex-wrap items-center justify-between gap-2">
           <span className="text-xs text-[#9aa0a6]">
             C bila stok bahan yang belum terpakai ({idr(data.stokTersisa)}) ikut dihitung
-            {data.dpLebih > 0 && <> — bahan ini umumnya dibeli dari DP titipan, jadi angka ini yang lebih adil</>}
           </span>
           <span className={`text-sm font-bold font-mono ${warnaAngka(data.totalPerkiraan + data.stokTersisa)}`}>
             {idrTanda(data.totalPerkiraan + data.stokTersisa)}
@@ -123,7 +136,7 @@ export default function ProyeksiSurplusClient({ data }: { data: ProyeksiSurplusD
 
       {/* Realisasi per bulan */}
       <div>
-        <Judul sub="Uang yang benar-benar masuk & keluar tiap bulan (Buku Kas). Setoran modal tidak dihitung sebagai uang masuk.">
+        <Judul sub="Sama dengan Laporan Laba Rugi. Pendapatan = nilai Surat Jalan setelah validasi kantor. DP klien hanya info kas.">
           Realisasi per bulan
         </Judul>
         <div className="rounded-xl border border-[#2A2D31] overflow-x-auto bg-[#1A1D1F]">
@@ -131,7 +144,8 @@ export default function ProyeksiSurplusClient({ data }: { data: ProyeksiSurplusD
             <TableHeader className="bg-[#1A1C1E]">
               <TableRow className="border-[#2A2D31] hover:bg-transparent">
                 <TableHead className="text-[#9aa0a6]">Bulan</TableHead>
-                <TableHead className="text-[#9aa0a6] text-right">Uang masuk</TableHead>
+                <TableHead className="text-[#9aa0a6] text-right">Pendapatan (SJ)</TableHead>
+                <TableHead className="text-[#9aa0a6] text-right">DP/pelunasan</TableHead>
                 <TableHead className="text-[#9aa0a6] text-right">Uang keluar</TableHead>
                 <TableHead className="text-[#9aa0a6] text-right">Sewa (per hari)</TableHead>
                 <TableHead className="text-[#9aa0a6] text-right">Hasil bulan ini</TableHead>
@@ -143,6 +157,7 @@ export default function ProyeksiSurplusClient({ data }: { data: ProyeksiSurplusD
                 <TableRow key={b.bulan} className="border-[#2A2D31] hover:bg-[#16181A]">
                   <TableCell className="text-sm text-[#e8eaed] whitespace-nowrap">{blnFmt(b.bulan)}</TableCell>
                   <TableCell className="text-sm text-green-400 text-right whitespace-nowrap">{idr(b.masuk)}</TableCell>
+                  <TableCell className="text-sm text-sky-300 text-right whitespace-nowrap">{idr(b.kasKlien)}</TableCell>
                   <TableCell className="text-sm text-red-400 text-right whitespace-nowrap">{idr(b.keluar)}</TableCell>
                   <TableCell className="text-sm text-red-400 text-right whitespace-nowrap">{idr(b.sewa)}</TableCell>
                   <TableCell className={`text-sm font-semibold text-right whitespace-nowrap ${warnaAngka(b.hasil)}`}>{idrTanda(b.hasil)}</TableCell>
@@ -158,10 +173,13 @@ export default function ProyeksiSurplusClient({ data }: { data: ProyeksiSurplusD
       <div>
         <Judul>A. Realisasi — rincian</Judul>
         <div className="rounded-xl bg-[#1A1D1F] border border-[#2A2D31] px-4">
-          <Baris label="Uang masuk (Buku Kas)" nilai={totalMasuk} warna="text-green-400"
-            sub={data.setoranModal > 0 ? `Setoran modal ${idr(data.setoranModal)} tidak dihitung` : undefined}>
-            {data.masuk.map(m => <Rinci key={m.kategori} label={m.kategori} nilai={m.nominal} />)}
-          </Baris>
+          <Baris label="Pendapatan dari Surat Jalan" nilai={data.pendapatanSj} warna="text-green-400"
+            sub={data.pendapatanBelumValidasi > 0
+              ? `${idr(data.pendapatanBelumValidasi)} dari SJ yang belum divalidasi kantor (sementara pakai qty kirim)`
+              : 'Qty × harga jual, dicocokkan dengan Validasi Kirim & dipotong reject kantor'} />
+          {data.pendapatanLain > 0 && (
+            <Baris label="Pendapatan Lain (Buku Kas)" nilai={data.pendapatanLain} warna="text-green-400" />
+          )}
           <Baris label="Uang keluar (Buku Kas)" nilai={-totalKeluar} warna="text-red-400"
             sub={data.setoranModal > 0 ? `Termasuk pembelian dari setoran modal ${idr(data.setoranModal)} (sisa bahan lama)` : undefined}>
             {data.keluar.map(k => <Rinci key={k.kategori} label={k.kategori} nilai={k.nominal} />)}
@@ -185,15 +203,12 @@ export default function ProyeksiSurplusClient({ data }: { data: ProyeksiSurplusD
       <div>
         <Judul>B. Proyeksi sisa — rincian</Judul>
         <div className="rounded-xl bg-[#1A1D1F] border border-[#2A2D31] px-4">
-          <Baris label="Sisa tagihan hasil potong" nilai={data.sisaTagihan} warna="text-green-400"
-            sub={`Nilai jual ${idr(data.totalNilaiJual)} − sudah diterima dari klien ${idr(data.masukKlien)} (DP + pelunasan)`
-              + (data.dpLebih > 0 ? ' — sudah tertutup DP' : '')}>
-            {data.po.map(p => <Rinci key={p.po_id} label={`${p.no_po} — ${p.pcs} pcs`} nilai={p.nilai_jual} onKlik={buka(p)} />)}
+          <Baris label="Hasil potong yang belum dikirim" nilai={data.nilaiBelumKirim} warna="text-green-400"
+            sub={`Nilai jual ${idr(data.totalNilaiJual)} − sudah dikirim ${idr(data.totalNilaiKirim)}`}>
+            {data.po.filter(p => p.nilai_jual > p.nilai_kirim).map(p => (
+              <Rinci key={p.po_id} label={`${p.no_po} — ${Math.max(0, p.pcs - p.pcs_kirim)} pcs`} nilai={p.nilai_jual - p.nilai_kirim} onKlik={buka(p)} />
+            ))}
           </Baris>
-          {data.dpLebih > 0 && (
-            <Baris label="DP titipan (lebih dari nilai hasil potong)" nilai={-data.dpLebih} warna="text-red-400"
-              sub="Klien sudah bayar di depan untuk barang yang belum dipotong (mis. untuk beli bahan). Ini utang barang: nanti dibayar dengan hasil potong berikutnya, bukan dengan uang." />
-          )}
           <Baris label="Upah sudah dikerjakan, belum dibayar" nilai={-data.upahBelumLunas} warna="text-red-400">
             {data.po.filter(p => p.upah_belum_lunas).map(p => <Rinci key={p.po_id} label={p.no_po} nilai={p.upah_belum_lunas} onKlik={buka(p)} />)}
           </Baris>
@@ -307,10 +322,10 @@ export default function ProyeksiSurplusClient({ data }: { data: ProyeksiSurplusD
       <div className="flex items-start gap-2 text-xs text-[#9aa0a6]">
         <Info className="h-4 w-4 shrink-0 mt-0.5" />
         <p>
-          Uang masuk diambil dari Buku Kas (DP Klien, Pelunasan Klien, Pendapatan Lain) — jangan dicatat lagi sebagai
-          pembayaran invoice supaya tidak terhitung dua kali.
+          Pendapatan diakui saat Surat Jalan dibuat dan dicocokkan saat Validasi Kirim (sama dengan Laporan Laba Rugi).
+          DP/pelunasan klien di Buku Kas hanya mengurangi sisa tagihan.
           {data.masukKlienTanpaPo > 0 && <> {idr(data.masukKlienTanpaPo)} uang klien belum ditandai ke PO; bila saat mencatat di Buku Kas dipilih PO-nya, kolom &ldquo;Diterima&rdquo; per PO ikut terisi.</>}
-          {' '}Reject belum dikurangi — semua pcs hasil potong dianggap terkirim. Total C bisa beda sedikit dengan jumlah surplus per PO
+          {' '}Barang yang belum dikirim dianggap terkirim semua tanpa reject. Total C bisa beda sedikit dengan jumlah surplus per PO
           karena C memakai uang yang sudah keluar (termasuk bahan yang belum terpakai).
         </p>
       </div>

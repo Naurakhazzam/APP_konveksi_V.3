@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { PO_AWAL_PERIODE, poPeriodeBaru } from './periode-po';
+import { PO_AWAL_PERIODE, poPeriodeBaru, batasAwalPeriode } from './periode-po';
 
 type Supa = { rpc: (fn: string, args: Record<string, unknown>) => any; from: (t: string) => any };
 
@@ -40,7 +40,7 @@ export async function pembantuPerBulan(
     .eq('tenant_id', TENANT_ID)
     .eq('tipe', 'keluar')
     .eq('kategori', 'Bahan Pembantu')
-    .gte('tanggal', dari)
+    .gte('tanggal', hanyaPeriodeBaru ? batasAwalPeriode(dari) : dari)
     .lte('tanggal', sampai);
   if (error) throw new Error(error.message);
   const m = new Map<string, number>();
