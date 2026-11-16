@@ -6,6 +6,9 @@
  */
 export const PO_AWAL_PERIODE = 99;
 
+/** Tanggal awal periode baru (Buku Kas mulai dipakai ulang) — data sebelumnya diabaikan */
+export const TANGGAL_AWAL_PERIODE = '2026-11-14';
+
 /** "PO-0101" → 101; format lain → NaN */
 export function nomorPo(noPo: string | null | undefined): number {
   const m = /(\d+)/.exec(noPo ?? '');

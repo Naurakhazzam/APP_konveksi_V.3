@@ -571,7 +571,7 @@ function PerluDirapikan({ entri, subList, onSelesai }: {
 
   return (
     <Panel judul={`Perlu dirapikan — ${entri.length} entri overhead tanpa sub-kelompok`}
-      ket="Entri lama sebelum sub-kelompok diwajibkan (semua tanggal). Pilihkan sub-kelompoknya agar ikut terkelompok.">
+      ket="Entri sejak 14 Nov 2026 yang belum punya sub-kelompok. Pilihkan sub-kelompoknya agar ikut terkelompok.">
       <div className="divide-y divide-[#2A2D31]">
         {entri.map(e => (
           <div key={e.id} className="flex flex-wrap items-center gap-2 px-4 py-2">

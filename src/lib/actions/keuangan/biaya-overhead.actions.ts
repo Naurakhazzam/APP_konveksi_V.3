@@ -4,7 +4,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { getCurrentUserProfile } from '@/lib/auth/permissions';
 import { revalidatePath } from 'next/cache';
-import { PO_AWAL_PERIODE } from '@/lib/keuangan/periode-po';
+import { PO_AWAL_PERIODE, TANGGAL_AWAL_PERIODE } from '@/lib/keuangan/periode-po';
 import { getBukuKasEntries, getOverheadSub } from './buku-kas.actions';
 import type { BukuKasEntry, OverheadSubOption } from './buku-kas.types';
 
@@ -75,7 +75,7 @@ export interface BiayaOverheadData {
   tren: OverheadTrenBulan[];
   /** Transaksi Buku Kas pada rentang (overhead, operasional, lainnya) untuk rincian */
   transaksi: BukuKasEntry[];
-  /** Entri overhead (semua tanggal) yang belum punya sub-kelompok */
+  /** Entri overhead sejak awal periode baru (14 Nov 2026) yang belum punya sub-kelompok */
   tanpaSub: BukuKasEntry[];
   subList: OverheadSubOption[];
   biayaTetap: BiayaTetap[];
@@ -197,7 +197,8 @@ export async function getBiayaOverhead(opts: {
     getOverheadSub(),
     supabase.from('hpp_komponen').select('id, nama').eq('tenant_id', TENANT_ID).eq('kategori', 'overhead').order('nama'),
     supabase.from('buku_kas').select('id').eq('tenant_id', TENANT_ID)
-      .eq('tipe', 'keluar').eq('kategori', 'Biaya Overhead').is('overhead_sub_id', null),
+      .eq('tipe', 'keluar').eq('kategori', 'Biaya Overhead').is('overhead_sub_id', null)
+      .gte('tanggal', TANGGAL_AWAL_PERIODE),
     ambilBiayaTetap(dari, sampai),
   ]);
   if (komponenRes.error) throw new Error(komponenRes.error.message);
