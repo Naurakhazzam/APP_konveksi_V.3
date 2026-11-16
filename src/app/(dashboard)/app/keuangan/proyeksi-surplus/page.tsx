@@ -1,4 +1,5 @@
-import { getProyeksiSurplus, type ProyeksiSurplusData } from '@/lib/actions/keuangan/proyeksi-surplus.actions';
+import { getKinerjaKeuangan } from '@/lib/actions/keuangan/proyeksi-surplus.actions';
+import type { KinerjaData } from '@/lib/keuangan/kinerja.server';
 import { PageWrapper } from '@/components/ui/PageWrapper';
 import ProyeksiSurplusClient from './ProyeksiSurplusClient';
 
@@ -8,10 +9,10 @@ export const metadata = {
 };
 
 export default async function ProyeksiSurplusPage() {
-  let data: ProyeksiSurplusData | null = null;
+  let data: KinerjaData | null = null;
   let error: string | null = null;
   try {
-    data = await getProyeksiSurplus();
+    data = await getKinerjaKeuangan('semua');
   } catch (e) {
     error = String(e);
   }

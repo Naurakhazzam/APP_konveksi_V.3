@@ -1,25 +1,9 @@
-import { getLaporanBulan } from '@/lib/actions/keuangan/laporan-bulan.actions';
-import { PageWrapper } from '@/components/ui/PageWrapper';
-import LaporanBulanClient from './LaporanBulanClient';
-import { bulanBerjalan } from '@/lib/bulan-berjalan';
+import { redirect } from 'next/navigation';
 
-export const metadata = { title: 'Laporan Per Bulan | Stitchlyx' };
-
-export default async function LaporanBulanPage() {
-  const bb = bulanBerjalan();
-  const bulan = String(Number(bb.bulan));
-  const tahun = bb.tahun;
-
-  try {
-    const data = await getLaporanBulan(bulan, tahun, true);
-    return (
-      <PageWrapper title="Laporan Per Bulan" subtitle="Income statement sederhana per periode bulanan">
-        <div className="mt-6">
-          <LaporanBulanClient initialData={data} />
-        </div>
-      </PageWrapper>
-    );
-  } catch (e) {
-    return <div className="p-8 text-red-400">Error memuat data: {String(e)}</div>;
-  }
+/**
+ * Menu ini digantikan Kinerja Keuangan (laba rugi akrual per bulan / sejak awal periode) — 16 Nov 2026.
+ * Alamat lama dialihkan supaya tautan yang tersimpan tetap jalan.
+ */
+export default function Page() {
+  redirect('/app/keuangan/proyeksi-surplus');
 }
