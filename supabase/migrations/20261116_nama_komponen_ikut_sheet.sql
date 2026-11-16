@@ -22,3 +22,12 @@ UPDATE public.hpp_komponen SET nama = 'Makan'       WHERE tenant_id = 'STX-001' 
 -- Sub-kelompok overhead yang memakai nama komponen lama
 UPDATE public.overhead_sub SET nama = 'Operasional' WHERE tenant_id = 'STX-001' AND nama = 'Operasional Sehari-hari';
 UPDATE public.overhead_sub SET nama = 'Sewa Rumah'  WHERE tenant_id = 'STX-001' AND nama = 'Operasional Rumah';
+
+-- Gaji Staff, Pembuatan Sampel, Peralatan Konveksi ditanggung baris "Operasional" di sheet HPP
+UPDATE public.overhead_sub SET hpp_komponen_id = (SELECT id FROM public.hpp_komponen WHERE tenant_id = 'STX-001' AND nama = 'Operasional')
+WHERE tenant_id = 'STX-001' AND nama = 'Gaji Staff';
+INSERT INTO public.overhead_sub (tenant_id, nama, urutan, hpp_komponen_id)
+SELECT 'STX-001', v.nama, v.urutan, hk.id
+FROM (VALUES ('Pembuatan Sampel', 11), ('Peralatan Konveksi', 12)) v(nama, urutan)
+JOIN public.hpp_komponen hk ON hk.tenant_id = 'STX-001' AND hk.nama = 'Operasional'
+ON CONFLICT DO NOTHING;
