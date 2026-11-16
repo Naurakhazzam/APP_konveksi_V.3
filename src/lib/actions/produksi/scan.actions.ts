@@ -223,6 +223,8 @@ export interface AntrianJahitBundle {
   /** Qty rencana per bundle dari PO (po_item.qty_per_bundle). */
   qty_rencana: number;
   po_item_id: string;
+  /** Nama kategori produk (Koko, Jacket, …) — untuk kartu ringkasan. */
+  kategori_nama: string | null;
   status_tahap: Record<string, { status?: string; karyawan_id?: string; qty_terima?: number }>;
 }
 
@@ -237,7 +239,7 @@ export async function getAntrianJahit(): Promise<AntrianJahitBundle[]> {
       status_tahap,
       po_item_id,
       po:po_id(no_po, klien:klien_id(nama)),
-      po_item:po_item_id(warna, size, qty_per_bundle, produk:produk_id(model_produk:model_id(nama)))
+      po_item:po_item_id(warna, size, qty_per_bundle, produk:produk_id(model_produk:model_id(nama, kategori:kategori_id(nama))))
     `)
     .eq('tenant_id', TENANT_ID)
     // Bundle "data lama" yang ditutup manual tidak ikut antrian.
@@ -293,6 +295,7 @@ export async function getAntrianJahit(): Promise<AntrianJahitBundle[]> {
       qty_per_bundle: qtyEfektif,
       qty_rencana: poItem?.qty_per_bundle ?? 0,
       po_item_id: b.po_item_id,
+      kategori_nama: (Array.isArray(model?.kategori) ? model.kategori[0] : model?.kategori)?.nama ?? null,
       status_tahap: b.status_tahap ?? {},
     };
   });

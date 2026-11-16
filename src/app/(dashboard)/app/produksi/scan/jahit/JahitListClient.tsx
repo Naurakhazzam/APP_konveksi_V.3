@@ -40,6 +40,7 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
   const [activeTab, setActiveTab] = useState<Tab>('antrian');
   const [cari, setCari] = useState('');
   const [filterPenjahit, setFilterPenjahit] = useState('');
+  const [filterKategori, setFilterKategori] = useState<string | null>(null);
 
   const namaKaryawan = (id?: string | null) => karyawanList.find(k => k.id === id)?.nama ?? null;
   const karyawanIdJahit = (b: AntrianJahitBundle) => b.status_tahap?.['jahit']?.karyawan_id ?? null;
@@ -53,10 +54,24 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
     const nama = namaKaryawan(karyawanIdJahit(b)) ?? '';
     return matchesBundleQuery(b, cari) || nama.toLowerCase().includes(cari.trim().toLowerCase());
   };
-  const antrianTampil = antrianSemua.filter(cocok);
-  const prosesTampil = prosesSemua
-    .filter(b => !filterPenjahit || karyawanIdJahit(b) === filterPenjahit)
-    .filter(cocok);
+  const namaKategori = (b: AntrianJahitBundle) => b.kategori_nama ?? 'Tanpa Kategori';
+  const cocokKategori = (b: AntrianJahitBundle) => !filterKategori || namaKategori(b) === filterKategori;
+  const prosesPerPenjahit = prosesSemua.filter(b => !filterPenjahit || karyawanIdJahit(b) === filterPenjahit);
+  const antrianTampil = antrianSemua.filter(cocokKategori).filter(cocok);
+  const prosesTampil = prosesPerPenjahit.filter(cocokKategori).filter(cocok);
+
+  // Ringkasan pcs per kategori (tanpa pisah size) untuk tab aktif
+  const ringkasanKategori = useMemo(() => {
+    const sumber = activeTab === 'antrian' ? antrianSemua : activeTab === 'proses' ? prosesPerPenjahit : [];
+    const m = new Map<string, { pcs: number; bundle: number }>();
+    sumber.forEach(b => {
+      const k = namaKategori(b);
+      const r = m.get(k) ?? { pcs: 0, bundle: 0 };
+      r.pcs += b.qty_per_bundle; r.bundle += 1;
+      m.set(k, r);
+    });
+    return [...m.entries()].map(([nama, r]) => ({ nama, ...r })).sort((a, b) => b.pcs - a.pcs);
+  }, [initialAntrian, activeTab, filterPenjahit]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Penjahit yang sedang memegang bundle, untuk filter
   const penjahitAktif = useMemo(() => {
@@ -234,6 +249,7 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
 
   const gantiTab = (t: Tab) => {
     setActiveTab(t);
+    setFilterKategori(null);
     if (t !== 'selesai' && activeTab === 'selesai' && cari) muatSelesai(1, '');
   };
 
@@ -317,6 +333,22 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
     </button>
   );
 
+  const KartuKategori = ({ nama, pcs, bundle, aktif, onClick }: { nama: string; pcs: number; bundle: number; aktif: boolean; onClick: () => void }) => (
+    <button
+      onClick={onClick}
+      title={aktif ? 'Klik untuk lepas saringan' : `Tampilkan ${nama} saja`}
+      className={`min-w-[130px] text-left px-4 py-3 rounded-xl border transition-all ${
+        aktif ? 'bg-[#e5c17b]/10 border-[#e5c17b]' : 'bg-[#1A1D1F] border-[#2A2D31] hover:border-[#9aa0a6]/50'
+      }`}
+    >
+      <div className={`text-[11px] font-bold uppercase tracking-wider truncate ${aktif ? 'text-[#e5c17b]' : 'text-[#9aa0a6]'}`}>{nama}</div>
+      <div className="mt-1 font-mono text-2xl font-bold text-[#e8eaed] leading-none">
+        {pcs.toLocaleString('id-ID')} <span className="text-xs font-sans font-medium text-[#9aa0a6]">pcs</span>
+      </div>
+      <div className="mt-1 text-[10px] text-[#9aa0a6]">{bundle} bundle</div>
+    </button>
+  );
+
   return (
     <div className="mt-2 pt-6 border-t border-[#2A2D31]">
       <div className="mb-5 px-1">
@@ -363,6 +395,24 @@ export default function JahitListClient({ initialAntrian, initialSelesai, karyaw
             </select>
           )}
         </div>
+
+        {/* Kartu ringkasan per kategori */}
+        {activeTab !== 'selesai' && ringkasanKategori.length > 0 && (
+          <div className="flex flex-wrap gap-3">
+            <KartuKategori
+              nama="Semua" aktif={!filterKategori} onClick={() => setFilterKategori(null)}
+              pcs={ringkasanKategori.reduce((t, r) => t + r.pcs, 0)}
+              bundle={ringkasanKategori.reduce((t, r) => t + r.bundle, 0)}
+            />
+            {ringkasanKategori.map(r => (
+              <KartuKategori
+                key={r.nama} nama={r.nama} pcs={r.pcs} bundle={r.bundle}
+                aktif={filterKategori === r.nama}
+                onClick={() => setFilterKategori(filterKategori === r.nama ? null : r.nama)}
+              />
+            ))}
+          </div>
+        )}
 
         {/* Toolbar aksi */}
         <div className="flex flex-wrap items-center justify-end gap-3 min-h-[36px]">
