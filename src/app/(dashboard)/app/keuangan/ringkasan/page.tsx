@@ -6,7 +6,7 @@ export const metadata = { title: 'Ringkasan Keuangan | Stitchlyx' };
 
 export default async function RingkasanPage() {
   try {
-    const data = await getRingkasanKeuangan(undefined, undefined, true);
+    const data = await getRingkasanKeuangan();
     return (
       <PageWrapper title="Ringkasan Keuangan" subtitle="Dashboard utama keuangan perusahaan">
         <div className="mt-6">
