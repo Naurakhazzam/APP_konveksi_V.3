@@ -29,6 +29,8 @@ export interface InventoryOverviewItem {
   warna_nama     : string | null;
   satuan_beli    : string | null;
   faktor_konversi: number | null;
+  /** harga per satuan pakai, untuk default nilai setoran modal sisa bahan */
+  harga_referensi?: number | null;
   /** utama = dipotong otomatis (FIFO); pembantu = dihitung lewat stock opname */
   jenis?: 'utama' | 'pembantu';
 }
@@ -83,7 +85,7 @@ export async function getInventoryOverview(): Promise<InventoryOverviewItem[]> {
   // A. Fetch items (tanpa embedded join warna — pakai lookup manual agar tidak bergantung schema cache)
   const { data: items, error: itemError } = await supabase
     .from('inventory_item')
-    .select('id, nama, satuan, stok_aktual, stok_minimum, warna_id, satuan_beli, faktor_konversi, jenis')
+    .select('id, nama, satuan, stok_aktual, stok_minimum, warna_id, satuan_beli, faktor_konversi, jenis, harga_referensi')
     .eq('tenant_id', TENANT_ID)
     .eq('aktif', true)
     .order('nama');
@@ -134,6 +136,7 @@ export async function getInventoryOverview(): Promise<InventoryOverviewItem[]> {
       satuan_beli:   item.satuan_beli    ?? null,
       faktor_konversi: item.faktor_konversi != null ? Number(item.faktor_konversi) : null,
       jenis:         (item.jenis ?? 'utama') as 'utama' | 'pembantu',
+      harga_referensi: item.harga_referensi != null ? Number(item.harga_referensi) : null,
     };
   });
 }
@@ -279,6 +282,37 @@ export async function addStokMasuk(input: StokMasukInput): Promise<{ batch_id: s
 
   if (error) throw new Error(error.message);
   return { batch_id: data.batch_id, stok_baru: data.stok_baru };
+}
+
+/**
+ * 5b. Jadikan stok minus satu bahan sebagai Setoran Modal (sisa bahan lama milik pemilik).
+ * RPC setoran_modal_sisa_bahan: Stok Masuk MODAL-SISA sebesar minusnya (stok kembali 0)
+ * + Buku Kas masuk "Setoran Modal" senilai sama — dalam satu transaksi.
+ */
+export async function jadikanSetoranModal(input: {
+  inventory_item_id: string;
+  harga_satuan: number;
+  tanggal: string; // YYYY-MM-DD
+  kategori_trx_id: string;
+}): Promise<{ qty: number; nominal: number; stok_baru: number }> {
+  const profile = await getCurrentUserProfile();
+  if (!profile) throw new Error('Unauthorized');
+  if (!(['owner', 'admin_keuangan'] as string[]).includes(profile.role)) {
+    throw new Error('Hanya owner / admin keuangan yang boleh mencatat setoran modal.');
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc('setoran_modal_sisa_bahan', {
+    p_inventory_item_id: input.inventory_item_id,
+    p_harga_satuan:      input.harga_satuan,
+    p_tanggal:           input.tanggal,
+    p_kategori_trx_id:   input.kategori_trx_id,
+    p_user_id:           profile.id,
+    p_tenant_id:         TENANT_ID,
+  });
+
+  if (error) throw new Error(error.message);
+  return { qty: Number(data.qty), nominal: Number(data.nominal), stok_baru: Number(data.stok_baru) };
 }
 
 /**

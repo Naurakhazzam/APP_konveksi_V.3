@@ -13,7 +13,8 @@ import {
   ChevronRight,
   Hash,
   Pencil,
-  PlusCircle
+  PlusCircle,
+  HandCoins
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -25,7 +26,8 @@ import {
   tambahInventoryItem,
   addStokMasuk,
   updateInventoryItem,
-  getInventoryBatches
+  getInventoryBatches,
+  jadikanSetoranModal
 } from '@/lib/actions/inventory/inventory.actions';
 import { 
   Dialog, 
@@ -53,9 +55,17 @@ interface Props {
   items: InventoryOverviewItem[];
   kategoriTrxList: { id: string; nama: string }[];
   warnaList: { id: string; nama: string }[];
+  /** owner / admin keuangan: boleh jadikan stok minus sebagai setoran modal */
+  bolehSetoranModal?: boolean;
 }
 
-export default function InventoryOverviewClient({ items, kategoriTrxList, warnaList }: Props) {
+export default function InventoryOverviewClient({ items, kategoriTrxList, warnaList, bolehSetoranModal = false }: Props) {
+  // Jadikan stok minus (sisa bahan lama) sebagai Setoran Modal — per bahan
+  const [modalItem, setModalItem] = useState<InventoryOverviewItem | null>(null);
+  const [modalHarga, setModalHarga] = useState('');
+  const [modalTanggal, setModalTanggal] = useState(tanggalWIB());
+  const [modalKategori, setModalKategori] = useState('');
+  const [modalLoading, setModalLoading] = useState(false);
   const [localItems, setLocalItems] = useState<InventoryOverviewItem[]>(items);
   const [searchQuery, setSearchQuery] = useState('');
   const [showTambahItem, setShowTambahItem] = useState(false);
@@ -241,6 +251,42 @@ export default function InventoryOverviewClient({ items, kategoriTrxList, warnaL
     }
   };
 
+  const openSetoranModal = (item: InventoryOverviewItem) => {
+    setModalItem(item);
+    setModalHarga(item.harga_referensi ? String(item.harga_referensi) : '');
+    setModalTanggal(tanggalWIB());
+    const kain = kategoriTrxList.find(k => /kain/i.test(k.nama));
+    setModalKategori(kain?.id ?? kategoriTrxList[0]?.id ?? '');
+  };
+
+  const modalQty = modalItem ? -modalItem.stok_aktual : 0;
+  const modalNominal = Math.round(modalQty * (parseFloat(modalHarga) || 0));
+
+  const handleSetoranModal = async () => {
+    if (!modalItem) return;
+    const harga = parseFloat(modalHarga);
+    if (!harga || harga <= 0) { toast.error('Isi harga per ' + modalItem.satuan); return; }
+    if (!modalKategori) { toast.error('Pilih kategori biaya'); return; }
+    setModalLoading(true);
+    try {
+      const res = await jadikanSetoranModal({
+        inventory_item_id: modalItem.id,
+        harga_satuan: harga,
+        tanggal: modalTanggal,
+        kategori_trx_id: modalKategori,
+      });
+      setLocalItems(prev => prev.map(item => item.id === modalItem.id
+        ? { ...item, stok_aktual: res.stok_baru, status: res.stok_baru < 0 ? 'minus' : (res.stok_baru <= item.stok_minimum ? 'low' : 'normal') }
+        : item));
+      toast.success(`${modalItem.nama} ${res.qty.toLocaleString('id-ID')} ${modalItem.satuan} dicatat sebagai Setoran Modal Rp ${res.nominal.toLocaleString('id-ID')}`);
+      setModalItem(null);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Gagal mencatat setoran modal');
+    } finally {
+      setModalLoading(false);
+    }
+  };
+
   const openEditModal = (item: InventoryOverviewItem) => {
     setEditingItem(item);
     setEditWarnaId(item.warna_id ?? '');
@@ -382,7 +428,19 @@ export default function InventoryOverviewClient({ items, kategoriTrxList, warnaL
                       {item.batch_count}
                     </span>
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="text-right whitespace-nowrap">
+                    {bolehSetoranModal && item.status === 'minus' && item.jenis !== 'pembantu' && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => openSetoranModal(item)}
+                        title="Jadikan Setoran Modal (sisa bahan lama)"
+                        className="text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 h-8 px-2 rounded-lg mr-1 gap-1 text-xs"
+                      >
+                        <HandCoins size={14} />
+                        Setoran Modal
+                      </Button>
+                    )}
                     <Button 
                       variant="ghost" 
                       size="sm"
@@ -669,6 +727,69 @@ export default function InventoryOverviewClient({ items, kategoriTrxList, warnaL
       </Dialog>
 
       {/* Modal Edit Item */}
+      {/* Dialog: Jadikan Setoran Modal */}
+      <Dialog open={modalItem !== null} onOpenChange={(o) => { if (!o && !modalLoading) setModalItem(null); }}>
+        <DialogContent className="bg-[#1A1D1F] border-[#2A2D31] text-[#e8eaed] sm:max-w-[460px]">
+          <DialogHeader>
+            <DialogTitle>Jadikan Setoran Modal — {modalItem?.nama}</DialogTitle>
+            <DialogDescription className="text-[#9aa0a6]">
+              Untuk bahan <b className="text-[#e8eaed]">sisa lama milik pemilik</b> yang terpakai saat stok sistem kosong.
+              Kalau bahannya baru dibeli tapi belum diinput, pakai <b className="text-[#e8eaed]">Stok Masuk</b> biasa.
+            </DialogDescription>
+          </DialogHeader>
+          {modalItem && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Qty (sebesar minus)</Label>
+                  <div className="h-10 px-3 flex items-center rounded-md bg-[#16181A] border border-[#2A2D31] text-sm">
+                    {modalQty.toLocaleString('id-ID')} {modalItem.satuan}
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="modal_harga">Harga / {modalItem.satuan} (Rp)</Label>
+                  <Input id="modal_harga" type="number" min={1} value={modalHarga}
+                    onChange={e => setModalHarga(e.target.value)} disabled={modalLoading}
+                    className="bg-[#16181A] border-[#2A2D31]" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="modal_tanggal">Tanggal</Label>
+                  <Input id="modal_tanggal" type="date" value={modalTanggal}
+                    onChange={e => setModalTanggal(e.target.value)} disabled={modalLoading}
+                    className="bg-[#16181A] border-[#2A2D31]" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="modal_kategori">Kategori Biaya</Label>
+                  <select id="modal_kategori" value={modalKategori} disabled={modalLoading}
+                    onChange={e => setModalKategori(e.target.value)}
+                    className="w-full h-10 px-3 rounded-md bg-[#16181A] border border-[#2A2D31] text-sm focus:ring-1 focus:ring-[#e5c17b] outline-none">
+                    <option value="">Pilih Kategori</option>
+                    {kategoriTrxList.map(k => <option key={k.id} value={k.id}>{k.nama}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="text-sm rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-emerald-300">
+                Nilai setoran modal: <b>Rp {modalNominal.toLocaleString('id-ID')}</b>
+              </div>
+              <p className="text-xs text-[#9aa0a6] bg-[#16181A] border border-[#2A2D31] rounded-lg px-3 py-2">
+                Dicatat sebagai Stok Masuk <b className="text-[#e8eaed]">MODAL-SISA</b> (stok kembali 0, biaya kain tetap dihitung)
+                + Buku Kas masuk <b className="text-[#e8eaed]">Setoran Modal</b> senilai sama — saldo kas tidak berubah dan
+                setoran modal bukan pendapatan.
+              </p>
+            </div>
+          )}
+          <DialogFooter className="pt-2">
+            <Button type="button" variant="ghost" onClick={() => setModalItem(null)} disabled={modalLoading} className="text-[#9aa0a6]">
+              Batal
+            </Button>
+            <Button type="button" onClick={handleSetoranModal} disabled={modalLoading || modalNominal <= 0}
+              className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold">
+              {modalLoading ? 'Menyimpan...' : 'Ya, catat Setoran Modal'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={showEditItem} onOpenChange={(o) => { setShowEditItem(o); if (!o) setEditingItem(null); }}>
         <DialogContent className="bg-[#1A1D1F] border-[#2A2D31] text-[#e8eaed] sm:max-w-[425px]">
           <DialogHeader>
