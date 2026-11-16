@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server';
 import { poPeriodeBaru } from '@/lib/keuangan/periode-po';
+import { getBundleIdsPeriodeBaru } from '@/lib/keuangan/periode-po.server';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -111,20 +112,21 @@ export async function getLaporanLR(
       const sjIds = [...new Set((invData ?? []).map((i: any) => i.surat_jalan_id).filter(Boolean))] as string[];
       const nilaiSj = new Map<string, { baru: number; semua: number }>();
       if (sjIds.length) {
+        // Per bundle, supaya pengecualian khusus (periode_baru_bundle_khusus) ikut terhitung
+        const bundleBaru = await getBundleIdsPeriodeBaru(supabase);
         const { data: sjItems, error: sjErr } = await supabase
           .from('surat_jalan_item')
-          .select('sj_id, qty_kirim, bundle:bundle_id(po_item:po_item_id(po:po_id(no_po), produk:produk_id(harga_jual)))')
+          .select('sj_id, qty_kirim, bundle_id, bundle:bundle_id(po_item:po_item_id(produk:produk_id(harga_jual)))')
           .in('sj_id', sjIds);
         if (sjErr) throw new Error(sjErr.message);
         (sjItems ?? []).forEach((it: any) => {
           const bundle = Array.isArray(it.bundle) ? it.bundle[0] : it.bundle;
           const pi     = Array.isArray(bundle?.po_item) ? bundle.po_item[0] : bundle?.po_item;
-          const po     = Array.isArray(pi?.po) ? pi.po[0] : pi?.po;
           const produk = Array.isArray(pi?.produk) ? pi.produk[0] : pi?.produk;
           const nilai  = Number(it.qty_kirim ?? 0) * Number(produk?.harga_jual ?? 0);
           const cur    = nilaiSj.get(it.sj_id) ?? { baru: 0, semua: 0 };
           cur.semua += nilai;
-          if (poPeriodeBaru(po?.no_po)) cur.baru += nilai;
+          if (bundleBaru.has(String(it.bundle_id))) cur.baru += nilai;
           nilaiSj.set(it.sj_id, cur);
         });
       }
