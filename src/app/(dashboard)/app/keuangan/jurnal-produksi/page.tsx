@@ -1,7 +1,5 @@
-import { getJurnalEntries, getKategoriTrxList, getPOList } from '@/lib/actions/keuangan/jurnal.actions';
+import { getJurnalProduksi, type JurnalProduksiData } from '@/lib/actions/keuangan/jurnal.actions';
 import { bulanBerjalan } from '@/lib/bulan-berjalan';
-import { createClient } from '@/lib/supabase/server';
-import { getPoIdsPeriodeBaru } from '@/lib/keuangan/periode-po.server';
 import { PageWrapper } from '@/components/ui/PageWrapper';
 import JurnalClient from './JurnalClient';
 
@@ -9,36 +7,30 @@ export const metadata = {
   title: 'Jurnal Produksi | Stitchlyx',
 };
 
-export default async function JurnalUmumPage() {
-  try {
-    const { bulan, tahun } = bulanBerjalan();
-    const [entries, kategoriList, poList, poBaru] = await Promise.all([
-      getJurnalEntries({ bulan, tahun }),
-      getKategoriTrxList(),
-      getPOList(),
-      createClient().then(getPoIdsPeriodeBaru),
-    ]);
+export default async function JurnalProduksiPage() {
+  const { bulan, tahun } = bulanBerjalan();
+  const akhir = new Date(Number(tahun), Number(bulan), 0).getDate();
+  const dari = `${tahun}-${bulan}-01`;
+  const sampai = `${tahun}-${bulan}-${String(akhir).padStart(2, '0')}`;
 
-    return (
-      <PageWrapper
-        title="Jurnal Produksi"
-        subtitle="Catatan transaksi keuangan produksi."
-      >
-        <JurnalClient
-          initialEntries={entries}
-          kategoriList={kategoriList}
-          poList={poList}
-          defaultBulan={bulan}
-          defaultTahun={tahun}
-          poBaruIds={[...poBaru]}
-        />
-      </PageWrapper>
-    );
+  let data: JurnalProduksiData | null = null;
+  let error: string | null = null;
+  try {
+    data = await getJurnalProduksi({ dari, sampai, hanyaPeriodeBaru: true });
   } catch (e) {
-    return (
-      <div className="p-8 text-red-400">
-        Error memuat data jurnal: {String(e)}
-      </div>
-    );
+    error = String(e);
   }
+
+  if (!data) {
+    return <div className="p-8 text-red-400">Error memuat jurnal produksi: {error}</div>;
+  }
+
+  return (
+    <PageWrapper
+      title="Jurnal Produksi"
+      subtitle="Laporan otomatis biaya produksi: kain cutting, aksesori, bahan pembantu, upah, overhead & biaya tetap."
+    >
+      <JurnalClient initialData={data} />
+    </PageWrapper>
+  );
 }

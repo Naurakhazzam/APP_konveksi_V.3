@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server';
 import { getLaporanPOList } from './laporan-po.actions';
 import { PO_AWAL_PERIODE, poPeriodeBaru } from '@/lib/keuangan/periode-po';
 import { getBundleIdsPeriodeBaru, getPoIdsPeriodeBaru } from '@/lib/keuangan/periode-po.server';
+import { overheadPerBulan, pembantuPerBulan } from '@/lib/keuangan/biaya-bulanan.server';
 
 const TENANT_ID = 'STX-001';
 
@@ -51,23 +52,15 @@ export async function getRingkasanKeuangan(
   const supabase = await createClient();
   const poBaru = hanyaPeriodeBaru ? await getPoIdsPeriodeBaru(supabase) : null;
   const bundleBaru = hanyaPeriodeBaru ? await getBundleIdsPeriodeBaru(supabase) : null;
-  const saringJurnal = (rows: any[] | null) => !poBaru ? (rows ?? [])
-    : (rows ?? []).filter((j: any) => !(j.tag_po_ids ?? []).length || (j.tag_po_ids as string[]).some(id => poBaru.has(String(id))));
   const saringKas = (rows: any[] | null) => !poBaru ? (rows ?? [])
     : (rows ?? []).filter((k: any) => !k.po_id || poBaru.has(String(k.po_id)));
   const saringUpah = (rows: any[] | null) => !bundleBaru ? (rows ?? [])
     : (rows ?? []).filter((g: any) => bundleBaru.has(String(g.sumber_id)));
 
-  // ─── 1. Jurnal bulan berjalan ───
+  // ─── 1. Bulan berjalan ───
   const lastDayCurrent = new Date(currentTahun, currentBulan, 0).getDate();
-  const { data: jurnalBulanIni, error: jurnalErr } = await supabase
-    .from('jurnal_entry')
-    .select('jenis, nominal, tag_po_ids')
-    .eq('tenant_id', TENANT_ID)
-    .gte('tanggal', `${currentTahun}-${mm}-01`)
-    .lte('tanggal', `${currentTahun}-${mm}-${String(lastDayCurrent).padStart(2, '0')}`);
-
-  if (jurnalErr) throw new Error(jurnalErr.message);
+  const awalBulan = `${currentTahun}-${mm}-01`;
+  const akhirBulan = `${currentTahun}-${mm}-${String(lastDayCurrent).padStart(2, '0')}`;
 
   // Buku kas tipe='masuk' untuk bulan berjalan (DP klien, pelunasan, dll)
   const { data: bukuKasBulanIni, error: bukuKasBulanErr } = await supabase
@@ -93,15 +86,15 @@ export async function getRingkasanKeuangan(
 
   let total_pemasukan = 0;
   let direct_bahan = 0;
-  let overhead = 0;
 
-  // overhead & pemasukan manual dari jurnal_entry. direct_bahan TIDAK dari jurnal
-  // (cutting tidak menulis jurnal kain) — diambil dari catatan pemakaian di bawah.
-  saringJurnal(jurnalBulanIni).forEach((j: any) => {
-    const nominal = Number(j.nominal);
-    if (j.jenis === 'masuk') total_pemasukan += nominal;
-    else if (j.jenis === 'overhead') overhead += nominal;
-  });
+  // Overhead dari Buku Kas (+ alokasi biaya tetap, Operasional, Lainnya) — bukan jurnal_entry
+  // yang sudah tidak diisi. Bahan = pemakaian kain/aksesori + belanja bahan pembantu.
+  const bulanIni = `${currentTahun}-${mm}`;
+  const [ovBulanIni, pembantuBulanIni] = await Promise.all([
+    overheadPerBulan(supabase, awalBulan, akhirBulan, hanyaPeriodeBaru),
+    pembantuPerBulan(supabase, awalBulan, akhirBulan, hanyaPeriodeBaru),
+  ]);
+  const overhead = Math.round(ovBulanIni.get(bulanIni) ?? 0);
 
   const { data: bahanBulanIni, error: bahanBulanErr } = await supabase.rpc('get_biaya_bahan_bulanan', {
     p_dari: `${currentTahun}-${mm}-01`,
@@ -111,7 +104,8 @@ export async function getRingkasanKeuangan(
   });
   if (bahanBulanErr) throw new Error(bahanBulanErr.message);
   direct_bahan = Math.round((bahanBulanIni ?? []).reduce(
-    (s: number, r: any) => s + Number(r.biaya_kain ?? 0) + Number(r.biaya_aksesori ?? 0), 0));
+    (s: number, r: any) => s + Number(r.biaya_kain ?? 0) + Number(r.biaya_aksesori ?? 0), 0)
+    + (pembantuBulanIni.get(bulanIni) ?? 0));
 
   // Gabungkan pemasukan dari buku_kas
   saringKas(bukuKasBulanIni).forEach((k: any) => {
@@ -147,14 +141,12 @@ export async function getRingkasanKeuangan(
   const lastMonth = months[months.length - 1];
 
   const lastDayOfRange = new Date(Number(lastMonth.yyyy), Number(lastMonth.mm), 0).getDate();
-  const { data: jurnal6Bulan, error: tren6Err } = await supabase
-    .from('jurnal_entry')
-    .select('jenis, nominal, tanggal, tag_po_ids')
-    .eq('tenant_id', TENANT_ID)
-    .gte('tanggal', `${firstMonth.yyyy}-${firstMonth.mm}-01`)
-    .lte('tanggal', `${lastMonth.yyyy}-${lastMonth.mm}-${String(lastDayOfRange).padStart(2, '0')}`);
-
-  if (tren6Err) throw new Error(tren6Err.message);
+  const awalRange = `${firstMonth.yyyy}-${firstMonth.mm}-01`;
+  const akhirRange = `${lastMonth.yyyy}-${lastMonth.mm}-${String(lastDayOfRange).padStart(2, '0')}`;
+  const [ov6Bulan, pembantu6Bulan] = await Promise.all([
+    overheadPerBulan(supabase, awalRange, akhirRange, hanyaPeriodeBaru),
+    pembantuPerBulan(supabase, awalRange, akhirRange, hanyaPeriodeBaru),
+  ]);
 
   // Buku kas tipe='masuk' untuk 6 bulan terakhir
   const { data: bukuKas6Bulan, error: bukuKas6Err } = await supabase
@@ -190,11 +182,6 @@ export async function getRingkasanKeuangan(
     (bahan6Bulan ?? []).map((r: any) => [String(r.bulan), Number(r.biaya_kain ?? 0) + Number(r.biaya_aksesori ?? 0)]));
 
   const tren_6_bulan = months.map(month => {
-    const monthJurnal = saringJurnal(jurnal6Bulan).filter((j: any) => {
-      const d = j.tanggal as string;
-      return d.startsWith(`${month.yyyy}-${month.mm}`);
-    });
-
     const monthBukuKas = saringKas(bukuKas6Bulan).filter((k: any) => {
       const d = k.tanggal as string;
       return d.startsWith(`${month.yyyy}-${month.mm}`);
@@ -205,15 +192,10 @@ export async function getRingkasanKeuangan(
       return d.startsWith(`${month.yyyy}-${month.mm}`);
     });
 
-    const db = Math.round(bahanPerBulan.get(`${month.yyyy}-${month.mm}`) ?? 0);
-    let ov = 0, pm = 0;
-
-    // overhead & pemasukan manual dari jurnal_entry (bahan dari catatan pemakaian)
-    monthJurnal.forEach((j: any) => {
-      const n = Number(j.nominal);
-      if (j.jenis === 'overhead') ov += n;
-      else if (j.jenis === 'masuk') pm += n;
-    });
+    const key = `${month.yyyy}-${month.mm}`;
+    const db = Math.round((bahanPerBulan.get(key) ?? 0) + (pembantu6Bulan.get(key) ?? 0));
+    const ov = Math.round(ov6Bulan.get(key) ?? 0);
+    let pm = 0;
 
     // Gabungkan pemasukan dari buku_kas
     monthBukuKas.forEach((k: any) => {

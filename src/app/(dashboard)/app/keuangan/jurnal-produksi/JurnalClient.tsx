@@ -1,321 +1,210 @@
 'use client';
 
-import React, { useState } from 'react';
-import TogglePoLama from '@/components/keuangan/TogglePoLama';
-import { useRouter } from 'next/navigation';
-import { Trash2, Plus, Loader2, TrendingUp, TrendingDown, Filter } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { Loader2, Filter, Search, ChevronLeft, ChevronRight, Info } from 'lucide-react';
 import { toast } from 'sonner';
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter
-} from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow
 } from '@/components/ui/table';
+import TogglePoLama from '@/components/keuangan/TogglePoLama';
 import {
-  addJurnalEntry,
-  deleteJurnalEntry,
-  getJurnalEntries,
-  type JurnalEntry,
-  type KategoriTrxItem,
+  getJurnalProduksi,
+  type JenisJurnal,
+  type JurnalProduksiData,
 } from '@/lib/actions/keuangan/jurnal.actions';
 
 // ─── CONSTANTS ──────────────────────────────────────────────────────────────
 
-// Opsi jenis untuk FORM TAMBAH — direct_upah dan direct_bahan SENGAJA TIDAK ADA (hanya dari sistem)
-const JENIS_OPTIONS = [
-  { value: 'pembelian_bahan', label: 'Pembelian Bahan' },
-  { value: 'overhead',        label: 'Biaya Overhead' },
-  { value: 'masuk',           label: 'Pemasukan' },
-];
-
-// Label untuk TABEL — semua jenis termasuk direct_upah dan direct_bahan
-const JENIS_LABELS: Record<string, string> = {
-  pembelian_bahan: 'Pembelian Bahan',
-  direct_bahan:    'Pemakaian Bahan',
-  direct_upah:     'Upah Produksi',
-  overhead:        'Biaya Overhead',
-  masuk:           'Pemasukan',
+const JENIS: Record<JenisJurnal, { label: string; badge: string; sumber: string }> = {
+  kain:        { label: 'Kain',           badge: 'bg-blue-500/10 text-blue-400 border-blue-500/20',       sumber: 'Selesai Cutting (modal FIFO LOT)' },
+  aksesori:    { label: 'Aksesori',       badge: 'bg-sky-500/10 text-sky-400 border-sky-500/20',          sumber: 'Pemakaian aksesori per bundle' },
+  pembantu:    { label: 'Bahan Pembantu', badge: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20',       sumber: 'Buku Kas — Bahan Pembantu' },
+  upah:        { label: 'Upah',           badge: 'bg-purple-500/10 text-purple-400 border-purple-500/20', sumber: 'Penggajian (upah borongan)' },
+  overhead:    { label: 'Overhead',       badge: 'bg-orange-500/10 text-orange-400 border-orange-500/20', sumber: 'Buku Kas — Biaya Overhead' },
+  biaya_tetap: { label: 'Biaya Tetap',    badge: 'bg-amber-500/10 text-amber-400 border-amber-500/20',    sumber: 'Biaya Overhead — kontrak, dialokasikan per hari' },
+  lainnya:     { label: 'Lainnya',        badge: 'bg-zinc-500/10 text-zinc-300 border-zinc-500/20',       sumber: 'Buku Kas — Biaya Operasional & Lainnya' },
+  pembelian:   { label: 'Pembelian',      badge: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20', sumber: 'Stok Masuk (masuk stok, bukan biaya)' },
 };
+const URUTAN_JENIS = Object.keys(JENIS) as JenisJurnal[];
 
-const JENIS_BADGE: Record<string, string> = {
-  pembelian_bahan: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20',
-  direct_bahan:    'bg-blue-500/10 text-blue-400 border-blue-500/20',
-  direct_upah:     'bg-purple-500/10 text-purple-400 border-purple-500/20',
-  overhead:        'bg-orange-500/10 text-orange-400 border-orange-500/20',
-  masuk:           'bg-green-500/10 text-green-400 border-green-500/20',
-};
-
-const BULAN = [
-  'Januari','Februari','Maret','April','Mei','Juni',
-  'Juli','Agustus','September','Oktober','November','Desember'
-];
+const PER_HALAMAN = 50;
 
 const idrFmt = (n: number) =>
-  'Rp ' + n.toLocaleString('id-ID', { minimumFractionDigits: 0 });
+  'Rp ' + Math.round(n).toLocaleString('id-ID', { minimumFractionDigits: 0 });
 
 const dateFmt = (d: string) =>
-  new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+  new Date(`${d}T00:00:00`).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
 
-const inputCls = 'w-full h-10 px-3 rounded-lg bg-[#1E2124] border border-[#2A2D31] text-sm text-[#e8eaed] focus:ring-1 focus:ring-[#e5c17b] outline-none';
+const qtyFmt = (q: number | null, satuan: string | null) =>
+  q == null ? '-' : `${q.toLocaleString('id-ID', { maximumFractionDigits: 3 })}${satuan ? ` ${satuan}` : ''}`;
+
+const inputCls = 'h-9 px-3 rounded-lg bg-[#1E2124] border border-[#2A2D31] text-sm text-[#e8eaed] outline-none focus:ring-1 focus:ring-[#e5c17b]';
 const labelCls = 'block text-[10px] font-bold text-[#9aa0a6] uppercase tracking-widest mb-1';
-
-// ─── PROPS ──────────────────────────────────────────────────────────────────
-
-interface Props {
-  initialEntries: JurnalEntry[];
-  kategoriList: KategoriTrxItem[];
-  poList: { id: string; no_po: string }[];
-  defaultBulan: string;
-  defaultTahun: string;
-  /** Id PO periode baru (PO-0100 ke atas) */
-  poBaruIds: string[];
-}
-
-// ─── DEFAULT FORM ────────────────────────────────────────────────────────────
-
-const defaultForm = {
-  tanggal: '',
-  jenis: 'masuk',
-  kategori_trx_id: '',
-  nominal: '',
-  keterangan: '',
-  no_faktur: '',
-  qty: '',
-  tag_po_ids: [] as string[],
-};
 
 // ─── COMPONENT ───────────────────────────────────────────────────────────────
 
-export default function JurnalClient({ initialEntries, kategoriList, poList, defaultBulan, defaultTahun, poBaruIds }: Props) {
-  const router = useRouter();
+export default function JurnalClient({ initialData }: { initialData: JurnalProduksiData }) {
+  const [data, setData] = useState(initialData);
+  const [dari, setDari] = useState(initialData.dari);
+  const [sampai, setSampai] = useState(initialData.sampai);
+  const [tampilkanLama, setTampilkanLama] = useState(!initialData.hanyaPeriodeBaru);
+  const [memuat, setMemuat] = useState(false);
+  const [filterJenis, setFilterJenis] = useState<JenisJurnal | ''>('');
+  const [cari, setCari] = useState('');
+  const [halaman, setHalaman] = useState(1);
 
-  // Map PO ID to no_po for quick lookup
-  const poMap = React.useMemo(() => {
-    const m: Record<string, string> = {};
-    poList.forEach(p => { m[p.id] = p.no_po; });
-    return m;
-  }, [poList]);
-
-  // Entries & filter state
-  const [entries, setEntries] = useState<JurnalEntry[]>(initialEntries);
-  /** Jurnal bertanda PO lama disembunyikan kecuali dicentang; tanpa tag PO selalu tampil */
-  const [tampilkanLama, setTampilkanLama] = useState(false);
-  const poBaru = React.useMemo(() => new Set(poBaruIds), [poBaruIds]);
-  const tampil = tampilkanLama ? entries
-    : entries.filter(e => !e.tag_po_ids?.length || e.tag_po_ids.some(id => poBaru.has(String(id))));
-  const jumlahLama = entries.length - tampil.length;
-  const [filterBulan, setFilterBulan] = useState(defaultBulan);
-  const [filterTahun, setFilterTahun] = useState(defaultTahun);
-  const [filterJenis, setFilterJenis] = useState('');
-  const [filtering, setFiltering] = useState(false);
-
-  // Modal state
-  const [addOpen, setAddOpen] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [form, setForm] = useState(defaultForm);
-
-  // Delete state
-  const [deleteTarget, setDeleteTarget] = useState<JurnalEntry | null>(null);
-  const [deleting, setDeleting] = useState(false);
-
-  // ─── FILTER ─────────────────────────────────────────────────────────────
-
-  const handleFilter = async () => {
-    setFiltering(true);
+  const muat = async (opts?: { lama?: boolean }) => {
+    if (!dari || !sampai || sampai < dari) { toast.error('Rentang tanggal tidak valid'); return; }
+    setMemuat(true);
     try {
-      const data = await getJurnalEntries({
-        bulan: filterBulan || undefined,
-        tahun: filterTahun || undefined,
-        jenis: filterJenis || undefined,
-      });
-      setEntries(data);
-    } catch (e: any) {
-      toast.error(e.message || 'Gagal memuat data');
+      const lama = opts?.lama ?? tampilkanLama;
+      setData(await getJurnalProduksi({ dari, sampai, hanyaPeriodeBaru: !lama }));
+      setHalaman(1);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Gagal memuat data');
     } finally {
-      setFiltering(false);
+      setMemuat(false);
     }
   };
 
-  // ─── SUMMARY ─────────────────────────────────────────────────────────────
+  // ─── RINGKASAN ───────────────────────────────────────────────────────────
 
-  const sum = (jenis: string) =>
-    tampil.filter(e => e.jenis === jenis).reduce((acc, e) => acc + e.nominal, 0);
+  const total = useMemo(() => {
+    const t = Object.fromEntries(URUTAN_JENIS.map(j => [j, 0])) as Record<JenisJurnal, number>;
+    data.baris.forEach(b => { t[b.jenis] += b.nominal; });
+    return t;
+  }, [data]);
 
-  const summaryCards = [
-    { label: 'Pembelian Bahan', value: sum('pembelian_bahan'), color: 'text-yellow-400' },
-    { label: 'Pemakaian Bahan', value: sum('direct_bahan'),    color: 'text-blue-400'   },
-    { label: 'Total Upah',      value: sum('direct_upah'),     color: 'text-purple-400' },
-    { label: 'Total Overhead',  value: sum('overhead'),        color: 'text-orange-400' },
+  const kartu = [
+    { label: 'Kain (cutting)',   value: total.kain,                                    color: 'text-blue-400' },
+    { label: 'Aksesori & Pembantu', value: total.aksesori + total.pembantu,            color: 'text-cyan-400' },
+    { label: 'Upah',             value: total.upah,                                    color: 'text-purple-400' },
+    { label: 'Overhead',         value: total.overhead + total.biaya_tetap + total.lainnya, color: 'text-orange-400' },
   ];
+  const totalBiaya = kartu.reduce((s, k) => s + k.value, 0);
 
-  // ─── ADD ENTRY ───────────────────────────────────────────────────────────
+  // ─── FILTER & PAGINASI ───────────────────────────────────────────────────
 
-  const handleAdd = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSubmitting(true);
-    const result = await addJurnalEntry({
-      kategori_trx_id: form.kategori_trx_id,
-      jenis: form.jenis,
-      nominal: parseFloat(form.nominal),
-      tanggal: form.tanggal,
-      keterangan: form.keterangan,
-      no_faktur: form.no_faktur || undefined,
-      qty: form.qty ? parseFloat(form.qty) : undefined,
-      tag_po_ids: form.tag_po_ids,
-    });
-    setSubmitting(false);
-    if (!result.success) { toast.error(result.error || 'Gagal menambahkan'); return; }
-    toast.success('Entri jurnal berhasil ditambahkan');
-    setAddOpen(false);
-    setForm(defaultForm);
-    router.refresh();
-    // Re-fetch agar tabel terupdate tanpa full reload
-    const fresh = await getJurnalEntries({
-      bulan: filterBulan || undefined,
-      tahun: filterTahun || undefined,
-      jenis: filterJenis || undefined,
-    });
-    setEntries(fresh);
-  };
+  const tersaring = useMemo(() => {
+    const q = cari.trim().toLowerCase();
+    return data.baris.filter(b =>
+      (!filterJenis || b.jenis === filterJenis) &&
+      (!q || `${b.kategori} ${b.keterangan} ${b.no_po ?? ''}`.toLowerCase().includes(q)));
+  }, [data, filterJenis, cari]);
 
-  // ─── DELETE ──────────────────────────────────────────────────────────────
-
-  const handleDelete = async () => {
-    if (!deleteTarget) return;
-    setDeleting(true);
-    const result = await deleteJurnalEntry(deleteTarget.id);
-    setDeleting(false);
-    if (!result.success) { toast.error(result.error || 'Gagal menghapus'); return; }
-    toast.success('Entri dihapus');
-    setDeleteTarget(null);
-    setEntries(prev => prev.filter(e => e.id !== deleteTarget.id));
-  };
-
-  const isBahan = form.jenis === 'pembelian_bahan';
+  const jumlahHalaman = Math.max(1, Math.ceil(tersaring.length / PER_HALAMAN));
+  const hal = Math.min(halaman, jumlahHalaman);
+  const tampil = tersaring.slice((hal - 1) * PER_HALAMAN, hal * PER_HALAMAN);
+  const totalTersaring = tersaring.reduce((s, b) => s + b.nominal, 0);
 
   // ─── RENDER ──────────────────────────────────────────────────────────────
 
   return (
     <div className="space-y-6 mt-4">
 
-      {/* Header row */}
-      <div className="flex items-center justify-between">
-        <h2 className="text-base font-bold text-[#e8eaed]">Daftar Transaksi</h2>
-        <Button onClick={() => setAddOpen(true)}
-          className="bg-[#e5c17b] text-[#0D0E10] hover:bg-[#d4b06a] font-bold text-xs h-9 px-4">
-          <Plus className="h-4 w-4 mr-1" /> Tambah Entri
-        </Button>
-      </div>
-
       {/* Filter bar */}
       <div className="flex flex-wrap gap-3 items-end p-4 rounded-xl bg-[#1A1D1F] border border-[#2A2D31]">
         <div>
-          <p className={labelCls}>Bulan</p>
-          <select className="h-9 px-3 rounded-lg bg-[#1E2124] border border-[#2A2D31] text-sm text-[#e8eaed] outline-none focus:ring-1 focus:ring-[#e5c17b]"
-            value={filterBulan} onChange={e => setFilterBulan(e.target.value)}>
-            <option value="">Semua</option>
-            {BULAN.map((b, i) => <option key={i} value={String(i + 1).padStart(2,'0')}>{b}</option>)}
-          </select>
+          <p className={labelCls}>Dari</p>
+          <input type="date" className={inputCls} value={dari} onChange={e => setDari(e.target.value)} />
         </div>
         <div>
-          <p className={labelCls}>Tahun</p>
-          <input type="number" className="h-9 w-24 px-3 rounded-lg bg-[#1E2124] border border-[#2A2D31] text-sm text-[#e8eaed] outline-none focus:ring-1 focus:ring-[#e5c17b]"
-            value={filterTahun} onChange={e => setFilterTahun(e.target.value)} />
+          <p className={labelCls}>Sampai</p>
+          <input type="date" className={inputCls} value={sampai} onChange={e => setSampai(e.target.value)} />
         </div>
-        <div>
-          <p className={labelCls}>Jenis</p>
-          <select className="h-9 px-3 rounded-lg bg-[#1E2124] border border-[#2A2D31] text-sm text-[#e8eaed] outline-none focus:ring-1 focus:ring-[#e5c17b]"
-            value={filterJenis} onChange={e => setFilterJenis(e.target.value)}>
-            <option value="">Semua</option>
-            {JENIS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
-        </div>
-        <Button onClick={handleFilter} disabled={filtering}
+        <Button onClick={() => muat()} disabled={memuat}
           className="h-9 bg-[#2A2D31] text-[#e8eaed] hover:bg-[#3A3D41] text-xs">
-          {filtering ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Filter className="h-4 w-4 mr-1" />}
-          Terapkan Filter
+          {memuat ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Filter className="h-4 w-4 mr-1" />}
+          Terapkan
         </Button>
-        <TogglePoLama className="ml-auto" checked={tampilkanLama} onChange={setTampilkanLama}
-          info={!tampilkanLama && jumlahLama > 0 ? `(${jumlahLama} disembunyikan)` : undefined} />
+        <TogglePoLama className="ml-auto" checked={tampilkanLama}
+          onChange={v => { setTampilkanLama(v); muat({ lama: v }); }} />
       </div>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {summaryCards.map(card => (
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        {kartu.map(card => (
           <div key={card.label} className="p-4 rounded-xl bg-[#1A1D1F] border border-[#2A2D31]">
             <p className="text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold mb-1">{card.label}</p>
             <p className={`text-sm font-bold ${card.color}`}>{idrFmt(card.value)}</p>
           </div>
         ))}
+        <div className="p-4 rounded-xl bg-[#1A1D1F] border border-[#e5c17b]/30 col-span-2 md:col-span-1">
+          <p className="text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold mb-1">Total Biaya Produksi</p>
+          <p className="text-sm font-bold text-[#e5c17b]">{idrFmt(totalBiaya)}</p>
+        </div>
+      </div>
+
+      <div className="flex items-start gap-2 text-xs text-[#9aa0a6]">
+        <Info className="h-4 w-4 shrink-0 mt-0.5" />
+        <p>
+          Semua baris dibuat otomatis dari sumber aslinya — tidak ada input manual di sini.
+          Overhead dicatat lewat <span className="text-[#e8eaed]">Buku Kas</span>, kontrak lewat menu{' '}
+          <span className="text-[#e8eaed]">Biaya Overhead</span>. Pembelian bahan ({idrFmt(total.pembelian)}) hanya
+          informasi karena masuk stok; biayanya terhitung saat kain dipakai cutting.
+        </p>
+      </div>
+
+      {/* Filter jenis & cari */}
+      <div className="flex flex-wrap items-center gap-2">
+        <button onClick={() => { setFilterJenis(''); setHalaman(1); }}
+          className={`rounded-full border px-3 py-1 text-xs ${filterJenis === '' ? 'border-[#e5c17b] text-[#e5c17b]' : 'border-[#2A2D31] text-[#9aa0a6] hover:text-[#e8eaed]'}`}>
+          Semua ({data.baris.length})
+        </button>
+        {URUTAN_JENIS.map(j => {
+          const n = data.baris.filter(b => b.jenis === j).length;
+          if (!n) return null;
+          return (
+            <button key={j} title={JENIS[j].sumber} onClick={() => { setFilterJenis(j); setHalaman(1); }}
+              className={`rounded-full border px-3 py-1 text-xs ${filterJenis === j ? 'border-[#e5c17b] text-[#e5c17b]' : 'border-[#2A2D31] text-[#9aa0a6] hover:text-[#e8eaed]'}`}>
+              {JENIS[j].label} ({n})
+            </button>
+          );
+        })}
+        <div className="relative ml-auto">
+          <Search className="h-4 w-4 absolute left-2.5 top-2.5 text-[#5f6368]" />
+          <input className={`${inputCls} pl-8 w-56`} placeholder="Cari bahan, bundle, PO…"
+            value={cari} onChange={e => { setCari(e.target.value); setHalaman(1); }} />
+        </div>
       </div>
 
       {/* Tabel */}
-      <div className="rounded-xl border border-[#2A2D31] overflow-hidden bg-[#1A1D1F]">
+      <div className="rounded-xl border border-[#2A2D31] overflow-x-auto bg-[#1A1D1F]">
         <Table>
           <TableHeader className="bg-[#1A1C1E]">
             <TableRow className="border-[#2A2D31] hover:bg-transparent">
               <TableHead className="text-[#9aa0a6]">Tanggal</TableHead>
-              <TableHead className="text-[#9aa0a6]">Kategori</TableHead>
               <TableHead className="text-[#9aa0a6]">Jenis</TableHead>
-              <TableHead className="text-[#9aa0a6]">Tag PO</TableHead>
+              <TableHead className="text-[#9aa0a6]">Kategori</TableHead>
               <TableHead className="text-[#9aa0a6]">Keterangan</TableHead>
-              <TableHead className="text-[#9aa0a6]">No. Faktur</TableHead>
+              <TableHead className="text-[#9aa0a6]">PO</TableHead>
+              <TableHead className="text-[#9aa0a6] text-right">Qty</TableHead>
               <TableHead className="text-[#9aa0a6] text-right">Nominal</TableHead>
-              <TableHead className="text-[#9aa0a6] w-14 text-center">Aksi</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody className="bg-[#1A1D1F]">
             {tampil.length === 0 ? (
               <TableRow className="hover:bg-transparent border-[#2A2D31]">
                 <TableCell colSpan={7} className="h-32 text-center text-[#5f6368]">
-                  Belum ada transaksi
+                  Tidak ada transaksi pada rentang ini
                 </TableCell>
               </TableRow>
-            ) : tampil.map(entry => (
-              <TableRow key={entry.id} className="border-[#2A2D31] hover:bg-[#16181A]">
-                <TableCell className="text-sm text-[#e8eaed] whitespace-nowrap">{dateFmt(entry.tanggal)}</TableCell>
-                <TableCell className="text-sm text-[#9aa0a6]">{entry.kategori_nama}</TableCell>
+            ) : tampil.map((b, i) => (
+              <TableRow key={`${b.jenis}-${b.waktu ?? ''}-${i}`} className="border-[#2A2D31] hover:bg-[#16181A]">
+                <TableCell className="text-sm text-[#e8eaed] whitespace-nowrap">{dateFmt(b.tanggal)}</TableCell>
                 <TableCell>
-                  <div className="flex items-center gap-1.5">
-                    <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${JENIS_BADGE[entry.jenis] ?? 'text-[#9aa0a6]'}`}>
-                      {JENIS_LABELS[entry.jenis] ?? entry.jenis}
-                    </span>
-                    {(entry.jenis === 'direct_upah' || entry.jenis === 'direct_bahan') && (
-                      <span className="inline-flex items-center rounded-full border border-sky-500/30 bg-sky-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-sky-400">
-                        OTOMATIS
-                      </span>
-                    )}
-                  </div>
+                  <span title={JENIS[b.jenis]?.sumber}
+                    className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium whitespace-nowrap ${JENIS[b.jenis]?.badge ?? 'text-[#9aa0a6]'}`}>
+                    {JENIS[b.jenis]?.label ?? b.jenis}
+                  </span>
                 </TableCell>
-                <TableCell>
-                  <div className="flex flex-wrap gap-1 max-w-[150px]">
-                    {entry.tag_po_ids.length > 0 ? (
-                      entry.tag_po_ids.map(pid => (
-                        <span key={pid} className="bg-[#2A2D31] text-[#9aa0a6] text-[10px] px-1.5 py-0.5 rounded border border-[#3A3D41]">
-                          {poMap[pid] || '???'}
-                        </span>
-                      ))
-                    ) : (
-                      <span className="text-[#5f6368] text-xs">-</span>
-                    )}
-                  </div>
-                </TableCell>
-                <TableCell className="text-sm text-[#e8eaed] max-w-[200px] truncate">{entry.keterangan}</TableCell>
-                <TableCell className="text-sm text-[#9aa0a6] font-mono">{entry.no_faktur ?? '-'}</TableCell>
-                <TableCell className="text-sm font-semibold text-right text-[#e8eaed]">{idrFmt(entry.nominal)}</TableCell>
-                <TableCell className="text-center">
-                  <Button variant="ghost" size="icon"
-                    onClick={() => !(entry.jenis === 'direct_upah' || entry.jenis === 'direct_bahan') && setDeleteTarget(entry)}
-                    disabled={(entry.jenis === 'direct_upah' || entry.jenis === 'direct_bahan')}
-                    title={(entry.jenis === 'direct_upah' || entry.jenis === 'direct_bahan') ? 'Entry otomatis tidak dapat dihapus' : 'Hapus'}
-                    className={`h-8 w-8 ${
-                      (entry.jenis === 'direct_upah' || entry.jenis === 'direct_bahan')
-                        ? 'text-[#3A3D41] opacity-30 cursor-not-allowed'
-                        : 'text-[#9aa0a6] hover:text-red-400 hover:bg-red-400/10'
-                    }`}>
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+                <TableCell className="text-sm text-[#9aa0a6] whitespace-nowrap">{b.kategori}</TableCell>
+                <TableCell className="text-sm text-[#e8eaed] max-w-[280px] truncate" title={b.keterangan}>{b.keterangan || '-'}</TableCell>
+                <TableCell className="text-xs text-[#9aa0a6] font-mono whitespace-nowrap">{b.no_po ?? '-'}</TableCell>
+                <TableCell className="text-sm text-[#9aa0a6] text-right whitespace-nowrap">{qtyFmt(b.qty, b.satuan)}</TableCell>
+                <TableCell className={`text-sm font-semibold text-right whitespace-nowrap ${b.jenis === 'pembelian' ? 'text-[#9aa0a6]' : b.nominal < 0 ? 'text-red-400' : 'text-[#e8eaed]'}`}>
+                  {idrFmt(b.nominal)}
                 </TableCell>
               </TableRow>
             ))}
@@ -323,151 +212,21 @@ export default function JurnalClient({ initialEntries, kategoriList, poList, def
         </Table>
       </div>
 
-      {/* ─── MODAL TAMBAH ───────────────────────────────────────────────────── */}
-      <Dialog open={addOpen} onOpenChange={setAddOpen}>
-        <DialogContent className="bg-[#16181A] border-[#2A2D31] text-[#e8eaed] sm:max-w-lg max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Tambah Entri Jurnal</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleAdd} className="space-y-4 py-2">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className={labelCls}>Tanggal *</label>
-                <input type="date" required className={inputCls}
-                  value={form.tanggal} onChange={e => setForm(f => ({ ...f, tanggal: e.target.value }))} />
-              </div>
-              <div>
-                <label className={labelCls}>Jenis *</label>
-                <select required className={inputCls}
-                  value={form.jenis} 
-                  onChange={e => {
-                    const newJenis = e.target.value;
-                    setForm(f => ({ ...f, jenis: newJenis, kategori_trx_id: '', tag_po_ids: [] }));
-                  }}
-                >
-                  {JENIS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
-              </div>
-            </div>
-            <div>
-              <label className={labelCls}>Kategori *</label>
-              <select required className={inputCls}
-                value={form.kategori_trx_id} onChange={e => setForm(f => ({ ...f, kategori_trx_id: e.target.value }))}>
-                <option value="">-- Pilih Kategori --</option>
-                {kategoriList
-                  .filter(k => k.jenis === form.jenis)
-                  .map(k => <option key={k.id} value={k.id}>{k.nama}</option>)
-                }
-              </select>
-              {kategoriList.filter(k => k.jenis === form.jenis).length === 0 && (
-                <p className="text-[10px] text-orange-400 mt-1">Belum ada kategori untuk jenis ini</p>
-              )}
-            </div>
-            <div>
-              <label className={labelCls}>Nominal (Rp) *</label>
-              <input type="number" required min="1" className={inputCls}
-                placeholder="contoh: 500000"
-                value={form.nominal} onChange={e => setForm(f => ({ ...f, nominal: e.target.value }))} />
-            </div>
-            <div>
-              <label className={labelCls}>Keterangan *</label>
-              <input type="text" required className={inputCls}
-                placeholder="Deskripsi transaksi"
-                value={form.keterangan} onChange={e => setForm(f => ({ ...f, keterangan: e.target.value }))} />
-            </div>
-            {isBahan && (
-              <>
-                <div>
-                  <label className={labelCls}>No. Faktur *</label>
-                  <input type="text" required={isBahan} className={inputCls}
-                    placeholder="contoh: INV-001"
-                    value={form.no_faktur} onChange={e => setForm(f => ({ ...f, no_faktur: e.target.value }))} />
-                </div>
-                <div>
-                  <label className={labelCls}>Qty *</label>
-                  <input type="number" required={isBahan} min="0.001" step="0.001" className={inputCls}
-                    placeholder="contoh: 10"
-                    value={form.qty} onChange={e => setForm(f => ({ ...f, qty: e.target.value }))} />
-                </div>
-              </>
-            )}
-
-            {/* Tag PO Multi-select (for direct_bahan and masuk) */}
-            {(isBahan || form.jenis === 'masuk') && (
-              <div>
-                <label className={labelCls}>Tag ke PO {isBahan && '*'}</label>
-                <div className="mt-2 p-3 rounded-lg bg-[#1A1D1F] border border-[#2A2D31] max-h-40 overflow-y-auto space-y-2">
-                  {poList.length === 0 ? (
-                    <p className="text-xs text-[#5f6368]">Belum ada data PO aktif</p>
-                  ) : (
-                    poList.map(po => (
-                      <label key={po.id} className="flex items-center gap-2 cursor-pointer group">
-                        <input
-                          type="checkbox"
-                          className="w-4 h-4 rounded border-[#2A2D31] bg-[#1E2124] text-[#e5c17b] focus:ring-offset-0 focus:ring-1 focus:ring-[#e5c17b]"
-                          checked={form.tag_po_ids.includes(po.id)}
-                          onChange={e => {
-                            const checked = e.target.checked;
-                            setForm(f => ({
-                              ...f,
-                              tag_po_ids: checked
-                                ? [...f.tag_po_ids, po.id]
-                                : f.tag_po_ids.filter(id => id !== po.id)
-                            }));
-                          }}
-                        />
-                        <span className="text-sm text-[#9aa0a6] group-hover:text-[#e8eaed] transition-colors font-mono">
-                          {po.no_po}
-                        </span>
-                      </label>
-                    ))
-                  )}
-                </div>
-                {isBahan && form.tag_po_ids.length === 0 && (
-                  <p className="text-[10px] text-red-400 mt-1">Wajib pilih minimal 1 PO</p>
-                )}
-              </div>
-            )}
-
-            <DialogFooter className="pt-2">
-              <Button type="button" variant="outline" onClick={() => setAddOpen(false)}
-                className="border-[#2A2D31] bg-transparent text-[#e8eaed]" disabled={submitting}>
-                Batal
-              </Button>
-              <Button type="submit" disabled={submitting}
-                className="bg-[#e5c17b] text-[#0D0E10] hover:bg-[#d4b06a] font-bold">
-                {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                {submitting ? 'Menyimpan...' : 'Simpan'}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* ─── KONFIRMASI HAPUS ──────────────────────────────────────────────── */}
-      <Dialog open={!!deleteTarget} onOpenChange={open => { if (!open) setDeleteTarget(null); }}>
-        <DialogContent className="bg-[#16181A] border-[#2A2D31] text-[#e8eaed] sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Konfirmasi Hapus</DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-[#9aa0a6] py-2">
-            Yakin hapus entri jurnal <span className="text-[#e8eaed] font-semibold">{deleteTarget?.keterangan}</span>? 
-            Tindakan ini tidak dapat dibatalkan.
-          </p>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteTarget(null)}
-              className="border-[#2A2D31] bg-transparent text-[#e8eaed]" disabled={deleting}>
-              Batal
-            </Button>
-            <Button onClick={handleDelete} disabled={deleting}
-              className="bg-red-600 hover:bg-red-700 text-white font-bold">
-              {deleting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Trash2 className="h-4 w-4 mr-2" />}
-              {deleting ? 'Menghapus...' : 'Ya, Hapus'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
+      {/* Paginasi */}
+      <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-[#9aa0a6]">
+        <span>
+          {tersaring.length} baris · jumlah {idrFmt(totalTersaring)}
+        </span>
+        {jumlahHalaman > 1 && (
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="icon" className="h-8 w-8" disabled={hal <= 1}
+              onClick={() => setHalaman(hal - 1)}><ChevronLeft className="h-4 w-4" /></Button>
+            <span>Halaman {hal} / {jumlahHalaman}</span>
+            <Button variant="ghost" size="icon" className="h-8 w-8" disabled={hal >= jumlahHalaman}
+              onClick={() => setHalaman(hal + 1)}><ChevronRight className="h-4 w-4" /></Button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
