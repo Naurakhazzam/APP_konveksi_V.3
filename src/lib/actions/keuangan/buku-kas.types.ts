@@ -80,8 +80,8 @@ export const KATEGORI_KELUAR = [
   'Bahan Pembantu',
   'Pembayaran Gaji',
   'Biaya Overhead',
-  'Biaya Operasional',
-  // 'Biaya Peralatan' dihapus 16 Nov 2026: peralatan dicatat sebagai Biaya Overhead → sub-kelompok
-  // "Peralatan Konveksi" (ditanggung komponen HPP Operasional). Entri lama tetap tampil saat diedit.
+  // 'Biaya Operasional' & 'Biaya Peralatan' dihapus 16 Nov 2026: mudah tertukar dengan komponen HPP
+  // "Operasional". Semua biaya rutin dicatat sebagai Biaya Overhead + sub-kelompok (Bensin, Gas,
+  // Peralatan Konveksi, Service Mesin, ...). Entri lama tetap tampil kategorinya saat diedit.
   'Lainnya',
 ] as const;

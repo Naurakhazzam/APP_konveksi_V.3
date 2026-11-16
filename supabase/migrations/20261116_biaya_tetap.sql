@@ -25,6 +25,11 @@ FROM public.overhead_sub s
 WHERE s.tenant_id = 'STX-001' AND s.nama = 'Sewa Rumah'
   AND NOT EXISTS (SELECT 1 FROM public.biaya_tetap WHERE tenant_id = 'STX-001' AND nama = 'Kontrak Rumah 2026–2027');
 
+-- Semua sub-kelompok ini ditanggung komponen HPP Operasional (keputusan user 16 Nov 2026)
+UPDATE public.overhead_sub
+SET hpp_komponen_id = (SELECT id FROM public.hpp_komponen WHERE tenant_id = 'STX-001' AND nama = 'Operasional')
+WHERE tenant_id = 'STX-001' AND nama IN ('Bensin', 'Gas (setrika uap)', 'Service Mesin', 'Perbaikan Gedung');
+
 CREATE OR REPLACE FUNCTION public.get_biaya_overhead(
   p_tenant_id text, p_dari date, p_sampai date, p_po_mulai integer DEFAULT NULL)
 RETURNS TABLE(
