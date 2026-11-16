@@ -62,12 +62,19 @@ export default function RiwayatClient({ initialData }: { initialData: SuratJalan
             ) : (
               filteredData.map(sj => (
                 <tr key={sj.id} className="border-b border-[#2A2D31] hover:bg-[#0D0E10]/50 transition-colors">
-                  <td className="px-6 py-4 font-mono font-medium text-[#e8eaed]">{sj.nomor_sj}</td>
+                  <td className="px-6 py-4 font-mono font-medium text-[#e8eaed]">
+                    {sj.nomor_sj}
+                    {sj.jenis === 'kirim_ulang' && (
+                      <span className="block mt-1 w-fit font-sans text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border bg-purple-900/30 text-purple-300 border-purple-700/40">
+                        Kirim Ulang Reject
+                      </span>
+                    )}
+                  </td>
                   <td className="px-6 py-4 text-[#e8eaed]">{sj.klien_nama}</td>
                   <td className="px-6 py-4 text-[#9aa0a6]">
                     {new Date(sj.tanggal).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' })}
                   </td>
-                  <td className="px-6 py-4 text-[#e8eaed]">{sj.total_bundle} <span className="text-[#9aa0a6] text-xs">Bundle</span></td>
+                  <td className="px-6 py-4 text-[#e8eaed]">{sj.total_bundle} <span className="text-[#9aa0a6] text-xs">{sj.jenis === 'kirim_ulang' ? 'Reject' : 'Bundle'}</span></td>
                   <td className="px-6 py-4 text-[#e8eaed]">{sj.total_qty} <span className="text-[#9aa0a6] text-xs">Pcs</span></td>
                   <td className="px-6 py-4 text-center">
                     <span className="inline-block px-2 py-1 text-[10px] font-bold tracking-widest uppercase rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">

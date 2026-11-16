@@ -14,6 +14,11 @@ export type { InvoiceRow, InvoiceDetail, InvoicePembayaran } from './invoice.typ
 const TENANT_ID = 'STX-001';
 const REVALIDATE = '/app/keuangan/invoice';
 
+/** Tagihan bersih = total barang − potongan reject kantor yang belum dikirim ulang. */
+function nettoInvoice(inv: { total_nilai: unknown; potongan_reject?: unknown }): number {
+  return Math.max(Number(inv.total_nilai ?? 0) - Number(inv.potongan_reject ?? 0), 0);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // GET LIST
 // ─────────────────────────────────────────────────────────────────────────────
@@ -28,7 +33,7 @@ export async function getInvoiceList(filters?: {
 
   let query = supabase
     .from('invoice')
-    .select('id, nomor_invoice, tanggal, tanggal_jatuh_tempo, surat_jalan_id, klien_id, total_nilai, total_bayar, status, catatan, created_at')
+    .select('id, nomor_invoice, tanggal, tanggal_jatuh_tempo, surat_jalan_id, klien_id, total_nilai, potongan_reject, total_bayar, status, catatan, created_at')
     .eq('tenant_id', TENANT_ID)
     .order('created_at', { ascending: false });
 
@@ -96,8 +101,10 @@ export async function getInvoiceList(filters?: {
     klien_id:           inv.klien_id,
     klien_nama:         klienMap[inv.klien_id] ?? '-',
     total_nilai:        Number(inv.total_nilai),
+    potongan_reject:    Number(inv.potongan_reject ?? 0),
+    total_netto:        nettoInvoice(inv),
     total_bayar:        Number(inv.total_bayar),
-    sisa:               Number(inv.total_nilai) - Number(inv.total_bayar),
+    sisa:               nettoInvoice(inv) - Number(inv.total_bayar),
     status:             inv.status,
     catatan:            inv.catatan ?? null,
     created_at:         inv.created_at,
@@ -115,7 +122,7 @@ export async function getInvoiceDetail(id: string): Promise<InvoiceDetail | null
   const [invRes, bayarRes] = await Promise.all([
     supabase
       .from('invoice')
-      .select('id, nomor_invoice, tanggal, tanggal_jatuh_tempo, surat_jalan_id, klien_id, total_nilai, total_bayar, status, catatan, created_at')
+      .select('id, nomor_invoice, tanggal, tanggal_jatuh_tempo, surat_jalan_id, klien_id, total_nilai, potongan_reject, total_bayar, status, catatan, created_at')
       .eq('id', id)
       .eq('tenant_id', TENANT_ID)
       .single(),
@@ -168,8 +175,10 @@ export async function getInvoiceDetail(id: string): Promise<InvoiceDetail | null
     klien_id:           inv.klien_id,
     klien_nama:         (klienData as any)?.nama ?? '-',
     total_nilai:        Number(inv.total_nilai),
+    potongan_reject:    Number(inv.potongan_reject ?? 0),
+    total_netto:        nettoInvoice(inv),
     total_bayar:        Number(inv.total_bayar),
-    sisa:               Number(inv.total_nilai) - Number(inv.total_bayar),
+    sisa:               nettoInvoice(inv) - Number(inv.total_bayar),
     status:             inv.status,
     catatan:            inv.catatan ?? null,
     created_at:         inv.created_at,
@@ -245,14 +254,14 @@ export async function addPembayaran(
   // Pastikan invoice tidak overpay
   const { data: inv } = await supabase
     .from('invoice')
-    .select('total_nilai, total_bayar, status')
+    .select('total_nilai, potongan_reject, total_bayar, status')
     .eq('id', input.invoice_id)
     .single();
 
   if (!inv) return { success: false, error: 'Invoice tidak ditemukan.' };
   if (inv.status === 'lunas') return { success: false, error: 'Invoice sudah lunas.' };
 
-  const sisa = Number(inv.total_nilai) - Number(inv.total_bayar);
+  const sisa = nettoInvoice(inv) - Number(inv.total_bayar);
   if (input.jumlah > sisa)
     return { success: false, error: `Jumlah melebihi sisa tagihan (${sisa.toLocaleString('id-ID')}).` };
 
@@ -271,7 +280,7 @@ export async function addPembayaran(
   // Update invoice.total_bayar dan status secara eksplisit
   // (sebagai safety net — DB trigger juga menangani ini)
   const newTotalBayar = Number(inv.total_bayar) + input.jumlah;
-  const newStatus     = newTotalBayar >= Number(inv.total_nilai) ? 'lunas'
+  const newStatus     = newTotalBayar >= nettoInvoice(inv) ? 'lunas'
                       : newTotalBayar > 0                        ? 'dp'
                       :                                            'belum_bayar';
   await supabase
@@ -325,13 +334,13 @@ export async function deletePembayaran(
       .eq('tenant_id', TENANT_ID),
     supabase
       .from('invoice')
-      .select('total_nilai')
+      .select('total_nilai, potongan_reject')
       .eq('id', bayar.invoice_id)
       .single(),
   ]);
 
   const newTotalBayar = (remaining ?? []).reduce((s: number, p: any) => s + Number(p.jumlah), 0);
-  const totalNilai    = Number((inv as any)?.total_nilai ?? 0);
+  const totalNilai    = inv ? nettoInvoice(inv as any) : 0;
   const newStatus     = newTotalBayar === 0   ? 'belum_bayar'
                       : newTotalBayar >= totalNilai ? 'lunas'
                       :                              'dp';

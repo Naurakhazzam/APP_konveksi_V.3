@@ -73,6 +73,8 @@ export interface SuratJalanRow {
   total_bundle: number;
   total_qty: number;
   created_at: string;
+  /** 'kirim_ulang' = surat jalan pengiriman ulang barang reject kantor. */
+  jenis: 'normal' | 'kirim_ulang';
 }
 
 export interface SuratJalanDetail {
@@ -83,6 +85,7 @@ export interface SuratJalanDetail {
   klien_id: string;
   klien_nama: string;
   klien_alamat: string | null;
+  jenis: 'normal' | 'kirim_ulang';
   items: SuratJalanDetailItem[];
 }
 
@@ -97,6 +100,9 @@ export interface SuratJalanDetailItem {
   qty_kirim: number;
   /** Total pcs yang jadi di bundle ini — batas atas qty kirim saat diedit. */
   qty_jadi: number;
+  /** SJ kirim ulang: nomor reject & SJ asal barang ini. */
+  nomor_reject?: string;
+  nomor_sj_asal?: string;
 }
 
 export async function getBundlesReadyToShip(): Promise<BundleReadyToShip[]> {
@@ -218,8 +224,10 @@ export async function getSuratJalanList(): Promise<SuratJalanRow[]> {
       status,
       catatan,
       created_at,
+      jenis,
       klien:klien_id (nama),
-      surat_jalan_item (qty_kirim)
+      surat_jalan_item (qty_kirim),
+      kirim_ulang_item (qty)
     `)
     .eq('tenant_id', TENANT_ID)
     .order('created_at', { ascending: false });
@@ -230,9 +238,10 @@ export async function getSuratJalanList(): Promise<SuratJalanRow[]> {
   }
 
   return (data || []).map((sj: any) => {
-    const items = sj.surat_jalan_item || [];
+    const kirimUlang = sj.jenis === 'kirim_ulang';
+    const items = kirimUlang ? (sj.kirim_ulang_item || []) : (sj.surat_jalan_item || []);
     const totalBundle = items.length;
-    const totalQty = items.reduce((sum: number, it: any) => sum + (it.qty_kirim || 0), 0);
+    const totalQty = items.reduce((sum: number, it: any) => sum + ((kirimUlang ? it.qty : it.qty_kirim) || 0), 0);
 
     return {
       id: sj.id,
@@ -244,6 +253,7 @@ export async function getSuratJalanList(): Promise<SuratJalanRow[]> {
       total_bundle: totalBundle,
       total_qty: totalQty,
       created_at: sj.created_at,
+      jenis: kirimUlang ? 'kirim_ulang' : 'normal',
     };
   });
 }
@@ -259,7 +269,19 @@ export async function getSuratJalanDetail(id: string): Promise<SuratJalanDetail 
       tanggal,
       catatan,
       klien_id,
+      jenis,
       klien:klien_id (nama, alamat),
+      kirim_ulang_item (
+        id,
+        qty,
+        urutan,
+        reject_kantor:reject_kantor_id (
+          nomor_reject,
+          surat_jalan:surat_jalan_id (nomor_sj),
+          produk:produk_id (nama, model_produk:model_id (nama)),
+          bundle:bundle_id (id, barcode, po:po_id (no_po), po_item:po_item_id (warna, size))
+        )
+      ),
       surat_jalan_item (
         id,
         qty_kirim,
@@ -289,9 +311,34 @@ export async function getSuratJalanDetail(id: string): Promise<SuratJalanDetail 
     return null;
   }
 
+  const isKirimUlang = (data as any).jenis === 'kirim_ulang';
+  const one = (v: any) => (Array.isArray(v) ? v[0] : v) ?? null;
+
+  // SJ kirim ulang: isinya barang reject yang sudah diperbaiki (kirim_ulang_item).
+  const itemsKirimUlang: SuratJalanDetailItem[] = [...(((data as any).kirim_ulang_item) || [])]
+    .sort((a: any, b: any) => (a.urutan ?? 0) - (b.urutan ?? 0))
+    .map((it: any) => {
+      const rk = one(it.reject_kantor);
+      const produk = one(rk?.produk);
+      const bundle = one(rk?.bundle);
+      return {
+        surat_jalan_item_id: it.id,
+        bundle_id: bundle?.id ?? '',
+        barcode: bundle?.barcode ?? rk?.nomor_reject ?? '-',
+        no_po: one(bundle?.po)?.no_po ?? one(rk?.surat_jalan)?.nomor_sj ?? '-',
+        model_nama: one(produk?.model_produk)?.nama ?? produk?.nama ?? null,
+        warna: one(bundle?.po_item)?.warna ?? produk?.nama ?? '-',
+        size: one(bundle?.po_item)?.size ?? '',
+        qty_kirim: it.qty,
+        qty_jadi: it.qty,
+        nomor_reject: rk?.nomor_reject ?? '-',
+        nomor_sj_asal: one(rk?.surat_jalan)?.nomor_sj ?? '-',
+      };
+    });
+
   // Tampilkan sesuai urutan pencentangan saat surat jalan dibuat. PostgREST
   // tidak menjamin urutan baris anak, jadi diurutkan di sini.
-  const items = [...(data.surat_jalan_item || [])]
+  const items = isKirimUlang ? itemsKirimUlang : [...(data.surat_jalan_item || [])]
     .sort((a: any, b: any) => (a.urutan ?? 0) - (b.urutan ?? 0))
     .map((it: any) => {
     const b = it.bundle;
@@ -321,6 +368,7 @@ export async function getSuratJalanDetail(id: string): Promise<SuratJalanDetail 
     klien_id: data.klien_id,
     klien_nama: (Array.isArray(data.klien) ? data.klien[0]?.nama : (data.klien as any)?.nama) || 'Unknown',
     klien_alamat: (Array.isArray(data.klien) ? data.klien[0]?.alamat : (data.klien as any)?.alamat) || null,
+    jenis: isKirimUlang ? 'kirim_ulang' : 'normal',
     items,
   };
 }

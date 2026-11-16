@@ -46,6 +46,9 @@ export default function PrintSuratJalanLayout({ detail }: { detail: SuratJalanDe
       <div className="flex items-end justify-between border-b border-black pb-1 mb-1">
         <div>
           <h1 className="text-[12px] font-bold tracking-wide uppercase leading-none">Surat Jalan</h1>
+          {detail.jenis === 'kirim_ulang' && (
+            <p className="text-[8px] font-bold uppercase">Kirim Ulang Barang Reject</p>
+          )}
           <p className="text-[8px]">Stitchlyx Syncore</p>
         </div>
         <div className="text-right">
@@ -64,7 +67,7 @@ export default function PrintSuratJalanLayout({ detail }: { detail: SuratJalanDe
         <thead>
           <tr>
             <th className={`${cell} w-[14px] text-center`}>No</th>
-            <th className={`${cell} text-left`}>No PO</th>
+            <th className={`${cell} text-left`}>{detail.jenis === 'kirim_ulang' ? 'Reject / SJ Asal' : 'No PO'}</th>
             <th className={`${cell} text-left`}>Model</th>
             <th className={`${cell} text-left`}>Warna / Size</th>
             <th className={`${cell} text-right w-[32px]`}>Qty</th>
@@ -76,7 +79,7 @@ export default function PrintSuratJalanLayout({ detail }: { detail: SuratJalanDe
               <td className={`${cell} text-center`}>{idx + 1}</td>
               <td className={cell}>{item.no_po}</td>
               <td className={cell}>{item.model_nama || '-'}</td>
-              <td className={cell}>{item.warna} / {item.size}</td>
+              <td className={cell}>{item.warna}{item.size ? ` / ${item.size}` : ''}</td>
               <td className={`${cell} text-right font-medium`}>{item.qty_kirim}</td>
             </tr>
           ))}

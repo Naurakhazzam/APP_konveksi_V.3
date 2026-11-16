@@ -30,6 +30,9 @@ export interface SuratJalanItemValidasi {
   qty_kirim: number;
   qty_diterima: number | null;  // null = belum divalidasi
   harga_satuan: number;         // dari po_item.harga_satuan
+  /** Hanya untuk SJ kirim ulang: nomor reject & SJ asal yang dikirim ulang. */
+  nomor_reject?: string;
+  nomor_sj_asal?: string;
 }
 
 export interface SuratJalanSiapValidasi {
@@ -40,6 +43,8 @@ export interface SuratJalanSiapValidasi {
   total_bundle: number;
   total_qty_kirim: number;
   status: string;
+  /** 'kirim_ulang' = kiriman ulang barang reject (isi = kirim_ulang_item). */
+  jenis: 'normal' | 'kirim_ulang';
   items: SuratJalanItemValidasi[];
 }
 
@@ -47,6 +52,10 @@ export interface ValidasiItemInput {
   surat_jalan_item_id: string;
   qty_diterima: number;
   alasan_reject_id?: string | null;  // diperlukan jika qty kurang
+  /** Pcs yang sampai tapi cacat → diretur ke konveksi (memotong tagihan). */
+  qty_reject?: number;
+  reject_alasan_id?: string | null;
+  reject_keterangan?: string | null;
 }
 
 export interface ValidasiResult {
@@ -72,8 +81,21 @@ export async function getSuratJalanSiapValidasi(): Promise<SuratJalanSiapValidas
       nomor_sj,
       tanggal,
       status,
+      jenis,
       tanggal_validasi,
       klien:klien_id (nama),
+      kirim_ulang_item (
+        id,
+        qty,
+        qty_diterima,
+        urutan,
+        reject_kantor:reject_kantor_id (
+          nomor_reject,
+          surat_jalan:surat_jalan_id (nomor_sj),
+          produk:produk_id (nama),
+          bundle:bundle_id (barcode, po:po_id (no_po), po_item:po_item_id (warna, size))
+        )
+      ),
       surat_jalan_item (
         id,
         qty_kirim,
@@ -101,9 +123,31 @@ export async function getSuratJalanSiapValidasi(): Promise<SuratJalanSiapValidas
   if (error) throw new Error(`Gagal memuat SJ siap validasi: ${error.message}`);
 
   return (data ?? []).map((sj: any) => {
+    const jenis: 'normal' | 'kirim_ulang' = sj.jenis === 'kirim_ulang' ? 'kirim_ulang' : 'normal';
+
     // Samakan urutannya dengan surat jalan yang dicetak, supaya petugas
     // validasi mencocokkan baris demi baris tanpa perlu mencari-cari.
-    const items: SuratJalanItemValidasi[] = [...(sj.surat_jalan_item ?? [])]
+    const items: SuratJalanItemValidasi[] = jenis === 'kirim_ulang'
+      ? [...(sj.kirim_ulang_item ?? [])]
+          .sort((a: any, b: any) => (a.urutan ?? 0) - (b.urutan ?? 0))
+          .map((it: any) => {
+            const rk = it.reject_kantor;
+            return {
+              surat_jalan_item_id: it.id,
+              bundle_id: '',
+              barcode: rk?.bundle?.barcode ?? '-',
+              no_po: rk?.bundle?.po?.no_po ?? '-',
+              model_nama: rk?.produk?.nama ?? null,
+              warna: rk?.bundle?.po_item?.warna ?? '',
+              size: rk?.bundle?.po_item?.size ?? '',
+              qty_kirim: it.qty ?? 0,
+              qty_diterima: it.qty_diterima ?? null,
+              harga_satuan: 0,
+              nomor_reject: rk?.nomor_reject ?? '-',
+              nomor_sj_asal: rk?.surat_jalan?.nomor_sj ?? '-',
+            };
+          })
+      : [...(sj.surat_jalan_item ?? [])]
       .sort((a: any, b: any) => (a.urutan ?? 0) - (b.urutan ?? 0))
       .map((it: any) => {
       const b = it.bundle;
@@ -128,6 +172,7 @@ export async function getSuratJalanSiapValidasi(): Promise<SuratJalanSiapValidas
       nomor_sj: sj.nomor_sj,
       tanggal: sj.tanggal,
       status: sj.status,
+      jenis,
       klien_nama: sj.klien?.nama ?? 'Unknown',
       total_bundle: items.length,
       total_qty_kirim,
@@ -163,6 +208,37 @@ export async function submitValidasiPengiriman(
 
   revalidatePath(REVALIDATE_PATH);
   revalidatePath('/app/pengiriman/riwayat');
+  revalidatePath('/app/pengiriman/reject-kantor');
+  revalidatePath('/app/keuangan/invoice');
+
+  return data as ValidasiResult;
+}
+
+// ─── 2b. submitValidasiKirimUlang ─────────────────────────────────────────────
+
+/** Validasi SJ kirim ulang (barang reject yang sudah diperbaiki). */
+export async function submitValidasiKirimUlang(
+  surat_jalan_id: string,
+  items: { kirim_ulang_item_id: string; qty_diterima: number }[],
+  catatan: string,
+): Promise<ValidasiResult> {
+  const userId = await resolveUserId();
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.rpc('validasi_kirim_ulang', {
+    p_surat_jalan_id: surat_jalan_id,
+    p_items: items,
+    p_catatan: catatan || null,
+    p_user_id: userId,
+    p_tenant_id: TENANT_ID,
+  });
+
+  if (error) throw new Error(`Gagal submit validasi: ${error.message}`);
+
+  revalidatePath(REVALIDATE_PATH);
+  revalidatePath('/app/pengiriman/riwayat');
+  revalidatePath('/app/pengiriman/reject-kantor');
+  revalidatePath('/app/keuangan/invoice');
 
   return data as ValidasiResult;
 }

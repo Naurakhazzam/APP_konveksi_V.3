@@ -13,6 +13,7 @@ import type {
 } from '@/lib/actions/pengiriman/validasi-pengiriman.actions';
 import {
   submitValidasiPengiriman,
+  submitValidasiKirimUlang,
   approveQtyLebihPengiriman,
 } from '@/lib/actions/pengiriman/validasi-pengiriman.actions';
 import type { AlasanRejectOption } from '@/lib/actions/produksi/reject.actions';
@@ -183,7 +184,11 @@ function ValidasiForm({
   });
   // alasan per item (untuk yang kurang)
   const [alasans, setAlasans] = useState<Record<string, string>>({});
+  // reject saat terima: barang sampai tapi cacat → diretur ke konveksi
+  const [rejectQty, setRejectQty] = useState<Record<string, number>>({});
+  const [rejectAlasan, setRejectAlasan] = useState<Record<string, string>>({});
   const [catatan, setCatatan] = useState('');
+  const isKirimUlang = sj.jenis === 'kirim_ulang';
   const [submitting, setSubmitting] = useState(false);
 
   // Pending approval queue setelah submit
@@ -196,8 +201,51 @@ function ValidasiForm({
   };
 
   const hasAnyKurang = sj.items.some(it => selisih(it.surat_jalan_item_id, it.qty_kirim) < 0);
+  const totalReject = sj.items.reduce((s, it) => s + (rejectQty[it.surat_jalan_item_id] ?? 0), 0);
+
+  const handleSubmitKirimUlang = async () => {
+    const lebih = sj.items.find(it => (qtys[it.surat_jalan_item_id] ?? it.qty_kirim) > it.qty_kirim);
+    if (lebih) {
+      toast.error(`Qty diterima ${lebih.nomor_reject} tidak boleh melebihi ${lebih.qty_kirim} pcs`);
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await submitValidasiKirimUlang(
+        sj.id,
+        sj.items.map(it => ({
+          kirim_ulang_item_id: it.surat_jalan_item_id,
+          qty_diterima: qtys[it.surat_jalan_item_id] ?? it.qty_kirim,
+        })),
+        catatan,
+      );
+      toast.success('Validasi kirim ulang disimpan — potongan tagihan disesuaikan.');
+      onDone();
+    } catch (err: any) {
+      toast.error(err.message || 'Gagal submit validasi');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const handleSubmit = async () => {
+    if (isKirimUlang) return handleSubmitKirimUlang();
+
+    // Validasi: reject tidak boleh melebihi yang diterima & wajib alasan
+    for (const it of sj.items) {
+      const rq = rejectQty[it.surat_jalan_item_id] ?? 0;
+      if (rq <= 0) continue;
+      const diterima = qtys[it.surat_jalan_item_id] ?? it.qty_kirim;
+      if (rq > diterima) {
+        toast.error(`${it.barcode}: reject ${rq} pcs melebihi yang diterima (${diterima} pcs)`);
+        return;
+      }
+      if (!rejectAlasan[it.surat_jalan_item_id]) {
+        toast.error(`${it.barcode}: pilih alasan reject`);
+        return;
+      }
+    }
+
     // Validasi: item kurang wajib pilih alasan
     const missingAlasan = sj.items.filter(it => {
       const s = selisih(it.surat_jalan_item_id, it.qty_kirim);
@@ -214,6 +262,8 @@ function ValidasiForm({
         surat_jalan_item_id: it.surat_jalan_item_id,
         qty_diterima: qtys[it.surat_jalan_item_id] ?? it.qty_kirim,
         alasan_reject_id: alasans[it.surat_jalan_item_id] ?? null,
+        qty_reject: rejectQty[it.surat_jalan_item_id] ?? 0,
+        reject_alasan_id: rejectAlasan[it.surat_jalan_item_id] ?? null,
       }));
 
       const result = await submitValidasiPengiriman(sj.id, items, catatan);
@@ -289,13 +339,19 @@ function ValidasiForm({
           <table className="w-full text-sm text-left">
             <thead className="text-[10px] text-[#9aa0a6] uppercase bg-[#0D0E10] border-b border-[#2A2D31]">
               <tr>
-                <th className="px-3 py-2.5">Barcode</th>
+                <th className="px-3 py-2.5">{isKirimUlang ? 'No. Reject / SJ Asal' : 'Barcode'}</th>
                 <th className="px-3 py-2.5">Model / Warna / Size</th>
                 <th className="px-3 py-2.5">PO</th>
                 <th className="px-3 py-2.5 text-right">Qty Kirim</th>
                 <th className="px-3 py-2.5 text-center w-28">Qty Diterima</th>
                 <th className="px-3 py-2.5 text-center">Selisih</th>
-                <th className="px-3 py-2.5">Alasan (jika kurang)</th>
+                {!isKirimUlang && <th className="px-3 py-2.5">Alasan (jika kurang)</th>}
+                {!isKirimUlang && (
+                  <th className="px-3 py-2.5 min-w-[180px]">
+                    Reject / Cacat
+                    <span className="block normal-case font-normal text-[9px] text-[#9aa0a6]/70">diterima tapi diretur</span>
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody className="divide-y divide-[#2A2D31]/60">
@@ -310,11 +366,20 @@ function ValidasiForm({
                 return (
                   <tr key={it.surat_jalan_item_id} className={`transition-colors ${rowBg}`}>
                     <td className="px-3 py-2">
-                      <span className="font-mono text-xs text-[#9aa0a6]">{it.barcode}</span>
+                      {isKirimUlang ? (
+                        <>
+                          <div className="font-mono text-xs text-[#e5c17b]">{it.nomor_reject}</div>
+                          <div className="font-mono text-[10px] text-[#9aa0a6]">dari {it.nomor_sj_asal}</div>
+                        </>
+                      ) : (
+                        <span className="font-mono text-xs text-[#9aa0a6]">{it.barcode}</span>
+                      )}
                     </td>
                     <td className="px-3 py-2">
                       <div className="text-xs font-medium text-[#e8eaed]">{it.model_nama || '-'}</div>
-                      <div className="text-[10px] text-[#9aa0a6]">{it.warna} · {it.size}</div>
+                      {(it.warna || it.size) && (
+                        <div className="text-[10px] text-[#9aa0a6]">{it.warna} · {it.size}</div>
+                      )}
                     </td>
                     <td className="px-3 py-2">
                       <span className="text-[10px] font-mono text-[#e5c17b]">{it.no_po}</span>
@@ -326,6 +391,7 @@ function ValidasiForm({
                       <input
                         type="number"
                         min={0}
+                        max={isKirimUlang ? it.qty_kirim : undefined}
                         value={qtys[it.surat_jalan_item_id] ?? it.qty_kirim}
                         onChange={e => setQtys(prev => ({
                           ...prev,
@@ -337,6 +403,7 @@ function ValidasiForm({
                     <td className="px-3 py-2 text-center">
                       <SelisihCell kirim={it.qty_kirim} diterima={qtys[it.surat_jalan_item_id] ?? it.qty_kirim} />
                     </td>
+                    {!isKirimUlang && (
                     <td className="px-3 py-2">
                       {s < 0 ? (
                         <select
@@ -358,6 +425,44 @@ function ValidasiForm({
                         <span className="text-[10px] text-[#9aa0a6]">—</span>
                       )}
                     </td>
+                    )}
+                    {!isKirimUlang && (
+                      <td className="px-3 py-2">
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="number"
+                            min={0}
+                            placeholder="0"
+                            value={rejectQty[it.surat_jalan_item_id] || ''}
+                            onChange={e => setRejectQty(prev => ({
+                              ...prev,
+                              [it.surat_jalan_item_id]: Math.max(0, parseInt(e.target.value) || 0),
+                            }))}
+                            className={`w-14 bg-[#0D0E10] border text-[#e8eaed] rounded-lg px-2 py-1.5 text-xs text-center focus:outline-none transition-colors ${
+                              (rejectQty[it.surat_jalan_item_id] ?? 0) > 0 ? 'border-orange-600/60 focus:border-orange-400' : 'border-[#2A2D31] focus:border-[#e5c17b]'
+                            }`}
+                          />
+                          <span className="text-[10px] text-[#9aa0a6]">pcs</span>
+                        </div>
+                        {(rejectQty[it.surat_jalan_item_id] ?? 0) > 0 && (
+                          <select
+                            value={rejectAlasan[it.surat_jalan_item_id] ?? ''}
+                            onChange={e => setRejectAlasan(prev => ({
+                              ...prev,
+                              [it.surat_jalan_item_id]: e.target.value,
+                            }))}
+                            className="mt-1.5 w-full bg-[#0D0E10] border border-orange-800/40 text-[#e8eaed] rounded-lg px-2 py-1.5 text-[10px] focus:outline-none focus:border-orange-500 transition-colors"
+                          >
+                            <option value="">— Alasan reject —</option>
+                            {alasanList.map(a => (
+                              <option key={a.id} value={a.id}>
+                                {a.jenis_nama} — {a.nama}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      </td>
+                    )}
                   </tr>
                 );
               })}
@@ -379,14 +484,34 @@ function ValidasiForm({
               className="w-full bg-[#0D0E10] border border-[#2A2D31] text-[#e8eaed] rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#e5c17b] transition-colors"
             />
           </div>
-          {hasAnyKurang && (
-            <div className="flex items-start gap-2 bg-red-950/20 border border-red-800/30 rounded-xl p-3">
-              <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-              <p className="text-xs text-red-300">
-                Item dengan qty kurang akan dicatat sebagai <strong>reject pengiriman</strong> dengan alasan yang dipilih.
-              </p>
-            </div>
-          )}
+          <div className="space-y-2">
+            {isKirimUlang && (
+              <div className="flex items-start gap-2 bg-blue-950/20 border border-blue-800/30 rounded-xl p-3">
+                <AlertTriangle className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
+                <p className="text-xs text-blue-300">
+                  Ini <strong>kiriman ulang barang reject</strong> yang sudah diperbaiki. Pcs yang diterima
+                  membatalkan potongan tagihan di surat jalan asalnya.
+                </p>
+              </div>
+            )}
+            {hasAnyKurang && !isKirimUlang && (
+              <div className="flex items-start gap-2 bg-red-950/20 border border-red-800/30 rounded-xl p-3">
+                <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                <p className="text-xs text-red-300">
+                  Item dengan qty kurang akan dicatat sebagai <strong>reject pengiriman</strong> dengan alasan yang dipilih.
+                </p>
+              </div>
+            )}
+            {totalReject > 0 && (
+              <div className="flex items-start gap-2 bg-orange-950/20 border border-orange-800/30 rounded-xl p-3">
+                <AlertTriangle className="w-4 h-4 text-orange-400 shrink-0 mt-0.5" />
+                <p className="text-xs text-orange-300">
+                  <strong>{totalReject} pcs reject</strong> akan diretur ke konveksi dan <strong>memotong tagihan</strong> surat jalan ini
+                  sampai barangnya dikirim ulang.
+                </p>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Submit button */}
@@ -445,6 +570,11 @@ function SJCard({
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="font-bold text-[#e8eaed] text-sm">{sj.nomor_sj}</span>
+              {sj.jenis === 'kirim_ulang' && (
+                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border bg-purple-900/30 text-purple-300 border-purple-700/40">
+                  Kirim Ulang Reject
+                </span>
+              )}
               <StatusBadge status={done ? 'tervalidasi' : sj.status} />
             </div>
             <div className="text-[10px] text-[#9aa0a6] mt-0.5">
@@ -452,7 +582,7 @@ function SJCard({
               <span className="mx-1.5 text-[#2A2D31]">·</span>
               {new Date(sj.tanggal).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}
               <span className="mx-1.5 text-[#2A2D31]">·</span>
-              {sj.total_bundle} bundle · {sj.total_qty_kirim} pcs
+              {sj.total_bundle} {sj.jenis === 'kirim_ulang' ? 'reject' : 'bundle'} · {sj.total_qty_kirim} pcs
             </div>
           </div>
         </div>

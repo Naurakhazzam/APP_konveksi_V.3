@@ -33,8 +33,16 @@ export default async function DetailSuratJalanPage({ params }: { params: Promise
               &larr; Kembali ke Riwayat
             </Link>
             <div className="flex items-center gap-3">
-              <TambahItemButton sjId={detail.id} nomorSj={detail.nomor_sj} klienId={detail.klien_id} />
-              <EditItemButton sjId={detail.id} items={detail.items} />
+              {detail.jenis === 'kirim_ulang' ? (
+                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded border bg-purple-900/30 text-purple-300 border-purple-700/40">
+                  Kirim Ulang Reject
+                </span>
+              ) : (
+                <>
+                  <TambahItemButton sjId={detail.id} nomorSj={detail.nomor_sj} klienId={detail.klien_id} />
+                  <EditItemButton sjId={detail.id} items={detail.items} />
+                </>
+              )}
               <PrintButton />
             </div>
           </div>
@@ -74,7 +82,7 @@ export default async function DetailSuratJalanPage({ params }: { params: Promise
               <table className="w-full text-sm text-left">
                 <thead className="text-xs text-[#9aa0a6] uppercase bg-[#0D0E10] border-b border-[#2A2D31]">
                   <tr>
-                    <th className="px-6 py-4">Barcode</th>
+                    <th className="px-6 py-4">{detail.jenis === 'kirim_ulang' ? 'No. Reject / SJ Asal' : 'Barcode'}</th>
                     <th className="px-6 py-4">Item Info</th>
                     <th className="px-6 py-4">Warna / Size</th>
                     <th className="px-6 py-4 text-right">QTY Kirim</th>
@@ -83,13 +91,20 @@ export default async function DetailSuratJalanPage({ params }: { params: Promise
                 <tbody>
                   {detail.items.map((item, idx) => (
                     <tr key={idx} className="border-b border-[#2A2D31] hover:bg-[#0D0E10]/50 transition-colors">
-                      <td className="px-6 py-4 font-mono text-xs text-[#e8eaed]">{item.barcode}</td>
+                      <td className="px-6 py-4 font-mono text-xs text-[#e8eaed]">
+                        {detail.jenis === 'kirim_ulang' ? (
+                          <>
+                            <div className="text-[#e5c17b]">{item.nomor_reject}</div>
+                            <div className="text-[10px] text-[#9aa0a6]">dari {item.nomor_sj_asal}</div>
+                          </>
+                        ) : item.barcode}
+                      </td>
                       <td className="px-6 py-4">
                         <div className="font-medium text-[#e8eaed]">{item.model_nama || '-'}</div>
                         <div className="text-xs text-[#9aa0a6]">PO: {item.no_po}</div>
                       </td>
                       <td className="px-6 py-4 text-[#e8eaed]">
-                        {item.warna} <span className="text-[#9aa0a6] mx-1">/</span> {item.size}
+                        {item.warna}{item.size && <><span className="text-[#9aa0a6] mx-1">/</span> {item.size}</>}
                       </td>
                       <td className="px-6 py-4 text-right font-medium text-[#e8eaed]">
                         {item.qty_kirim}

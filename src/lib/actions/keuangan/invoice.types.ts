@@ -27,6 +27,10 @@ export interface InvoiceRow {
   klien_id: string;
   klien_nama: string;
   total_nilai: number;
+  /** Potongan reject kantor yang belum dikirim ulang (Rp). */
+  potongan_reject: number;
+  /** total_nilai − potongan_reject — inilah yang ditagih. */
+  total_netto: number;
   total_bayar: number;
   sisa: number;
   status: InvoiceStatus;

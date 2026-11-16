@@ -68,6 +68,7 @@ const NAV_MENU = [
       { label: 'Buat Surat Jalan', path: '/app/pengiriman/buat-surat-jalan' },
       { label: 'Riwayat Kirim',    path: '/app/pengiriman/riwayat' },
       { label: 'Validasi Kirim',   path: '/app/pengiriman/validasi' },
+      { label: 'Reject Kantor',    path: '/app/pengiriman/reject-kantor' },
     ]
   },
   { 

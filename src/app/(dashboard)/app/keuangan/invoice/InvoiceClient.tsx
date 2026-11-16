@@ -91,7 +91,7 @@ export default function InvoiceClient({ initialInvoices, klienList, defaultBulan
   // ─── DERIVED ──────────────────────────────────────────────────────────────
 
   const totalPiutang      = tampil.filter(i => i.status !== 'lunas').reduce((s, i) => s + i.sisa, 0);
-  const totalLunas        = tampil.filter(i => i.status === 'lunas').reduce((s, i) => s + i.total_nilai, 0);
+  const totalLunas        = tampil.filter(i => i.status === 'lunas').reduce((s, i) => s + i.total_netto, 0);
   const jumlahOutstanding = tampil.filter(i => i.status !== 'lunas').length;
 
   // ─── FILTER ───────────────────────────────────────────────────────────────
@@ -324,7 +324,12 @@ export default function InvoiceClient({ initialInvoices, klienList, defaultBulan
                     {dateFmt(inv.tanggal)}
                   </TableCell>
                   <TableCell className="text-sm font-mono text-right text-[#e8eaed]">
-                    {idrFmt(inv.total_nilai)}
+                    {idrFmt(inv.total_netto)}
+                    {inv.potongan_reject > 0 && (
+                      <div className="text-[10px] font-normal text-red-400 whitespace-nowrap" title={`Nilai barang ${idrFmt(inv.total_nilai)} dikurangi reject kantor yang belum dikirim ulang`}>
+                        − {idrFmt(inv.potongan_reject)} reject
+                      </div>
+                    )}
                   </TableCell>
                   <TableCell className="text-sm font-mono text-right text-green-400">
                     {idrFmt(inv.total_bayar)}
@@ -446,6 +451,12 @@ export default function InvoiceClient({ initialInvoices, klienList, defaultBulan
                 <span className="text-[#9aa0a6] text-xs">Total Tagihan</span>
                 <span className="text-[#e8eaed] font-mono text-xs">{idrFmt(bayarInvoice.total_nilai)}</span>
               </div>
+              {bayarInvoice.potongan_reject > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-[#9aa0a6] text-xs">Potongan Reject Kantor</span>
+                  <span className="text-red-400 font-mono text-xs">− {idrFmt(bayarInvoice.potongan_reject)}</span>
+                </div>
+              )}
               <div className="flex justify-between">
                 <span className="text-[#9aa0a6] text-xs">Sudah Terbayar</span>
                 <span className="text-green-400 font-mono text-xs">{idrFmt(bayarInvoice.total_bayar)}</span>

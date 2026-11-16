@@ -25,6 +25,8 @@ const ALL_MENUS = [
   { group: 'Produksi',      path: '/app/produksi/approval-qty',        label: '└ Approval QTY' },
   { group: 'Pengiriman',    path: '/app/pengiriman/buat-surat-jalan',  label: '└ Buat Surat Jalan' },
   { group: 'Pengiriman',    path: '/app/pengiriman/riwayat',           label: '└ Riwayat Kirim' },
+  { group: 'Pengiriman',    path: '/app/pengiriman/validasi',          label: '└ Validasi Kirim' },
+  { group: 'Pengiriman',    path: '/app/pengiriman/reject-kantor',     label: '└ Reject Kantor' },
   { group: 'Penggajian',    path: '/app/penggajian/rekap-gaji',        label: '└ Rekap Gaji' },
   { group: 'Penggajian',    path: '/app/penggajian/kasbon',            label: '└ Kasbon' },
   { group: 'Penggajian',    path: '/app/penggajian/slip-gaji',         label: '└ Slip Gaji' },
