@@ -5,7 +5,8 @@ import { ChevronDown, ChevronRight, Info } from 'lucide-react';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow
 } from '@/components/ui/table';
-import type { ProyeksiSurplusData, StatusPO } from '@/lib/actions/keuangan/proyeksi-surplus.actions';
+import type { ProyeksiPO, ProyeksiSurplusData, StatusPO } from '@/lib/actions/keuangan/proyeksi-surplus.actions';
+import PoDetailDialog, { type PoDipilih } from './PoDetailDialog';
 
 const idr = (n: number) => 'Rp ' + Math.round(n).toLocaleString('id-ID');
 const idrTanda = (n: number) => (n < 0 ? '− ' : '+ ') + idr(Math.abs(n));
@@ -48,9 +49,12 @@ function Baris({ label, nilai, sub, tebal, warna, children }: {
   );
 }
 
-const Rinci = ({ label, nilai }: { label: string; nilai: number }) => (
+const Rinci = ({ label, nilai, onKlik }: { label: React.ReactNode; nilai: number; onKlik?: () => void }) => (
   <div className="flex justify-between text-xs text-[#9aa0a6]">
-    <span>{label}</span><span className="font-mono">{idr(nilai)}</span>
+    {onKlik
+      ? <button type="button" onClick={onKlik} className="text-left hover:text-[#e8eaed] hover:underline underline-offset-2 cursor-pointer">{label}</button>
+      : <span>{label}</span>}
+    <span className="font-mono">{idr(nilai)}</span>
   </div>
 );
 
@@ -78,6 +82,8 @@ const Judul = ({ children, sub }: { children: React.ReactNode; sub?: string }) =
 
 export default function ProyeksiSurplusClient({ data }: { data: ProyeksiSurplusData }) {
   const [tampilSemua, setTampilSemua] = useState(false);
+  const [poDipilih, setPoDipilih] = useState<PoDipilih | null>(null);
+  const buka = (p: ProyeksiPO) => () => setPoDipilih({ po_id: p.po_id, no_po: p.no_po, klien: p.klien });
   const totalMasuk = data.masuk.reduce((s, m) => s + m.nominal, 0);
   const totalKeluar = data.keluar.reduce((s, k) => s + k.nominal, 0);
   const totalPcs = data.po.reduce((s, p) => s + p.pcs, 0);
@@ -182,18 +188,18 @@ export default function ProyeksiSurplusClient({ data }: { data: ProyeksiSurplusD
           <Baris label="Sisa tagihan hasil potong" nilai={data.sisaTagihan} warna="text-green-400"
             sub={`Nilai jual ${idr(data.totalNilaiJual)} − sudah diterima dari klien ${idr(data.masukKlien)} (DP + pelunasan)`
               + (data.dpLebih > 0 ? ' — sudah tertutup DP' : '')}>
-            {data.po.map(p => <Rinci key={p.po_id} label={`${p.no_po} — ${p.pcs} pcs`} nilai={p.nilai_jual} />)}
+            {data.po.map(p => <Rinci key={p.po_id} label={`${p.no_po} — ${p.pcs} pcs`} nilai={p.nilai_jual} onKlik={buka(p)} />)}
           </Baris>
           {data.dpLebih > 0 && (
             <Baris label="DP titipan (lebih dari nilai hasil potong)" nilai={-data.dpLebih} warna="text-red-400"
               sub="Klien sudah bayar di depan untuk barang yang belum dipotong (mis. untuk beli bahan). Ini utang barang: nanti dibayar dengan hasil potong berikutnya, bukan dengan uang." />
           )}
           <Baris label="Upah sudah dikerjakan, belum dibayar" nilai={-data.upahBelumLunas} warna="text-red-400">
-            {data.po.filter(p => p.upah_belum_lunas).map(p => <Rinci key={p.po_id} label={p.no_po} nilai={p.upah_belum_lunas} />)}
+            {data.po.filter(p => p.upah_belum_lunas).map(p => <Rinci key={p.po_id} label={p.no_po} nilai={p.upah_belum_lunas} onKlik={buka(p)} />)}
           </Baris>
           <Baris label="Perkiraan upah tahap yang belum dikerjakan" nilai={-data.upahSisa} warna="text-red-400"
             sub="Tarif upah di HPP × pcs hasil potong, untuk tahap yang belum selesai">
-            {data.po.filter(p => p.upah_sisa).map(p => <Rinci key={p.po_id} label={p.no_po} nilai={p.upah_sisa} />)}
+            {data.po.filter(p => p.upah_sisa).map(p => <Rinci key={p.po_id} label={p.no_po} nilai={p.upah_sisa} onKlik={buka(p)} />)}
           </Baris>
           <div className="flex justify-between py-3">
             <span className="text-sm font-bold text-[#e8eaed] pl-5">= Proyeksi sisa</span>
@@ -257,7 +263,8 @@ export default function ProyeksiSurplusClient({ data }: { data: ProyeksiSurplusD
                 return (
                   <TableRow key={p.po_id} className="border-[#2A2D31] hover:bg-[#16181A]">
                     <TableCell className="text-sm text-[#e8eaed] font-mono whitespace-nowrap">
-                      {p.no_po}
+                      <button type="button" onClick={buka(p)}
+                        className="text-sky-300 hover:underline underline-offset-2 cursor-pointer">{p.no_po}</button>
                       <span className="block text-[10px] text-[#9aa0a6] font-sans">{p.klien}</span>
                     </TableCell>
                     <TableCell>
@@ -291,6 +298,7 @@ export default function ProyeksiSurplusClient({ data }: { data: ProyeksiSurplusD
           </Table>
         </div>
         <p className="text-[11px] text-[#5f6368] mt-2">
+          Klik nomor PO untuk melihat barangnya & posisi di tiap tahap.
           PO yang sudah terkirim semua & semua tahapnya selesai disembunyikan supaya daftar tidak menumpuk;
           angkanya tetap ikut dihitung di A, B, dan C.
         </p>
@@ -306,6 +314,7 @@ export default function ProyeksiSurplusClient({ data }: { data: ProyeksiSurplusD
           karena C memakai uang yang sudah keluar (termasuk bahan yang belum terpakai).
         </p>
       </div>
+      <PoDetailDialog po={poDipilih} onClose={() => setPoDipilih(null)} />
     </div>
   );
 }
