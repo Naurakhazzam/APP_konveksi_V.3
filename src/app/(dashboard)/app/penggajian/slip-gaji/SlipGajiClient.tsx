@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { 
   getGajiDetail, 
   getKasbon, 
@@ -22,11 +22,29 @@ import { tanggalWIB } from '@/lib/waktu';
 
 interface Props {
   karyawanList: { id: string; nama: string; gaji_pokok: number }[];
+  /** Dari link (mis. Buku Kas): karyawan yang langsung dipilih */
+  initialKaryawanId?: string;
+  /** Dari link: tanggal 'YYYY-MM-DD' di dalam pekan yang ingin ditampilkan */
+  initialTanggal?: string;
 }
 
-export default function SlipGajiClient({ karyawanList }: Props) {
-  const [selectedKaryawanId, setSelectedKaryawanId] = useState('');
-  const [weekOffset, setWeekOffset] = useState(0);
+/** Selisih pekan (siklus Sabtu–Jumat) antara pekan berisi `tanggal` dan pekan ini; ≤ 0 */
+function offsetPekan(tanggal: string): number {
+  const sabtuDari = (d: Date) => {
+    const s = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    s.setDate(s.getDate() - (s.getDay() === 6 ? 0 : s.getDay() + 1));
+    return s;
+  };
+  const [y, m, d] = tanggal.split('-').map(Number);
+  const selisihHari = Math.round((sabtuDari(new Date(y, m - 1, d)).getTime() - sabtuDari(new Date()).getTime()) / 86400000);
+  return Math.min(0, Math.round(selisihHari / 7));
+}
+
+export default function SlipGajiClient({ karyawanList, initialKaryawanId, initialTanggal }: Props) {
+  const [selectedKaryawanId, setSelectedKaryawanId] = useState(
+    initialKaryawanId && karyawanList.some(k => k.id === initialKaryawanId) ? initialKaryawanId : ''
+  );
+  const [weekOffset, setWeekOffset] = useState(() => (initialTanggal ? offsetPekan(initialTanggal) : 0));
   const [loading, setLoading] = useState(false);
   
   // Data State
@@ -91,6 +109,15 @@ export default function SlipGajiClient({ karyawanList }: Props) {
       setLoading(false);
     }
   };
+
+  // Dibuka dari link dengan karyawan terpilih → langsung tampilkan slipnya
+  const sudahOtomatis = useRef(false);
+  useEffect(() => {
+    if (sudahOtomatis.current || !initialKaryawanId || !selectedKaryawanId) return;
+    sudahOtomatis.current = true;
+    handleGenerate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handlePrint = () => {
     window.print();

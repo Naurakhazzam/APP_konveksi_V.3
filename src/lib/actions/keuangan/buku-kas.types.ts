@@ -18,6 +18,8 @@ export interface BukuKasEntry {
   dikunci: string | null;
   /** Baris dari Stok Masuk: nominal dikunci, tapi tanggal boleh diubah (LOT & jurnal ikut) */
   bisa_ubah_tanggal: boolean;
+  /** Baris otomatis pembayaran gaji: id karyawan (dari sumber_gaji) — dipakai untuk menyatukan tampilan */
+  karyawan_id_gaji: string | null;
   created_at: string;
 }
 

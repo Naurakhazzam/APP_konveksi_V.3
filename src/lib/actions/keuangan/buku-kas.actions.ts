@@ -14,6 +14,9 @@ export async function getBukuKasEntries(filters?: {
   bulan?: string;
   tahun?: string;
   tipe?: string;
+  /** Rentang tanggal 'YYYY-MM-DD' (dipakai unduh Excel); mengalahkan filter bulan/tahun */
+  dari?: string;
+  sampai?: string;
 }): Promise<BukuKasEntry[]> {
   const supabase = await createClient();
 
@@ -26,7 +29,10 @@ export async function getBukuKasEntries(filters?: {
 
   if (filters?.tipe) query = query.eq('tipe', filters.tipe);
 
-  if (filters?.tahun) {
+  if (filters?.dari || filters?.sampai) {
+    if (filters.dari) query = query.gte('tanggal', filters.dari);
+    if (filters.sampai) query = query.lte('tanggal', filters.sampai);
+  } else if (filters?.tahun) {
     const year = filters.tahun;
     if (filters?.bulan) {
       const month = filters.bulan.padStart(2, '0');
@@ -60,6 +66,10 @@ export async function getBukuKasEntries(filters?: {
     satuan: item.satuan ?? null,
     dikunci: alasanKunci(item),
     bisa_ubah_tanggal: !!item.inventory_batch_id && !item.sumber_gaji,
+    // sumber_gaji = 'gaji:<karyawan_id>:<tanggal bayar>'
+    karyawan_id_gaji: (typeof item.sumber_gaji === 'string' && item.sumber_gaji.startsWith('gaji:'))
+      ? item.sumber_gaji.split(':')[1] || null
+      : null,
     created_at: item.created_at,
   }));
 }
