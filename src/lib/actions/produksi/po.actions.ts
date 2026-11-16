@@ -209,6 +209,49 @@ export async function getSizeByModel(modelId: string): Promise<{ id: string; nam
   return Array.from(sizeMap.values()).sort((a, b) => a.urutan - b.urutan || a.nama.localeCompare(b.nama));
 }
 
+// 6b. getProdukMatrixByModel() — semua warna, size & produk satu model sekaligus (input PO bentuk tabel)
+export interface ProdukMatrix {
+  warna: { id: string; nama: string }[];
+  size: { id: string; nama: string }[];
+  /** key `${warna_id}|${size_id}` → produk_id */
+  produk: Record<string, string>;
+}
+
+export async function getProdukMatrixByModel(modelId: string): Promise<ProdukMatrix> {
+  const profile = await getCurrentUserProfile();
+  if (!profile) throw new Error('Unauthorized');
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('produk')
+    .select('id, warna:warna_id(id, nama), size:size_id(id, nama, urutan)')
+    .eq('model_id', modelId)
+    .eq('tenant_id', TENANT_ID)
+    .eq('aktif', true);
+
+  if (error) throw new Error(error.message);
+
+  type Row = { id: string; warna: { id: string; nama: string } | null; size: { id: string; nama: string; urutan: number } | null };
+  const warnaMap = new Map<string, { id: string; nama: string }>();
+  const sizeMap = new Map<string, { id: string; nama: string; urutan: number }>();
+  const produk: Record<string, string> = {};
+  for (const row of data as unknown as Row[]) {
+    if (!row.warna || !row.size) continue;
+    warnaMap.set(row.warna.id, { id: row.warna.id, nama: row.warna.nama });
+    sizeMap.set(row.size.id, row.size);
+    const key = `${row.warna.id}|${row.size.id}`;
+    if (!produk[key]) produk[key] = row.id;
+  }
+
+  return {
+    warna: Array.from(warnaMap.values()).sort((a, b) => a.nama.localeCompare(b.nama)),
+    size: Array.from(sizeMap.values())
+      .sort((a, b) => a.urutan - b.urutan || a.nama.localeCompare(b.nama))
+      .map(({ id, nama }) => ({ id, nama })),
+    produk,
+  };
+}
+
 // 7. getProdukId()
 export async function getProdukId(modelId: string, warnaId: string, sizeId: string): Promise<string | null> {
   const profile = await getCurrentUserProfile();

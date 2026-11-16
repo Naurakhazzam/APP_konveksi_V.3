@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Plus } from 'lucide-react';
-import { InputPoLineItem, type LineItemState } from './InputPoLineItem';
+import { InputPoModelBlock, cellKey, type ModelBlockState } from './InputPoModelBlock';
 import { createPoWithBundles, addItemsToExistingPo } from '@/lib/actions/produksi/po-mutations.actions';
 import { checkPoExists } from '@/lib/actions/produksi/po.actions';
 import type { CreatePoInput, AddItemsToPoInput } from '@/lib/validations/po.schemas';
@@ -38,9 +38,8 @@ export function InputPoForm({ defaultPoNumber, klienList, modelList }: Props) {
   const [tanggalTarget, setTanggalTarget] = useState('');
   const [catatan, setCatatan] = useState('');
 
-  const [items, setItems] = useState<LineItemState[]>([
-    { id: crypto.randomUUID(), model_id: '', warna_id: '', size_id: '', produk_id: null, warna_nama: '', size_nama: '', qty_order: 100, qty_per_bundle: 12 }
-  ]);
+  const newBlock = (): ModelBlockState => ({ id: crypto.randomUUID(), model_id: '', qty_per_bundle: 12, qty: {}, matrix: null });
+  const [blocks, setBlocks] = useState<ModelBlockState[]>(() => [newBlock()]);
 
   // Konfirmasi tambah artikel ke PO yang sudah ada
   const [appendConfirm, setAppendConfirm] = useState<{
@@ -48,41 +47,44 @@ export function InputPoForm({ defaultPoNumber, klienList, modelList }: Props) {
     klienNama: string | null;
   } | null>(null);
 
-  const handleItemChange = useCallback((index: number, updates: Partial<LineItemState>) => {
-    setItems(prev => {
-      const next = [...prev];
-      next[index] = { ...next[index], ...updates };
-      return next;
-    });
+  const handleBlockChange = useCallback((id: string, updates: Partial<ModelBlockState>) => {
+    setBlocks(prev => prev.map(b => (b.id === id ? { ...b, ...updates } : b)));
   }, []);
 
-  const handleAddItem = () => {
-    setItems(prev => [...prev, {
-      id: crypto.randomUUID(), model_id: '', warna_id: '', size_id: '', produk_id: null, warna_nama: '', size_nama: '', qty_order: 100, qty_per_bundle: 12
-    }]);
+  const handleAddBlock = () => setBlocks(prev => [...prev, newBlock()]);
+
+  const handleRemoveBlock = (id: string) => {
+    setBlocks(prev => (prev.length > 1 ? prev.filter(b => b.id !== id) : prev));
   };
 
-  const handleRemoveItem = (index: number) => {
-    if (items.length > 1) {
-      setItems(prev => prev.filter((_, i) => i !== index));
-    }
-  };
+  // Ratakan tabel warna × size jadi daftar artikel (1 sel terisi = 1 artikel)
+  const buildItems = () => blocks.flatMap(b => {
+    const m = b.matrix;
+    if (!b.model_id || !m) return [];
+    const isi = b.qty_per_bundle || 12;
+    return m.warna.flatMap(w => m.size.flatMap(sz => {
+      const qty = b.qty[cellKey(w.id, sz.id)] || 0;
+      const produk_id = m.produk[cellKey(w.id, sz.id)];
+      if (qty <= 0 || !produk_id) return [];
+      return [{
+        model_id: b.model_id,
+        warna_id: w.id,
+        size_id: sz.id,
+        produk_id,
+        warna: w.nama,
+        size: sz.nama,
+        qty_order: qty,
+        qty_per_bundle: isi,
+      }];
+    }));
+  });
 
-  const totalQty = items.reduce((sum, item) => sum + (item.qty_order || 0), 0);
-  const totalBundle = items.reduce((sum, item) => sum + Math.ceil((item.qty_order || 0) / (item.qty_per_bundle || 12)), 0);
+  const items = buildItems();
+  const totalQty = items.reduce((sum, i) => sum + i.qty_order, 0);
+  const totalBundle = items.reduce((sum, i) => sum + Math.ceil(i.qty_order / i.qty_per_bundle), 0);
+  const usedModelIds = blocks.map(b => b.model_id).filter(Boolean);
 
-  const isFormValid = noPo.trim() !== '' && klienId !== '' && items.every(i => i.produk_id !== null && (i.qty_order || 0) > 0);
-
-  const buildItems = () => items.map(i => ({
-    model_id: i.model_id,
-    warna_id: i.warna_id,
-    size_id: i.size_id,
-    produk_id: i.produk_id!,
-    warna: i.warna_nama,
-    size: i.size_nama,
-    qty_order: i.qty_order || 0,
-    qty_per_bundle: i.qty_per_bundle || 12,
-  }));
+  const isFormValid = noPo.trim() !== '' && klienId !== '' && items.length > 0;
 
   const goToMonitoring = () => {
     router.push('/app/produksi/monitoring');
@@ -106,7 +108,7 @@ export function InputPoForm({ defaultPoNumber, klienList, modelList }: Props) {
         }
         // PO aktif → minta konfirmasi tambah artikel
         setAppendConfirm({
-          payload: { no_po: noPo, items: buildItems() },
+          payload: { no_po: noPo, items },
           klienNama: check.klienNama,
         });
         setIsLoading(false);
@@ -120,7 +122,7 @@ export function InputPoForm({ defaultPoNumber, klienList, modelList }: Props) {
         tanggal_order: new Date(tanggalOrder).toISOString(),
         tanggal_target: tanggalTarget ? new Date(tanggalTarget).toISOString() : null,
         catatan: catatan || null,
-        items: buildItems(),
+        items,
       };
 
       await createPoWithBundles(payload);
@@ -217,48 +219,32 @@ export function InputPoForm({ defaultPoNumber, klienList, modelList }: Props) {
         <div className="p-4 bg-[#2A2D31]/20 border-b border-[#2A2D31]">
           <h3 className="text-sm font-semibold tracking-wide text-[#e5c17b]">DETAIL ARTIKEL</h3>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-[#9aa0a6]">
-            <thead className="bg-[#1E2124]/50 border-b border-[#2A2D31]">
-              <tr>
-                <th className="p-3 font-semibold text-[#e8eaed]">MODEL</th>
-                <th className="p-3 font-semibold text-[#e8eaed]">WARNA</th>
-                <th className="p-3 font-semibold text-[#e8eaed]">SIZE</th>
-                <th className="p-3 font-semibold text-[#e8eaed]">QTY ORDER</th>
-                <th className="p-3 font-semibold text-[#e8eaed]">ISI/BUNDLE</th>
-                <th className="p-3 font-semibold text-[#e8eaed] text-center">BUNDLE</th>
-                <th className="p-3 w-16"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((item, index) => (
-                <InputPoLineItem 
-                  key={item.id} 
-                  index={index} 
-                  item={item} 
-                  modelList={modelList} 
-                  onChange={handleItemChange} 
-                  onRemove={handleRemoveItem}
-                  canRemove={items.length > 1}
-                  disabled={isLoading}
-                />
-              ))}
-            </tbody>
-          </table>
-        </div>
+        {blocks.map(block => (
+          <InputPoModelBlock
+            key={block.id}
+            block={block}
+            modelList={modelList}
+            usedModelIds={usedModelIds.filter(id => id !== block.model_id)}
+            onChange={handleBlockChange}
+            onRemove={handleRemoveBlock}
+            canRemove={blocks.length > 1}
+            disabled={isLoading}
+          />
+        ))}
         <div className="p-3 border-t border-[#2A2D31] bg-[#1A1D1F]">
           <Button 
             type="button" 
             variant="outline" 
-            onClick={handleAddItem}
+            onClick={handleAddBlock}
             disabled={isLoading}
             className="border-dashed border-[#e5c17b]/40 text-[#e5c17b] hover:bg-[#e5c17b]/10 hover:border-[#e5c17b] w-full transition-all"
           >
             <Plus className="w-4 h-4 mr-2" />
-            Tambah Artikel
+            Tambah Model
           </Button>
         </div>
         <div className="p-4 bg-[#1E2124] border-t border-[#2A2D31] flex justify-end items-center text-sm">
+          <div className="text-[#9aa0a6] mr-4">Artikel: <span className="text-[#e8eaed] font-medium ml-1">{items.length}</span></div>
           <div className="text-[#9aa0a6] mr-4">Total QTY: <span className="text-[#e8eaed] font-medium ml-1">{totalQty} pcs</span></div>
           <div className="text-[#9aa0a6]">Total Bundle: <span className="text-[#e5c17b] font-bold ml-1">{totalBundle} tiket</span></div>
         </div>
