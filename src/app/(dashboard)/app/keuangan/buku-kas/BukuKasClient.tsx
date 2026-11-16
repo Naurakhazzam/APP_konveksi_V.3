@@ -100,7 +100,25 @@ const makeDefaultForm = (tipe: 'masuk' | 'keluar') => ({
   pembantu_jenis_id: '',
   qty: '',
   satuan: '',
+  /** Harga satuan (angka murni) — hanya di form; nominal = qty × harga */
+  harga: '',
 });
+
+type FormKas = ReturnType<typeof makeDefaultForm>;
+
+/** Isi nominal otomatis bila qty & harga satuan sama-sama terisi */
+const hitungNominal = (f: FormKas): FormKas => {
+  const q = parseFloat(f.qty);
+  const h = Number(f.harga);
+  return q > 0 && h > 0 ? { ...f, nominal: String(Math.round(q * h)) } : f;
+};
+
+/** Pilihan satuan untuk kas keluar umum; "Lainnya" = ketik sendiri */
+const SATUAN_UMUM = [
+  'orang', 'hari', 'orang/hari', 'bulan', 'kali',
+  'pcs', 'kg', 'liter', 'tabung', 'galon', 'karung', 'pack', 'meter',
+];
+const SATUAN_LAINNYA = '__lainnya__';
 
 // ─── COMPONENT ───────────────────────────────────────────────────────────────
 
@@ -145,6 +163,10 @@ export default function BukuKasClient({ initialEntries, poList, overheadSubList,
 
   const isPembantu = form.tipe === 'keluar' && form.kategori === KATEGORI_BAHAN_PEMBANTU;
   const isOverhead = form.tipe === 'keluar' && form.kategori === KATEGORI_OVERHEAD;
+  /** Satuan diketik sendiri (pilihan "Lainnya…") */
+  const [satuanManual, setSatuanManual] = useState(false);
+  /** Nominal dihitung dari qty × harga satuan → kolom nominal dikunci */
+  const nominalOtomatis = form.tipe === 'keluar' && parseFloat(form.qty) > 0 && Number(form.harga) > 0;
 
   const simpanSubBaru = async () => {
     if (!subBaru?.trim()) return;
@@ -314,12 +336,14 @@ export default function BukuKasClient({ initialEntries, poList, overheadSubList,
 
   const openModal = (tipe: 'masuk' | 'keluar') => {
     setEditId(null);
+    setSatuanManual(false);
     setForm(makeDefaultForm(tipe));
     setModalTipe(tipe);
   };
 
   const openEdit = (entry: BukuKasEntry) => {
     setEditId(entry.id);
+    setSatuanManual(false);
     setForm({
       tanggal:      entry.tanggal.slice(0, 10),
       tipe:         entry.tipe,
@@ -333,6 +357,9 @@ export default function BukuKasClient({ initialEntries, poList, overheadSubList,
       pembantu_jenis_id: entry.pembantu_jenis_id ?? '',
       qty:          entry.qty == null ? '' : String(entry.qty),
       satuan:       entry.satuan ?? '',
+      // Harga satuan hanya diisi kembali bila nominal pas = qty × harga (bulat)
+      harga:        entry.qty && entry.qty > 0 && Number.isInteger(entry.nominal / entry.qty)
+                      ? String(entry.nominal / entry.qty) : '',
     });
     setModalTipe(entry.tipe);
   };
@@ -352,8 +379,8 @@ export default function BukuKasClient({ initialEntries, poList, overheadSubList,
       po_id:        form.po_id        || undefined,
       overhead_sub_id: isOverhead ? form.overhead_sub_id || null : null,
       pembantu_jenis_id: isPembantu ? form.pembantu_jenis_id || null : null,
-      qty:          isPembantu ? parseFloat(form.qty) || null : null,
-      satuan:       isPembantu ? form.satuan || null : null,
+      qty:          form.tipe === 'keluar' ? parseFloat(form.qty) || null : null,
+      satuan:       form.tipe === 'keluar' ? form.satuan || null : null,
     };
     const result = editId ? await updateBukuKas(editId, input) : await addBukuKas(input);
     setSubmitting(false);
@@ -864,35 +891,6 @@ export default function BukuKasClient({ initialEntries, poList, overheadSubList,
                     ))}
                   </select>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className={labelCls}>Jumlah *</label>
-                    <input
-                      type="number"
-                      required
-                      min="0"
-                      step="any"
-                      placeholder="contoh: 2"
-                      className={inputCls}
-                      value={form.qty}
-                      onChange={e => setForm(f => ({ ...f, qty: e.target.value }))}
-                    />
-                  </div>
-                  <div>
-                    <label className={labelCls}>Satuan *</label>
-                    <select
-                      required
-                      className={inputCls}
-                      value={form.satuan}
-                      onChange={e => setForm(f => ({ ...f, satuan: e.target.value }))}
-                    >
-                      <option value="">-- Pilih --</option>
-                      {SATUAN_BELI.map(s => (
-                        <option key={s} value={s}>{s}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
                 <p className="text-[11px] text-[#9aa0a6]">
                   Masuk ke saldo jenis bahan ini (menu Keuangan → Saldo Bahan Pembantu).
                 </p>
@@ -960,18 +958,106 @@ export default function BukuKasClient({ initialEntries, poList, overheadSubList,
               </div>
             )}
 
+            {modalTipe === 'keluar' && (
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className={labelCls}>
+                    Qty {isPembantu ? '*' : <span className="text-[#5f6368] normal-case font-normal">(opsional)</span>}
+                  </label>
+                  <input
+                    type="number"
+                    required={isPembantu}
+                    min="0"
+                    step="any"
+                    placeholder="contoh: 2"
+                    className={inputCls}
+                    value={form.qty}
+                    onChange={e => setForm(f => hitungNominal({ ...f, qty: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label className={labelCls}>Satuan {isPembantu ? '*' : ''}</label>
+                  {isPembantu ? (
+                    <select
+                      required
+                      className={inputCls}
+                      value={form.satuan}
+                      onChange={e => setForm(f => ({ ...f, satuan: e.target.value }))}
+                    >
+                      <option value="">-- Pilih --</option>
+                      {SATUAN_BELI.map(s => (
+                        <option key={s} value={s}>{s}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    satuanManual ? (
+                      <div className="flex gap-1">
+                        <input
+                          type="text"
+                          autoFocus
+                          placeholder="ketik satuan"
+                          className={inputCls}
+                          value={form.satuan}
+                          onChange={e => setForm(f => ({ ...f, satuan: e.target.value }))}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => { setSatuanManual(false); setForm(f => ({ ...f, satuan: '' })); }}
+                          className="px-2 text-xs text-[#9aa0a6] hover:text-[#e8eaed]"
+                          title="Kembali ke daftar"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ) : (
+                      <select
+                        className={inputCls}
+                        value={form.satuan}
+                        onChange={e => {
+                          if (e.target.value === SATUAN_LAINNYA) { setSatuanManual(true); setForm(f => ({ ...f, satuan: '' })); }
+                          else setForm(f => ({ ...f, satuan: e.target.value }));
+                        }}
+                      >
+                        <option value="">-- Pilih --</option>
+                        {(form.satuan && !SATUAN_UMUM.includes(form.satuan) ? [form.satuan, ...SATUAN_UMUM] : SATUAN_UMUM)
+                          .map(s => <option key={s} value={s}>{s}</option>)}
+                        <option value={SATUAN_LAINNYA}>Lainnya…</option>
+                      </select>
+                    )
+                  )}
+                </div>
+                <div>
+                  <label className={labelCls}>Harga Satuan</label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="contoh: 10.000"
+                    className={inputCls}
+                    value={form.harga ? Number(form.harga).toLocaleString('id-ID') : ''}
+                    onChange={e => setForm(f => hitungNominal({ ...f, harga: e.target.value.replace(/\D/g, '').replace(/^0+/, '') }))}
+                  />
+                </div>
+              </div>
+            )}
+
             <div>
               <label className={labelCls}>Nominal (Rp) *</label>
               <input
                 type="text"
                 inputMode="numeric"
                 required
+                readOnly={nominalOtomatis}
                 placeholder="contoh: 1.000.000"
-                className={inputCls}
+                className={`${inputCls} ${nominalOtomatis ? 'opacity-80 cursor-not-allowed' : ''}`}
                 value={form.nominal ? Number(form.nominal).toLocaleString('id-ID') : ''}
                 // Tampil "300.000", disimpan sebagai angka murni "300000"
                 onChange={e => setForm(f => ({ ...f, nominal: e.target.value.replace(/\D/g, '').replace(/^0+/, '') }))}
               />
+              {nominalOtomatis && (
+                <p className="text-[11px] text-[#e5c17b] mt-1">
+                  Otomatis: {form.qty} {form.satuan || ''} × Rp {Number(form.harga).toLocaleString('id-ID')}
+                </p>
+              )}
             </div>
 
             <div>

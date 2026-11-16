@@ -214,8 +214,9 @@ async function siapkanBaris(
       komponen_id:  overhead ? komponenOverhead : null,
       overhead_sub_id: overhead ? input.overhead_sub_id : null,
       pembantu_jenis_id: pembantu ? input.pembantu_jenis_id : null,
-      qty:          pembantu ? input.qty : null,
-      satuan:       pembantu ? input.satuan!.trim() : null,
+      // Qty & satuan: wajib untuk bahan pembantu, opsional untuk kas keluar lain (nominal = qty × harga satuan)
+      qty:          input.tipe === 'keluar' && input.qty && input.qty > 0 ? input.qty : null,
+      satuan:       input.tipe === 'keluar' && input.qty && input.qty > 0 ? (input.satuan?.trim() || null) : null,
     },
   };
 }

@@ -37,6 +37,10 @@ UPDATE public.overhead_sub SET nama = 'Uang Makan (beras, galon)' WHERE tenant_i
 UPDATE public.overhead_sub SET aktif = false WHERE tenant_id = 'STX-001' AND nama = 'Galon';
 UPDATE public.overhead_sub SET nama = 'Tagihan Bulanan (sampah, internet)' WHERE tenant_id = 'STX-001' AND nama = 'Bayar Sampah';
 UPDATE public.overhead_sub SET aktif = false WHERE tenant_id = 'STX-001' AND nama = 'Internet';
+-- Listrik ikut Tagihan Bulanan; Gas = setrika uap (keputusan user)
+UPDATE public.overhead_sub SET nama = 'Tagihan Bulanan (listrik, internet, sampah)' WHERE tenant_id = 'STX-001' AND nama = 'Tagihan Bulanan (sampah, internet)';
+UPDATE public.overhead_sub SET aktif = false WHERE tenant_id = 'STX-001' AND nama = 'Listrik';
+UPDATE public.overhead_sub SET nama = 'Gas (setrika uap)' WHERE tenant_id = 'STX-001' AND nama = 'Gas';
 
 ALTER TABLE public.buku_kas
   ADD COLUMN IF NOT EXISTS overhead_sub_id uuid REFERENCES public.overhead_sub(id) ON DELETE SET NULL;
