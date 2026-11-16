@@ -159,13 +159,13 @@ export async function getLaporanLR(
     row.pendapatan_belum_validasi += p.belumValidasi;
   });
 
-  // Sewa per bulan → Biaya Operasional. Mulai bulan awal periode (mode default), sampai bulan berjalan.
+  // Sewa per bulan → Biaya Operasional. Mulai tanggal awal periode (mode default), sampai bulan berjalan.
   const sekarang = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Jakarta' }).slice(0, 7);
-  const blnAwalSewa = hanyaPeriodeBaru ? TANGGAL_AWAL_PERIODE.slice(0, 7) : '0000-00';
+  const awalSewa = hanyaPeriodeBaru ? TANGGAL_AWAL_PERIODE : '0000-00-00';
   for (let bln = bln_dari; bln <= bln_sampai; bln++) {
     const ym = tahun + '-' + String(bln).padStart(2, '0');
-    if (ym < blnAwalSewa || ym > sekarang) continue;
-    const awalBln  = ym + '-01';
+    if (ym < awalSewa.slice(0, 7) || ym > sekarang) continue;
+    const awalBln  = ym + '-01' < awalSewa ? awalSewa : ym + '-01';
     const akhirBln = ym + '-' + String(new Date(tahun, bln, 0).getDate()).padStart(2, '0');
     const sewa = btData.reduce((s, b) => {
       const awal  = b.tanggal_mulai > awalBln ? b.tanggal_mulai : awalBln;

@@ -182,10 +182,9 @@ export async function getBiayaOverhead(opts: {
   const { dari, sampai } = opts;
   const hanyaPeriodeBaru = opts.hanyaPeriodeBaru ?? true;
   const poMulai = hanyaPeriodeBaru ? PO_AWAL_PERIODE : null;
-  // Periode baru: transaksi sebelum TANGGAL_AWAL_PERIODE tidak ditampilkan; sewa dihitung sejak awal bulan periode
+  // Periode baru: transaksi & sewa sebelum TANGGAL_AWAL_PERIODE tidak dihitung
   const dariKas = hanyaPeriodeBaru ? batasAwalPeriode(dari) : dari;
-  const awalBulanPeriode = TANGGAL_AWAL_PERIODE.slice(0, 7) + '-01';
-  const dariSewa = hanyaPeriodeBaru && dari < awalBulanPeriode ? awalBulanPeriode : dari;
+  const dariSewa = dariKas;
 
   // Tren: 6 bulan kalender yang berakhir di bulan "sampai"
   const [ys, ms] = sampai.split('-').map(Number);
