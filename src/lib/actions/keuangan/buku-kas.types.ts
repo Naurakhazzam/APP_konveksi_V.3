@@ -69,10 +69,17 @@ export interface OverheadSubOption {
 
 export const SATUAN_BELI = ['pcs', 'lusin', 'gross', 'pack', 'roll', 'kg', 'meter', 'yard'] as const;
 
+/**
+ * Setoran modal pemilik (uang atau barang, mis. sisa bahan lama yang "dibeli" lewat Stok Masuk).
+ * Menambah kas tapi BUKAN pendapatan — dikecualikan dari Ringkasan & Laporan Bulan.
+ */
+export const KATEGORI_SETORAN_MODAL = 'Setoran Modal';
+
 export const KATEGORI_MASUK = [
   'DP Klien',
   'Pelunasan Klien',
   'Pendapatan Lain',
+  KATEGORI_SETORAN_MODAL,
 ] as const;
 
 export const KATEGORI_KELUAR = [

@@ -61,6 +61,7 @@ const ALL_APP_PATHS = [
   '/app/keuangan/invoice',
   '/app/keuangan/laporan-lr',
   '/app/keuangan/laporan-po',
+  '/app/keuangan/proyeksi-surplus',
   '/app/keuangan/overhead-setting',
   '/app/keuangan/laporan-bulan',
   '/app/keuangan/laporan-gaji',

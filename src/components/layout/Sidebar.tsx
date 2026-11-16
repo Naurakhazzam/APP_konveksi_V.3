@@ -136,6 +136,7 @@ const NAV_MENU = [
       { label: 'Biaya Overhead',       path: '/app/keuangan/biaya-overhead' },
       { label: 'Invoice & Tagihan',    path: '/app/keuangan/invoice' },
       { label: 'Laporan Laba Rugi',    path: '/app/keuangan/laporan-lr' },
+      { label: 'Proyeksi Surplus',    path: '/app/keuangan/proyeksi-surplus' },
       { label: 'Laporan Per PO',      path: '/app/keuangan/laporan-po' },
       { label: 'Setting Overhead',    path: '/app/keuangan/overhead-setting' },
       { label: 'Laporan Per Bulan',   path: '/app/keuangan/laporan-bulan' },

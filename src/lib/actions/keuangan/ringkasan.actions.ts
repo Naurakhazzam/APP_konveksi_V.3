@@ -1,6 +1,7 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
+import { KATEGORI_SETORAN_MODAL } from './buku-kas.types';
 import { getLaporanPOList } from './laporan-po.actions';
 import { PO_AWAL_PERIODE, poPeriodeBaru } from '@/lib/keuangan/periode-po';
 import { getBundleIdsPeriodeBaru, getPoIdsPeriodeBaru } from '@/lib/keuangan/periode-po.server';
@@ -68,6 +69,7 @@ export async function getRingkasanKeuangan(
     .select('nominal, po_id')
     .eq('tenant_id', TENANT_ID)
     .eq('tipe', 'masuk')
+    .neq('kategori', KATEGORI_SETORAN_MODAL) // modal pemilik bukan pendapatan
     .gte('tanggal', `${currentTahun}-${mm}-01`)
     .lte('tanggal', `${currentTahun}-${mm}-${String(lastDayCurrent).padStart(2, '0')}`);
 
@@ -154,6 +156,7 @@ export async function getRingkasanKeuangan(
     .select('nominal, tanggal, po_id')
     .eq('tenant_id', TENANT_ID)
     .eq('tipe', 'masuk')
+    .neq('kategori', KATEGORI_SETORAN_MODAL) // modal pemilik bukan pendapatan
     .gte('tanggal', `${firstMonth.yyyy}-${firstMonth.mm}-01`)
     .lte('tanggal', `${lastMonth.yyyy}-${lastMonth.mm}-${String(lastDayOfRange).padStart(2, '0')}`);
 
