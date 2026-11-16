@@ -1,4 +1,4 @@
-import { getSuratJalanDetail } from '@/lib/actions/pengiriman/surat-jalan.actions';
+import { getSuratJalanDetail, getNilaiSuratJalan } from '@/lib/actions/pengiriman/surat-jalan.actions';
 import { PageWrapper } from '@/components/ui/PageWrapper';
 import { redirect } from 'next/navigation';
 import PrintButton from './PrintButton';
@@ -9,7 +9,7 @@ import Link from 'next/link';
 
 export default async function DetailSuratJalanPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const detail = await getSuratJalanDetail(id);
+  const [detail, nilai] = await Promise.all([getSuratJalanDetail(id), getNilaiSuratJalan(id)]);
 
   if (!detail) {
     redirect('/app/pengiriman/riwayat');
@@ -17,6 +17,9 @@ export default async function DetailSuratJalanPage({ params }: { params: Promise
 
   const totalBundle = detail.items.length;
   const totalQty = detail.items.reduce((sum, item) => sum + item.qty_kirim, 0);
+  // Nominal uang: hanya owner & admin keuangan (nilai = null untuk role lain, dicek di server)
+  const adaHarga = !!nilai && detail.jenis !== 'kirim_ulang';
+  const rp = (n: number) => 'Rp ' + Math.round(n).toLocaleString('id-ID');
 
   return (
     <>
@@ -43,7 +46,7 @@ export default async function DetailSuratJalanPage({ params }: { params: Promise
                   <EditItemButton sjId={detail.id} items={detail.items} />
                 </>
               )}
-              <PrintButton />
+              <PrintButton bisaCetakHarga={adaHarga} />
             </div>
           </div>
 
@@ -71,6 +74,27 @@ export default async function DetailSuratJalanPage({ params }: { params: Promise
             </div>
           </div>
 
+          {adaHarga && nilai && (
+            <div className="bg-[#1A1D1F] border border-[#e5c17b]/30 rounded-lg p-5 grid gap-4 sm:grid-cols-3">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-[#9aa0a6]">Nilai kiriman</p>
+                <p className="text-2xl font-bold font-mono text-[#e5c17b]">{rp(nilai.nilai_kirim)}</p>
+                <p className="text-xs text-[#9aa0a6] mt-0.5">{totalQty.toLocaleString('id-ID')} pcs × harga jual</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-[#9aa0a6]">Tagihan / pendapatan</p>
+                <p className="text-2xl font-bold font-mono text-green-400">{nilai.nilai_tagihan == null ? '-' : rp(nilai.nilai_tagihan)}</p>
+                <p className="text-xs text-[#9aa0a6] mt-0.5">
+                  {nilai.tervalidasi ? 'Sudah dicocokkan dengan Validasi Kirim' : 'Belum divalidasi kantor — masih pakai qty kirim'}
+                  {nilai.potongan_reject > 0 && ` · potongan reject ${rp(nilai.potongan_reject)}`}
+                </p>
+              </div>
+              <p className="text-[11px] text-[#5f6368] self-end">
+                Hanya terlihat oleh owner & admin keuangan. &ldquo;Cetak + Nominal&rdquo; untuk arsip internal — lembar untuk penerima pakai &ldquo;Cetak Surat Jalan&rdquo; biasa.
+              </p>
+            </div>
+          )}
+
           <div className="bg-[#1A1D1F] border border-[#2A2D31] rounded-lg overflow-hidden">
             <div className="p-4 border-b border-[#2A2D31] flex justify-between items-center bg-[#0D0E10]">
               <h3 className="font-semibold text-[#e8eaed]">Daftar Bundle ({totalBundle})</h3>
@@ -86,6 +110,8 @@ export default async function DetailSuratJalanPage({ params }: { params: Promise
                     <th className="px-6 py-4">Item Info</th>
                     <th className="px-6 py-4">Warna / Size</th>
                     <th className="px-6 py-4 text-right">QTY Kirim</th>
+                    {adaHarga && <th className="px-6 py-4 text-right">Harga</th>}
+                    {adaHarga && <th className="px-6 py-4 text-right">Jumlah</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -109,6 +135,16 @@ export default async function DetailSuratJalanPage({ params }: { params: Promise
                       <td className="px-6 py-4 text-right font-medium text-[#e8eaed]">
                         {item.qty_kirim}
                       </td>
+                      {adaHarga && nilai && (
+                        <td className="px-6 py-4 text-right font-mono text-xs text-[#9aa0a6]">
+                          {rp(nilai.harga[item.surat_jalan_item_id] ?? 0)}
+                        </td>
+                      )}
+                      {adaHarga && nilai && (
+                        <td className="px-6 py-4 text-right font-mono text-xs text-[#e5c17b]">
+                          {rp(item.qty_kirim * (nilai.harga[item.surat_jalan_item_id] ?? 0))}
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -118,7 +154,7 @@ export default async function DetailSuratJalanPage({ params }: { params: Promise
         </div>
       </PageWrapper>
 
-      <PrintSuratJalanLayout detail={detail} />
+      <PrintSuratJalanLayout detail={detail} nilai={adaHarga ? nilai : null} />
     </>
   );
 }

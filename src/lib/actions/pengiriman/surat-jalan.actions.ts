@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server';
 import { getUserFromClaims } from '@/lib/auth/session';
+import { getCurrentUserProfile } from '@/lib/auth/permissions';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { revalidatePath } from 'next/cache';
 import bcrypt from 'bcryptjs';
@@ -678,4 +679,59 @@ export async function batalSuratJalan(
   revalidatePath('/app/keuangan/invoice');
 
   return data as BatalSuratJalanResult;
+}
+
+// ─── Nilai uang surat jalan (owner & admin keuangan saja) ──────────────────
+
+/** Role yang boleh melihat nominal uang surat jalan */
+const ROLE_LIHAT_NILAI = ['owner', 'admin_keuangan'];
+
+export interface NilaiSuratJalan {
+  /** Harga jual per baris SJ (snapshot saat SJ dibuat), key = surat_jalan_item_id */
+  harga: Record<string, number>;
+  /** Σ qty kirim × harga */
+  nilai_kirim: number;
+  /** Invoice setelah Validasi Kirim (qty diterima, qty lebih disetujui) */
+  nilai_invoice: number | null;
+  potongan_reject: number;
+  /** nilai_invoice − potongan_reject = yang diakui sebagai pendapatan */
+  nilai_tagihan: number | null;
+  tervalidasi: boolean;
+}
+
+/**
+ * Nominal uang satu surat jalan. Mengembalikan null untuk role selain owner/admin keuangan,
+ * jadi harga tidak pernah dikirim ke browser role lain.
+ */
+export async function getNilaiSuratJalan(sjId: string): Promise<NilaiSuratJalan | null> {
+  const profile = await getCurrentUserProfile();
+  if (!profile || !ROLE_LIHAT_NILAI.includes(profile.role)) return null;
+
+  const supabase = await createClient();
+  const [itemRes, invRes, sjRes] = await Promise.all([
+    supabase.from('surat_jalan_item').select('id, qty_kirim, harga_satuan').eq('sj_id', sjId),
+    supabase.from('invoice').select('total_nilai, potongan_reject').eq('surat_jalan_id', sjId).maybeSingle(),
+    supabase.from('surat_jalan').select('tanggal_validasi').eq('id', sjId).maybeSingle(),
+  ]);
+  if (itemRes.error) throw new Error(itemRes.error.message);
+  if (invRes.error) throw new Error(invRes.error.message);
+
+  const harga: Record<string, number> = {};
+  let nilai_kirim = 0;
+  (itemRes.data ?? []).forEach((it: { id: string; qty_kirim: number | null; harga_satuan: number | null }) => {
+    const h = Number(it.harga_satuan ?? 0);
+    harga[it.id] = h;
+    nilai_kirim += Number(it.qty_kirim ?? 0) * h;
+  });
+  const inv = invRes.data as { total_nilai: number | null; potongan_reject: number | null } | null;
+  const nilai_invoice = inv ? Number(inv.total_nilai ?? 0) : null;
+  const potongan_reject = Number(inv?.potongan_reject ?? 0);
+  return {
+    harga,
+    nilai_kirim: Math.round(nilai_kirim),
+    nilai_invoice,
+    potongan_reject,
+    nilai_tagihan: nilai_invoice == null ? null : Math.max(0, nilai_invoice - potongan_reject),
+    tervalidasi: !!(sjRes.data as { tanggal_validasi: string | null } | null)?.tanggal_validasi,
+  };
 }

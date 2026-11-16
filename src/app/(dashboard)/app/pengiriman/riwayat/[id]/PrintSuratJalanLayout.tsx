@@ -1,10 +1,15 @@
 import React from 'react';
-import type { SuratJalanDetail } from '@/lib/actions/pengiriman/surat-jalan.actions';
+import type { SuratJalanDetail, NilaiSuratJalan } from '@/lib/actions/pengiriman/surat-jalan.actions';
+
+const rp = (n: number) => Math.round(n).toLocaleString('id-ID');
 
 // Dicetak di kertas A6 (105 x 148 mm). Layout dipadatkan supaya ±15 baris
 // tabel muat satu lembar; lebih dari itu otomatis lanjut ke lembar berikutnya
 // (header tabel diulang, tanda tangan tidak terpotong).
-export default function PrintSuratJalanLayout({ detail }: { detail: SuratJalanDetail }) {
+// Kolom harga (kelas sj-harga) hanya ada bila `nilai` diisi — server hanya mengirimnya ke owner &
+// admin keuangan — dan hanya tercetak lewat tombol "Cetak + Nominal" (kelas sj-cetak-harga di <html>).
+export default function PrintSuratJalanLayout({ detail, nilai }: { detail: SuratJalanDetail; nilai?: NilaiSuratJalan | null }) {
+  const adaHarga = !!nilai && detail.jenis !== 'kirim_ulang';
   // Grouping item by NO_PO + Warna + Size + Model
   const groupedItems = detail.items.reduce((acc, item) => {
     const key = `${item.no_po}-${item.model_nama}-${item.warna}-${item.size}`;
@@ -14,15 +19,18 @@ export default function PrintSuratJalanLayout({ detail }: { detail: SuratJalanDe
         model_nama: item.model_nama,
         warna: item.warna,
         size: item.size,
-        qty_kirim: 0
+        qty_kirim: 0,
+        subtotal: 0,
       };
     }
     acc[key].qty_kirim += item.qty_kirim;
+    acc[key].subtotal += item.qty_kirim * (nilai?.harga[item.surat_jalan_item_id] ?? 0);
     return acc;
-  }, {} as Record<string, { no_po: string, model_nama: string | null, warna: string, size: string, qty_kirim: number }>);
+  }, {} as Record<string, { no_po: string, model_nama: string | null, warna: string, size: string, qty_kirim: number, subtotal: number }>);
 
   const groupedArray = Object.values(groupedItems);
   const totalQty = groupedArray.reduce((sum, i) => sum + i.qty_kirim, 0);
+  const totalNilai = groupedArray.reduce((sum, i) => sum + i.subtotal, 0);
 
   const cell = 'border border-black px-1 py-[1px]';
 
@@ -39,6 +47,9 @@ export default function PrintSuratJalanLayout({ detail }: { detail: SuratJalanDe
           .sj-print-root table { border-collapse: collapse; width: 100%; }
           .sj-print-root thead { display: table-header-group; }
           .sj-print-root tr, .sj-no-break { break-inside: avoid; page-break-inside: avoid; }
+          .sj-print-root .sj-harga { display: none; }
+          .sj-cetak-harga .sj-print-root .sj-harga { display: table-cell; }
+          .sj-cetak-harga .sj-print-root div.sj-harga { display: block; }
         }
       `}</style>
 
@@ -71,6 +82,8 @@ export default function PrintSuratJalanLayout({ detail }: { detail: SuratJalanDe
             <th className={`${cell} text-left`}>Model</th>
             <th className={`${cell} text-left`}>Warna / Size</th>
             <th className={`${cell} text-right w-[32px]`}>Qty</th>
+            {adaHarga && <th className={`${cell} sj-harga text-right`}>Harga</th>}
+            {adaHarga && <th className={`${cell} sj-harga text-right`}>Jumlah</th>}
           </tr>
         </thead>
         <tbody>
@@ -81,14 +94,26 @@ export default function PrintSuratJalanLayout({ detail }: { detail: SuratJalanDe
               <td className={cell}>{item.model_nama || '-'}</td>
               <td className={cell}>{item.warna}{item.size ? ` / ${item.size}` : ''}</td>
               <td className={`${cell} text-right font-medium`}>{item.qty_kirim}</td>
+              {adaHarga && (
+                <td className={`${cell} sj-harga text-right`}>{item.qty_kirim ? rp(item.subtotal / item.qty_kirim) : '-'}</td>
+              )}
+              {adaHarga && <td className={`${cell} sj-harga text-right`}>{rp(item.subtotal)}</td>}
             </tr>
           ))}
           <tr className="font-bold">
             <td colSpan={4} className={`${cell} text-right`}>TOTAL (pcs)</td>
             <td className={`${cell} text-right`}>{totalQty}</td>
+            {adaHarga && <td className={`${cell} sj-harga`} />}
+            {adaHarga && <td className={`${cell} sj-harga text-right`}>Rp {rp(totalNilai)}</td>}
           </tr>
         </tbody>
       </table>
+
+      {adaHarga && nilai && nilai.nilai_tagihan != null && Math.round(nilai.nilai_tagihan) !== Math.round(totalNilai) && (
+        <div className="sj-harga mt-1 text-right">
+          Nilai tagihan setelah validasi kantor: <strong>Rp {rp(nilai.nilai_tagihan)}</strong>
+        </div>
+      )}
 
       {detail.catatan && (
         <div className="mt-1 border border-black px-1 py-[2px] sj-no-break">
