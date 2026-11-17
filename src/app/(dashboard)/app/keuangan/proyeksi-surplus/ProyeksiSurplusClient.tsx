@@ -260,11 +260,13 @@ export default function ProyeksiSurplusClient({ data: awal }: { data: KinerjaDat
             <Pos label="Barang dalam proses" nilai={posisi.barangDalamProses}
               sub="Biaya bahan, upah & overhead untuk barang yang belum dikirim" />
             {posisi.piutang > 0 && <Pos label="Piutang usaha" nilai={posisi.piutang} sub="Sudah dikirim, belum dibayar pelanggan" />}
-            <Pos label="Sewa dibayar di muka" nilai={posisi.sewaDibayarDimuka} sub="Sisa masa kontrak yang belum dibebankan">
-              {data.sewaSisa.length ? data.sewaSisa.map(b =>
-                <Rinci key={b.nama} label={`${b.nama} — ${b.hari} hari (${tglFmt(b.sejak)} – ${tglFmt(b.sampai)})`} nilai={b.nominal} />) : undefined}
-            </Pos>
             <Pos label="Total aset (di luar kas)" nilai={posisi.totalAset} tebal />
+            {data.sewaSisa.length > 0 && (
+              <p className="text-[11px] text-[#9aa0a6] py-2 leading-relaxed">
+                Catatan: {data.sewaSisa.map(b => `${b.nama} sudah dibayar sampai ${tglFmt(b.sampai)} (sisa ${b.hari} hari)`).join('; ')}.
+                Sisa kontrak tidak dihitung sebagai aset — sewa dibebankan per hari ke overhead produksi.
+              </p>
+            )}
           </div>
           <div className="rounded-xl bg-[#1A1D1F] border border-[#2A2D31] px-4 py-2">
             <p className="text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold pt-2 pb-1">Kewajiban</p>

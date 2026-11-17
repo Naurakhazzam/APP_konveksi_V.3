@@ -115,7 +115,6 @@ export interface KinerjaData {
     persediaanPembantu: number;
     barangDalamProses: number;
     piutang: number;
-    sewaDibayarDimuka: number;
     totalAset: number;
     upahTerutang: number;
     uangMukaPelanggan: number;
@@ -123,6 +122,7 @@ export interface KinerjaData {
   };
   stokTersisaRinci: { nama: string; qty: number; satuan: string; nilai: number }[];
   pembantuLamaRinci: { nama: string; awal: number; sisa: number }[];
+  /** Info saja: sisa masa kontrak sewa (BUKAN aset — kontrak dibayar sebelum periode, tidak lewat Buku Kas) */
   sewaSisa: { nama: string; sejak: string; sampai: string; hari: number; nominal: number }[];
 
   arusKas: {
@@ -378,9 +378,10 @@ export async function hitungKinerja(supabase: Supa, periode = 'semua'): Promise<
     const hari = b.tanggal_selesai >= d ? hariInklusif(d, b.tanggal_selesai) : 0;
     return { nama: b.nama as string, sejak: d, sampai: b.tanggal_selesai as string, hari, nominal: perHariOf(b) * hari };
   }).filter(x => x.hari > 0);
-  const sewaDibayarDimuka = sewaSisa.reduce((s, x) => s + x.nominal, 0);
   const upahTerutang = po.reduce((s, p) => s + p.upah_belum_lunas, 0);
-  const totalAset = persediaanBahan + persediaanPembantu + barangDalamProses + piutang + sewaDibayarDimuka;
+  // Sisa kontrak sewa sengaja TIDAK dihitung sebagai aset (keputusan user 17 Nov 2026):
+  // kontrak dibayar sebelum periode baru, tidak lewat Buku Kas & tidak bisa dicairkan.
+  const totalAset = persediaanBahan + persediaanPembantu + barangDalamProses + piutang;
 
   // ── Arus kas periode terpilih ──
   const diRentang = (k: any) => dalamPeriode(ym(k));
@@ -415,7 +416,7 @@ export async function hitungKinerja(supabase: Supa, periode = 'semua'): Promise<
       bebanOperasional: kasBiaya.filter(k => diRentang(k) && KATEGORI_BEBAN_OPERASIONAL.includes(k.kategori)).map(keTransaksi),
     },
     posisi: {
-      persediaanBahan, persediaanPembantu, barangDalamProses, piutang, sewaDibayarDimuka, totalAset,
+      persediaanBahan, persediaanPembantu, barangDalamProses, piutang, totalAset,
       upahTerutang, uangMukaPelanggan, totalKewajiban: upahTerutang + uangMukaPelanggan,
     },
     stokTersisaRinci, pembantuLamaRinci, sewaSisa,
