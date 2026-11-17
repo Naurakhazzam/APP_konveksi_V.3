@@ -11,8 +11,10 @@
  *    Bulan tanpa pemotongan: overhead langsung jadi beban ("overhead tanpa produksi").
  *  - Beban operasional (Biaya Operasional, Lainnya) dibebankan di bulan terjadinya.
  *  - Pembelian bahan = persediaan (aset), baru jadi biaya saat dipakai.
- *  - Bahan pembantu lama (saldo awal = setoran modal berupa barang, tabel pembantu_saldo_awal):
- *    sisanya = aset; bagian yang terpakai jatah HPP jadi overhead produksi di bulan pemakaiannya.
+ *  - Bahan pembantu (barang lama = setoran modal barang, dan belanja Buku Kas yang bertanda jenis):
+ *    mengikuti Saldo Bahan Pembantu. Yang terpakai jatah HPP jadi overhead produksi di bulan pemakaiannya;
+ *    belanja yang menutup penghematan sebelumnya jadi biaya di bulan belanja; sisa saldo = aset.
+ *    Jatah yang tidak tertutup saldo = penghematan (margin, tanpa biaya).
  */
 import { PO_AWAL_PERIODE, TANGGAL_AWAL_PERIODE, poPeriodeBaru } from './periode-po';
 import { pendapatanSjPerBulan } from './pendapatan.server';
@@ -111,8 +113,10 @@ export interface KinerjaData {
 
   posisi: {
     persediaanBahan: number;
-    /** Bahan pembantu lama (setoran modal barang) yang belum terpakai */
+    /** Saldo bahan pembantu yang belum terpakai jatah HPP (barang lama + belanja) */
     persediaanPembantu: number;
+    /** Bagian persediaan pembantu yang berasal dari barang lama (setoran modal barang) */
+    persediaanPembantuLama: number;
     barangDalamProses: number;
     piutang: number;
     totalAset: number;
@@ -121,7 +125,8 @@ export interface KinerjaData {
     totalKewajiban: number;
   };
   stokTersisaRinci: { nama: string; qty: number; satuan: string; nilai: number }[];
-  pembantuLamaRinci: { nama: string; awal: number; sisa: number }[];
+  /** Per jenis bahan pembantu: barang lama & belanja yang masuk, sisa saldo (aset) dan bagian sisa dari barang lama */
+  pembantuLamaRinci: { nama: string; lama: number; belanja: number; sisa: number; sisaLama: number }[];
   /** Info saja: sisa masa kontrak sewa (BUKAN aset — kontrak dibayar sebelum periode, tidak lewat Buku Kas) */
   sewaSisa: { nama: string; sejak: string; sampai: string; hari: number; nominal: number }[];
 
@@ -196,7 +201,7 @@ export async function hitungKinerja(supabase: Supa, periode = 'semua'): Promise<
     supabase.rpc('get_proyeksi_surplus_po', { p_tenant_id: TENANT_ID, p_po_mulai: PO_AWAL_PERIODE }),
     supabase.rpc('get_kinerja_po_bulan', { p_tenant_id: TENANT_ID, p_po_mulai: PO_AWAL_PERIODE }),
     supabase.from('buku_kas')
-      .select('tanggal, tipe, kategori, nominal, keterangan, overhead_sub_id, po_id, po:po_id(no_po), overhead_sub:overhead_sub_id(nama)')
+      .select('tanggal, tipe, kategori, nominal, keterangan, overhead_sub_id, pembantu_jenis_id, po_id, po:po_id(no_po), overhead_sub:overhead_sub_id(nama)')
       .eq('tenant_id', TENANT_ID).gte('tanggal', TANGGAL_AWAL_PERIODE).order('tanggal'),
     supabase.from('inventory_batch')
       .select('qty_sisa, harga_satuan, item:inventory_item_id(nama, satuan, jenis)')
@@ -215,27 +220,41 @@ export async function hitungKinerja(supabase: Supa, periode = 'semua'): Promise<
     const m = String(tgl).slice(0, 7);
     return m < blnAwal ? blnAwal : m > blnSekarang ? blnSekarang : m;
   };
-  /** bulan → jenis → nilai barang lama yang terpakai */
-  const pakaiLama = new Map<string, Map<string, number>>();
-  const lamaPerJenis = new Map<string, { awal: number; sisa: number }>();
+  /** bulan → sumber ('lama' | 'belanja') → jenis → nilai bahan pembantu yang jadi biaya */
+  const pakaiPembantu = new Map<string, Map<'lama' | 'belanja', Map<string, number>>>();
+  const tambahPakai = (tgl: string, sumber: 'lama' | 'belanja', j: string, n: number) => {
+    if (!(n > 0.005)) return;
+    const m = keBulanPeriode(tgl);
+    const perSumber = pakaiPembantu.get(m) ?? new Map<'lama' | 'belanja', Map<string, number>>();
+    const per = perSumber.get(sumber) ?? new Map<string, number>();
+    per.set(j, (per.get(j) ?? 0) + n);
+    perSumber.set(sumber, per);
+    pakaiPembantu.set(m, perSumber);
+  };
+  const pembantuPerJenis = new Map<string, { lama: number; belanja: number; sisa: number; sisaLama: number }>();
   ((pembRes.data ?? []) as any[]).forEach(r => {
     const j = String(r.jenis_id);
-    const cur = lamaPerJenis.get(j) ?? { awal: 0, sisa: 0 };
-    if (r.tipe === 'modal') cur.awal += Number(r.nominal);
-    cur.sisa = Number(r.saldo_modal ?? 0); // urut per jenis → baris terakhir = sisa
-    lamaPerJenis.set(j, cur);
-    const pakai = -Number(r.ke_modal ?? 0);
-    if (r.tipe === 'jatah' && pakai > 0) {
-      const m = keBulanPeriode(r.tanggal);
-      const per = pakaiLama.get(m) ?? new Map<string, number>();
-      per.set(j, (per.get(j) ?? 0) + pakai);
-      pakaiLama.set(m, per);
+    const cur = pembantuPerJenis.get(j) ?? { lama: 0, belanja: 0, sisa: 0, sisaLama: 0 };
+    if (r.tipe === 'modal') cur.lama += Number(r.nominal);
+    if (r.tipe === 'beli') cur.belanja += Number(r.nominal);
+    cur.sisa = Number(r.saldo ?? 0);            // urut per jenis → baris terakhir = sisa
+    cur.sisaLama = Number(r.saldo_modal ?? 0);
+    pembantuPerJenis.set(j, cur);
+    if (r.tipe === 'jatah') {
+      const dariSaldo = -Number(r.ke_saldo ?? 0);
+      const dariLama = -Number(r.ke_modal ?? 0);
+      tambahPakai(r.tanggal, 'lama', j, dariLama);
+      tambahPakai(r.tanggal, 'belanja', j, dariSaldo - dariLama);
+    } else if (Number(r.ke_hemat ?? 0) < 0) {
+      // barang masuk yang menutup penghematan sebelumnya = pengganti barang yang sudah terpakai → biaya sekarang
+      tambahPakai(r.tanggal, r.tipe === 'modal' ? 'lama' : 'belanja', j, -Number(r.ke_hemat));
     }
   });
-  const pembantuLamaRinci = [...lamaPerJenis.entries()].filter(([, v]) => v.awal > 0)
-    .map(([j, v]) => ({ nama: namaJenis.get(j) ?? '?', awal: v.awal, sisa: v.sisa }))
+  const pembantuLamaRinci = [...pembantuPerJenis.entries()].filter(([, v]) => v.lama + v.belanja > 0)
+    .map(([j, v]) => ({ nama: namaJenis.get(j) ?? '?', lama: v.lama, belanja: v.belanja, sisa: v.sisa, sisaLama: v.sisaLama }))
     .sort((a, b) => b.sisa - a.sisa);
   const persediaanPembantu = pembantuLamaRinci.reduce((s, x) => s + x.sisa, 0);
+  const persediaanPembantuLama = pembantuLamaRinci.reduce((s, x) => s + x.sisaLama, 0);
 
   // ── Buku Kas periode baru (baris bertanda PO lama diabaikan) ──
   const btData = (btRes.data ?? []) as any[];
@@ -245,9 +264,11 @@ export async function hitungKinerja(supabase: Supa, periode = 'semua'): Promise<
     return !noPo || poPeriodeBaru(noPo);
   });
   const ym = (k: any) => String(k.tanggal).slice(0, 7);
-  // Pembayaran kontrak sewa diganti alokasi harian (untuk biaya); untuk arus kas tetap dihitung
+  // Pembayaran kontrak sewa diganti alokasi harian (untuk biaya); untuk arus kas tetap dihitung.
+  // Belanja bahan pembantu bertanda jenis → biaya mengikuti pemakaian (pakaiPembantu); arus kas tetap dihitung.
   const kasBiaya = kas.filter(k => k.tipe === 'keluar' &&
-    !(k.kategori === 'Biaya Overhead' && k.overhead_sub_id && subKontrak.has(String(k.overhead_sub_id))));
+    !(k.kategori === 'Biaya Overhead' && k.overhead_sub_id && subKontrak.has(String(k.overhead_sub_id))) &&
+    !(k.kategori === 'Bahan Pembantu' && k.pembantu_jenis_id));
   const masuk = kas.filter(k => k.tipe === 'masuk');
   const isKlien = (k: any) => KATEGORI_BAYAR_KLIEN.includes(k.kategori);
   const isModal = (k: any) => k.kategori === KATEGORI_SETORAN_MODAL;
@@ -274,9 +295,14 @@ export async function hitungKinerja(supabase: Supa, periode = 'semua'): Promise<
   // ── Overhead produksi per bulan → tarif per pcs potong bulan itu ──
   const overheadBulan: OverheadBulan[] = bulanList.map(m => {
     const transaksi = kasBiaya.filter(k => ym(k) === m && KATEGORI_OVERHEAD_PRODUKSI.includes(k.kategori)).map(keTransaksi);
-    (pakaiLama.get(m) ?? new Map<string, number>()).forEach((nominal, j) => transaksi.push({
-      tanggal: akhirBulan(m), kategori: 'Bahan Pembantu', sub: 'Barang lama (modal)',
+    const perSumber = pakaiPembantu.get(m);
+    (perSumber?.get('lama') ?? new Map<string, number>()).forEach((nominal, j) => transaksi.push({
+      tanggal: akhirBulan(m), kategori: 'Bahan Pembantu', sub: 'Barang lama terpakai',
       keterangan: `Pemakaian ${namaJenis.get(j) ?? 'bahan pembantu'} lama (saldo awal, tanpa uang keluar)`, nominal,
+    }));
+    (perSumber?.get('belanja') ?? new Map<string, number>()).forEach((nominal, j) => transaksi.push({
+      tanggal: akhirBulan(m), kategori: 'Bahan Pembantu', sub: 'Belanja terpakai',
+      keterangan: `Pemakaian ${namaJenis.get(j) ?? 'bahan pembantu'} hasil belanja (jatah HPP; sisanya masih persediaan)`, nominal,
     }));
     const sewa = sewaBulan(m);
     const total = transaksi.reduce((s, t) => s + t.nominal, 0) + sewa.reduce((s, x) => s + x.nominal, 0);
@@ -416,7 +442,7 @@ export async function hitungKinerja(supabase: Supa, periode = 'semua'): Promise<
       bebanOperasional: kasBiaya.filter(k => diRentang(k) && KATEGORI_BEBAN_OPERASIONAL.includes(k.kategori)).map(keTransaksi),
     },
     posisi: {
-      persediaanBahan, persediaanPembantu, barangDalamProses, piutang, totalAset,
+      persediaanBahan, persediaanPembantu, persediaanPembantuLama, barangDalamProses, piutang, totalAset,
       upahTerutang, uangMukaPelanggan, totalKewajiban: upahTerutang + uangMukaPelanggan,
     },
     stokTersisaRinci, pembantuLamaRinci, sewaSisa,

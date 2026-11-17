@@ -38,6 +38,7 @@ const APA_INI: Record<JenisRincian, string> = {
   overhead:
     'Biaya pendukung produksi yang tidak bisa ditempelkan langsung ke satu potong baju: sewa rumah produksi, listrik, ' +
     'makan, bahan pembantu (benang, kancing, karet, plastik, label) dan peralatan. ' +
+    'Bahan pembantu dihitung dari pemakaian (jatah HPP × pcs selesai jahit), bukan dari belanja — yang belum terpakai masih persediaan. ' +
     'Totalnya tiap bulan dibagi rata ke semua pcs yang dipotong di bulan itu, lalu ikut menjadi biaya barang tersebut.',
   hpp:
     'Total biaya untuk membuat barang yang dijual: bahan baku + upah produksi + overhead produksi. ' +
@@ -98,7 +99,8 @@ function DaftarTransaksi({ rows }: { rows: Transaksi[] }) {
 function KelompokOverhead({ rows, sewa }: { rows: Transaksi[]; sewa: number }) {
   const m = new Map<string, number>();
   rows.forEach(t => {
-    const k = t.kategori === 'Biaya Overhead' ? (t.sub ?? 'Overhead lain-lain') : t.kategori;
+    const k = t.kategori === 'Biaya Overhead' ? (t.sub ?? 'Overhead lain-lain')
+      : t.kategori === 'Bahan Pembantu' && t.sub ? `Bahan pembantu — ${t.sub.toLowerCase()}` : t.kategori;
     m.set(k, (m.get(k) ?? 0) + t.nominal);
   });
   if (sewa > 0) m.set('Sewa rumah produksi (per hari)', sewa);

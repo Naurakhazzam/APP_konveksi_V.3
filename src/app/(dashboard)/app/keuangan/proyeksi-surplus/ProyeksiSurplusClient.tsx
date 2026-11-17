@@ -249,11 +249,11 @@ export default function ProyeksiSurplusClient({ data: awal }: { data: KinerjaDat
               )) : undefined}
             </Pos>
             {posisi.persediaanPembantu > 0 && (
-              <Pos label="Persediaan bahan pembantu (barang lama)" nilai={posisi.persediaanPembantu}
-                sub="Setoran modal berupa barang, harga perkiraan — belum terpakai">
+              <Pos label="Persediaan bahan pembantu" nilai={posisi.persediaanPembantu}
+                sub={`Saldo di rak (belum terpakai jatah HPP): barang lama ${idr(posisi.persediaanPembantuLama)} + belanja ${idr(posisi.persediaanPembantu - posisi.persediaanPembantuLama)}`}>
                 {data.pembantuLamaRinci.filter(p => p.sisa > 0).map(p => (
                   <Rinci key={p.nama} nilai={p.sisa}
-                    label={`${p.nama} — sisa dari saldo awal Rp ${Math.round(p.awal).toLocaleString('id-ID')}`} />
+                    label={`${p.nama} — dari barang lama ${idr(p.lama)}${p.belanja > 0 ? ` + belanja ${idr(p.belanja)}` : ''}`} />
                 ))}
               </Pos>
             )}

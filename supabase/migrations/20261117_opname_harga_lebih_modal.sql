@@ -2,7 +2,8 @@
 -- (17 Nov 2026: Kerah Lakos 32,8 kg ter-opname dengan harga Rp 0 karena barang baru dibuat tanpa harga.)
 --  * p_items[].harga (opsional) = harga beli per satuan untuk kelebihan stok.
 --    Urutan harga: input user → harga LOT terakhir → harga_referensi; bila tetap 0 → tolak (wajib isi).
---  * Kelebihan dicatat sebagai LOT baru + Buku Kas "Setoran Modal" (MODAL-SISA) senilai sama,
+--  * Kelebihan dicatat sebagai LOT baru + Buku Kas "Setoran Modal" (masuk) DAN "Pembelian Bahan" (keluar)
+--    senilai sama (MODAL-SISA, pindah buku → saldo kas tidak berubah),
 --    sama seperti sisa bahan lama Toyobo (setoran_modal_sisa_bahan). Bukan pendapatan.
 --  * harga_referensi barang yang masih 0 diisi dengan harga tersebut.
 CREATE OR REPLACE FUNCTION public.simpan_stock_opname(p_items jsonb, p_tanggal date, p_catatan text, p_user_id uuid, p_tenant_id text)
@@ -57,6 +58,12 @@ BEGIN
           || replace(trim_scale(v_selisih)::text, '.', ',') || ' ' || COALESCE(v_inv.satuan, '')
           || ' @ Rp ' || replace(to_char(v_harga, 'FM999G999G999'), ',', '.')
           || ', dari stock opname) — pindah buku, bukan pendapatan',
+        'MODAL-SISA', p_user_id);
+      -- pasangan "pindah buku": seolah dibeli dengan uang setoran tadi → saldo kas tidak berubah
+      INSERT INTO buku_kas (tenant_id, tanggal, tipe, kategori, nominal, keterangan, no_referensi, created_by)
+      VALUES (p_tenant_id, p_tanggal, 'keluar', 'Pembelian Bahan', ROUND(v_nilai, 2),
+        'Belanja ' || v_inv.nama || ' ' || replace(trim_scale(v_selisih)::text, '.', ',') || ' ' || COALESCE(v_inv.satuan, '')
+          || ' — Sisa bahan lama (stock opname) — setoran modal (pindah buku)',
         'MODAL-SISA', p_user_id);
     END IF;
     INSERT INTO stock_opname (tanggal, inventory_item_id, stok_sistem, stok_fisik, selisih, nilai_selisih, catatan, tenant_id, created_by)
