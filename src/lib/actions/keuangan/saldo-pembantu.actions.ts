@@ -51,6 +51,8 @@ export interface MutasiPembantu {
   /** + saldo awal masuk / − barang lama terpakai jatah */
   ke_modal: number;
   saldo_modal: number;
+  /** Penghematan final baris jatah setelah dihitung ulang dengan SEMUA barang masuk (termasuk yang belakangan) */
+  hemat_final: number;
 }
 
 export interface PenghematanBulan {
@@ -104,7 +106,7 @@ export async function getSaldoPembantu(): Promise<SaldoPembantuData> {
   type Row = {
     jenis_id: string; tanggal: string; tipe: 'modal' | 'beli' | 'jatah'; nominal: number | string;
     pcs: number | string | null; ke_saldo: number | string; ke_hemat: number | string; saldo: number | string;
-    ke_modal: number | string | null; saldo_modal: number | string | null;
+    ke_modal: number | string | null; saldo_modal: number | string | null; hemat_final: number | string | null;
   };
   const mutasi: MutasiPembantu[] = ((mutasiRows ?? []) as Row[]).map(r => {
     const m: MutasiPembantu = {
@@ -119,6 +121,7 @@ export async function getSaldoPembantu(): Promise<SaldoPembantuData> {
       saldo: Number(r.saldo),
       ke_modal: Number(r.ke_modal ?? 0),
       saldo_modal: Number(r.saldo_modal ?? 0),
+      hemat_final: Number(r.hemat_final ?? 0),
     };
     const s = ringkas.get(m.jenis_id);
     if (s) {
@@ -129,11 +132,13 @@ export async function getSaldoPembantu(): Promise<SaldoPembantuData> {
       s.sisa_modal = m.saldo_modal;
       s.penghematan += m.ke_hemat;
     }
-    if (m.ke_hemat > 0) {
+    // Per bulan pakai hemat_final: belanja/barang lama yang masuk belakangan sudah menutup jatah
+    // paling awal, jadi bulan lalu ikut terkoreksi (tidak pernah minus).
+    if (m.hemat_final > 0) {
       const key = m.tanggal.slice(0, 7);
       const b = bulanan.get(key) ?? { bulan: key, per_jenis: {}, total: 0 };
-      b.per_jenis[m.jenis_id] = (b.per_jenis[m.jenis_id] ?? 0) + m.ke_hemat;
-      b.total += m.ke_hemat;
+      b.per_jenis[m.jenis_id] = (b.per_jenis[m.jenis_id] ?? 0) + m.hemat_final;
+      b.total += m.hemat_final;
       bulanan.set(key, b);
     }
     return m;

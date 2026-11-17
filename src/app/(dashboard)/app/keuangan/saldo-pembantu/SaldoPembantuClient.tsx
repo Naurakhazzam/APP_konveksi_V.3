@@ -104,7 +104,9 @@ export default function SaldoPembantuClient({ data, bolehUbah = false }: { data:
             </TableBody>
           </Table>
           <p className="px-4 py-3 text-[11px] text-[#5f6368] border-t border-[#2A2D31]">
-            Saldo tidak pernah minus. Saldo 0 bukan berarti barang habis — keputusan belanja tetap berdasarkan cek fisik di rak.
+            Saldo tidak pernah minus. Bila jatah melebihi saldo, kelebihannya dicatat sebagai penghematan; belanja atau barang lama
+            yang dimasukkan belakangan otomatis menutup penghematan itu dulu (dihitung ulang). Saldo 0 bukan berarti barang habis —
+            keputusan belanja tetap berdasarkan cek fisik di rak.
           </p>
         </div>
       )}
@@ -202,7 +204,11 @@ export default function SaldoPembantuClient({ data, bolehUbah = false }: { data:
                           </span>}
                     </TableCell>
                     <TableCell className="text-sm text-right text-[#e8eaed]">{idr(m.nominal)}</TableCell>
-                    <TableCell className="text-sm text-right text-green-400">{m.ke_hemat > 0 ? idr(m.ke_hemat) : '-'}</TableCell>
+                    <TableCell className={`text-sm text-right ${m.ke_hemat < 0 ? 'text-red-300' : 'text-green-400'}`}>
+                      {m.ke_hemat > 0 ? idr(m.ke_hemat) : m.ke_hemat < 0
+                        ? <span title="Barang ini menutup jatah sebelumnya yang tadinya dihitung penghematan">{idr(m.ke_hemat)}<span className="block text-[10px] text-red-300/70">koreksi penghematan</span></span>
+                        : '-'}
+                    </TableCell>
                     <TableCell className="text-sm text-right text-[#e8eaed]">{idr(m.saldo)}</TableCell>
                   </TableRow>
                 ))}
