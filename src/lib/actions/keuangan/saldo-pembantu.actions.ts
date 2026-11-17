@@ -22,31 +22,6 @@ export interface SaldoPembantuJenis {
   total_modal: number;
   /** Sisa barang lama yang belum terpakai jatah → aset */
   sisa_modal: number;
-  /** Cek fisik terakhir (null = belum pernah dicek) */
-  cek_terakhir: CekFisikPembantu | null;
-}
-
-/**
- * Cek fisik: nilai sisa barang di rak pada tanggal cek.
- * pakai_nyata = masuk (barang lama + belanja s.d. tanggal) − nilai_sisa
- * selisih     = jatah HPP s.d. tanggal − pakai_nyata  (+ hemat, − boros)
- */
-export interface CekFisikPembantu {
-  id: string;
-  jenis_id: string;
-  jenis: string;
-  tanggal: string;
-  qty: number | null;
-  satuan: string | null;
-  harga_satuan: number | null;
-  nilai_sisa: number;
-  keterangan: string | null;
-  masuk: number;
-  jatah: number;
-  /** Saldo menurut catatan pada tanggal cek (sebelum dikoreksi fisik) */
-  saldo_catatan: number;
-  pakai_nyata: number;
-  selisih: number;
 }
 
 /** Barang lama milik pemilik yang dimasukkan sebagai saldo awal (harga perkiraan) */
@@ -97,19 +72,11 @@ export interface SaldoPembantuData {
   total_penghematan: number;
   total_modal: number;
   total_sisa_modal: number;
-  cek_fisik: CekFisikPembantu[];
-  /** Σ selisih cek terakhir per jenis yang sudah dicek */
-  total_selisih_fisik: number;
-  jenis_dicek: number;
-  jenis_bisa_dicek: number;
 }
 
 export async function getSaldoPembantu(): Promise<SaldoPembantuData> {
   const supabase = await createClient();
-  const [
-    { data: jenisRows, error: jErr }, { data: mutasiRows, error: mErr }, { data: awalRows, error: aErr },
-    { data: cekRows, error: cErr },
-  ] = await Promise.all([
+  const [{ data: jenisRows, error: jErr }, { data: mutasiRows, error: mErr }, { data: awalRows, error: aErr }] = await Promise.all([
     supabase
       .from('pembantu_jenis')
       .select('id, nama, tanpa_barang, urutan')
@@ -122,23 +89,16 @@ export async function getSaldoPembantu(): Promise<SaldoPembantuData> {
       .select('id, jenis_id, tanggal, nama_barang, qty, satuan, harga_satuan, nominal, keterangan')
       .eq('tenant_id', TENANT_ID)
       .order('tanggal').order('created_at'),
-    supabase
-      .from('pembantu_cek_fisik')
-      .select('id, jenis_id, tanggal, qty, satuan, harga_satuan, nilai_sisa, keterangan, created_at')
-      .eq('tenant_id', TENANT_ID)
-      .order('tanggal').order('created_at'),
   ]);
   if (jErr) throw new Error(jErr.message);
   if (mErr) throw new Error(mErr.message);
   if (aErr) throw new Error(aErr.message);
-  if (cErr) throw new Error(cErr.message);
 
   const nama = new Map<string, string>((jenisRows ?? []).map(j => [j.id, j.nama]));
   const ringkas = new Map<string, SaldoPembantuJenis>(
     (jenisRows ?? []).map(j => [j.id, {
       id: j.id, nama: j.nama, tanpa_barang: j.tanpa_barang,
       total_beli: 0, total_jatah: 0, saldo: 0, penghematan: 0, pcs: 0, total_modal: 0, sisa_modal: 0,
-      cek_terakhir: null,
     }]),
   );
   const bulanan = new Map<string, PenghematanBulan>();
@@ -184,31 +144,7 @@ export async function getSaldoPembantu(): Promise<SaldoPembantuData> {
     return m;
   });
 
-  // ── Cek fisik: bandingkan sisa di rak dengan barang masuk & jatah s.d. tanggal cek ──
-  // Barang lama (modal) selalu dihitung masuk (diproses paling dulu di RPC, apa pun tanggalnya).
-  const cek_fisik: CekFisikPembantu[] = ((cekRows ?? []) as Record<string, unknown>[]).map(c => {
-    const jid = String(c.jenis_id), d = String(c.tanggal);
-    const rows = mutasi.filter(m => m.jenis_id === jid && (m.tipe === 'modal' || m.tanggal <= d));
-    const masuk = rows.filter(m => m.tipe !== 'jatah').reduce((t, m) => t + m.nominal, 0);
-    const jatah = rows.filter(m => m.tipe === 'jatah').reduce((t, m) => t + m.nominal, 0);
-    const nilai_sisa = Number(c.nilai_sisa);
-    const pakai_nyata = masuk - nilai_sisa;
-    return {
-      id: String(c.id), jenis_id: jid, jenis: nama.get(jid) ?? '?', tanggal: d,
-      qty: c.qty == null ? null : Number(c.qty), satuan: (c.satuan as string | null) ?? null,
-      harga_satuan: c.harga_satuan == null ? null : Number(c.harga_satuan),
-      nilai_sisa, keterangan: (c.keterangan as string | null) ?? null,
-      masuk, jatah, saldo_catatan: rows.length ? rows[rows.length - 1].saldo : 0,
-      pakai_nyata, selisih: jatah - pakai_nyata,
-    };
-  });
-  for (const c of cek_fisik) { // urut tanggal naik → yang terakhir menang
-    const s = ringkas.get(c.jenis_id);
-    if (s) s.cek_terakhir = c;
-  }
-
   const jenis = [...ringkas.values()];
-  const dicek = jenis.filter(j => j.cek_terakhir);
   return {
     jenis,
     mutasi: mutasi.sort((a, b) => b.tanggal.localeCompare(a.tanggal) || (a.tipe === 'jatah' ? -1 : 1)),
@@ -226,10 +162,6 @@ export async function getSaldoPembantu(): Promise<SaldoPembantuData> {
     total_penghematan: jenis.reduce((s, j) => s + j.penghematan, 0),
     total_modal: jenis.reduce((s, j) => s + j.total_modal, 0),
     total_sisa_modal: jenis.reduce((s, j) => s + j.sisa_modal, 0),
-    cek_fisik: [...cek_fisik].reverse(),
-    total_selisih_fisik: dicek.reduce((s, j) => s + (j.cek_terakhir?.selisih ?? 0), 0),
-    jenis_dicek: dicek.length,
-    jenis_bisa_dicek: jenis.filter(j => !j.tanpa_barang).length,
   };
 }
 
@@ -239,7 +171,7 @@ async function wajibKeuangan() {
   const profile = await getCurrentUserProfile();
   if (!profile) throw new Error('Unauthorized');
   if (!(['owner', 'admin_keuangan'] as string[]).includes(profile.role)) {
-    throw new Error('Hanya owner / admin keuangan yang boleh mengubah data bahan pembantu.');
+    throw new Error('Hanya owner / admin keuangan yang boleh mengubah saldo awal bahan pembantu.');
   }
   return profile;
 }
@@ -299,56 +231,6 @@ export async function hapusSaldoAwalPembantu(id: string): Promise<{ ok: true }> 
   await wajibKeuangan();
   const supabase = await createClient();
   const { error } = await supabase.from('pembantu_saldo_awal').delete().eq('tenant_id', TENANT_ID).eq('id', id);
-  if (error) throw new Error(error.message);
-  segarkan();
-  return { ok: true };
-}
-
-/** Catat hasil cek fisik: nilai sisa barang di rak untuk satu jenis bahan pembantu. */
-export async function tambahCekFisikPembantu(input: {
-  jenis_id: string;
-  tanggal: string; // YYYY-MM-DD
-  qty?: number | null;
-  satuan?: string;
-  harga_satuan?: number | null;
-  nilai_sisa: number;
-  keterangan?: string;
-}): Promise<{ ok: true }> {
-  const profile = await wajibKeuangan();
-  const nilai = Number(input.nilai_sisa);
-  if (!input.jenis_id) throw new Error('Pilih jenis bahan');
-  if (!(nilai >= 0) || !Number.isFinite(nilai)) throw new Error('Nilai sisa tidak valid');
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.tanggal)) throw new Error('Tanggal tidak valid');
-
-  const supabase = await createClient();
-  const { data: jenis, error: jErr } = await supabase
-    .from('pembantu_jenis').select('id, tanpa_barang')
-    .eq('tenant_id', TENANT_ID).eq('id', input.jenis_id).maybeSingle();
-  if (jErr) throw new Error(jErr.message);
-  if (!jenis) throw new Error('Jenis bahan tidak ditemukan');
-  if (jenis.tanpa_barang) throw new Error('Jenis ini tanpa barang — tidak perlu cek fisik');
-
-  const angka = (v: number | null | undefined) => (v == null || !Number.isFinite(Number(v)) ? null : Number(v));
-  const { error } = await supabase.from('pembantu_cek_fisik').insert({
-    tenant_id: TENANT_ID,
-    jenis_id: input.jenis_id,
-    tanggal: input.tanggal,
-    qty: angka(input.qty),
-    satuan: input.satuan?.trim() || null,
-    harga_satuan: angka(input.harga_satuan),
-    nilai_sisa: Math.round(nilai),
-    keterangan: input.keterangan?.trim() || null,
-    created_by: profile.id,
-  });
-  if (error) throw new Error(error.message);
-  segarkan();
-  return { ok: true };
-}
-
-export async function hapusCekFisikPembantu(id: string): Promise<{ ok: true }> {
-  await wajibKeuangan();
-  const supabase = await createClient();
-  const { error } = await supabase.from('pembantu_cek_fisik').delete().eq('tenant_id', TENANT_ID).eq('id', id);
   if (error) throw new Error(error.message);
   segarkan();
   return { ok: true };

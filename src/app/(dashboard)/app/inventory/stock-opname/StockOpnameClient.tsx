@@ -19,6 +19,7 @@ export default function StockOpnameClient({ data, hariIni }: Props) {
   const router = useRouter();
   const [cari, setCari] = useState('');
   const [fisik, setFisik] = useState<Record<string, string>>({});
+  const [harga, setHarga] = useState<Record<string, string>>({});
   const [tanggal, setTanggal] = useState(hariIni);
   const [catatan, setCatatan] = useState('');
   const [busy, setBusy] = useState(false);
@@ -32,13 +33,25 @@ export default function StockOpnameClient({ data, hariIni }: Props) {
 
   const simpan = async () => {
     if (!diisi.length) { toast.error('Isi stok fisik minimal satu barang'); return; }
+    // Stok lebih tanpa harga sama sekali → wajib isi harga beli (kalau tidak, nilainya Rp 0)
+    const tanpaHarga = diisi.filter(([id, v]) => {
+      const it = itemMap.get(id);
+      return it && Number(v) > it.stok_aktual && !(it.harga_referensi > 0) && !(Number(harga[id]) > 0);
+    });
+    if (tanpaHarga.length) {
+      toast.error(`Isi harga beli untuk: ${tanpaHarga.map(([id]) => itemMap.get(id)?.nama).join(', ')}`);
+      return;
+    }
     setBusy(true);
     const res = await simpanStockOpname(
-      diisi.map(([id, v]) => ({ inventory_item_id: id, stok_fisik: Number(v) })), tanggal, catatan);
+      diisi.map(([id, v]) => ({
+        inventory_item_id: id, stok_fisik: Number(v),
+        harga: Number(harga[id]) > 0 ? Number(harga[id]) : null,
+      })), tanggal, catatan);
     setBusy(false);
     if (!res.success) { toast.error(res.error ?? 'Gagal menyimpan'); return; }
     toast.success(`${res.jumlah} barang tersimpan · nilai selisih ${rp(res.nilai_selisih ?? 0)}`);
-    setFisik({}); setCatatan('');
+    setFisik({}); setHarga({}); setCatatan('');
     router.refresh();
   };
 
@@ -50,6 +63,8 @@ export default function StockOpnameClient({ data, hariIni }: Props) {
       <div className={`${card} px-4 py-3 text-xs text-[#9aa0a6] leading-relaxed`}>
         <b className="text-[#e8eaed]">Cara pakai:</b> hitung sisa fisik bahan utama lalu isi kolom <b>Stok Fisik</b>.
         Selisihnya dicatat sebagai bahan terpakai (atau hilang/rusak). Barang yang tidak diisi tidak diubah.
+        Bila stok fisik <b>lebih</b> dari sistem (barang lama yang tidak dibeli periode ini), isi <b>Harga Beli</b> per satuan —
+        kelebihannya dicatat sebagai stok + <b>Setoran Modal</b> (pindah buku, bukan pendapatan).
         Bahan pembantu tidak di-opname lagi — belanjanya dicatat di <b>Buku Kas</b> (kategori Bahan Pembantu)
         dan dipantau di menu <b>Keuangan → Saldo Bahan Pembantu</b>.
       </div>
@@ -73,12 +88,13 @@ export default function StockOpnameClient({ data, hariIni }: Props) {
                 <th className="text-right px-3 py-2">Stok Sistem</th>
                 <th className="text-right px-3 py-2 w-40">Stok Fisik</th>
                 <th className="text-right px-3 py-2">Selisih</th>
+                <th className="text-right px-3 py-2 w-44">Harga Beli / Satuan</th>
                 <th className="text-left px-3 py-2">Opname Terakhir</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#2A2D31]">
               {items.length === 0 && (
-                <tr><td colSpan={5} className="px-3 py-8 text-center text-[#9aa0a6]">Tidak ada barang</td></tr>
+                <tr><td colSpan={6} className="px-3 py-8 text-center text-[#9aa0a6]">Tidak ada barang</td></tr>
               )}
               {items.map(i => {
                 const v = fisik[i.id] ?? '';
@@ -94,6 +110,21 @@ export default function StockOpnameClient({ data, hariIni }: Props) {
                     </td>
                     <td className={`px-3 py-2 text-right font-bold ${sel == null ? 'text-[#5f6368]' : sel < 0 ? 'text-orange-400' : sel > 0 ? 'text-sky-400' : 'text-green-400'}`}>
                       {sel == null ? '—' : `${sel > 0 ? '+' : ''}${fmt(sel)}`}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      {sel != null && sel > 0 ? (
+                        <>
+                          <input type="number" min={0} step="any" value={harga[i.id] ?? ''}
+                            onChange={e => setHarga(p => ({ ...p, [i.id]: e.target.value }))}
+                            className={`${inputCls} w-32 text-right ${!(i.harga_referensi > 0) && !(Number(harga[i.id]) > 0) ? 'border-red-500/60' : ''}`}
+                            placeholder={i.harga_referensi > 0 ? String(i.harga_referensi) : 'wajib'} />
+                          {(Number(harga[i.id]) > 0 || i.harga_referensi > 0) && (
+                            <div className="text-[10px] text-sky-300 mt-0.5">
+                              modal {rp(sel * (Number(harga[i.id]) > 0 ? Number(harga[i.id]) : i.harga_referensi))}
+                            </div>
+                          )}
+                        </>
+                      ) : <span className="text-[#5f6368]">—</span>}
                     </td>
                     <td className="px-3 py-2 text-[#9aa0a6] text-xs">{i.terakhir ? new Date(i.terakhir).toLocaleDateString('id-ID') : 'belum pernah'}</td>
                   </tr>

@@ -74,7 +74,8 @@ export async function getOpnameData(): Promise<{ items: OpnameItem[]; riwayat: O
 }
 
 export async function simpanStockOpname(
-  items: { inventory_item_id: string; stok_fisik: number }[],
+  /** harga: harga beli per satuan untuk stok LEBIH (barang lama → setoran modal); opsional bila barang sudah punya harga */
+  items: { inventory_item_id: string; stok_fisik: number; harga?: number | null }[],
   tanggal: string,
   catatan: string,
 ): Promise<{ success: boolean; jumlah?: number; nilai_selisih?: number; error?: string }> {
@@ -89,6 +90,8 @@ export async function simpanStockOpname(
     if (error) return { success: false, error: error.message };
     revalidatePath(PATH);
     revalidatePath('/app/inventory/overview');
+    revalidatePath('/app/keuangan/buku-kas');
+    revalidatePath('/app/keuangan/proyeksi-surplus');
     return { success: true, jumlah: Number(data?.jumlah ?? 0), nilai_selisih: Number(data?.nilai_selisih ?? 0) };
   } catch (e: any) {
     return { success: false, error: e?.message ?? 'Terjadi kesalahan' };
