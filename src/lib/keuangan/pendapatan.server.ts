@@ -12,8 +12,6 @@ const TENANT_ID = 'STX-001';
  */
 export const KATEGORI_BAYAR_KLIEN = ['DP Klien', 'Pelunasan Klien'];
 
-export const LABEL_PENDAPATAN_SJ = 'Penjualan (Surat Jalan)';
-
 export interface PendapatanBulan {
   /** Invoice netto (setelah validasi kirim & potongan reject kantor) */
   nilai: number;
@@ -24,8 +22,8 @@ export interface PendapatanBulan {
 /**
  * Pendapatan per bulan ('YYYY-MM') dari Surat Jalan: invoice otomatis (qty kirim × harga jual saat
  * SJ dibuat), dikoreksi saat Validasi Kirim (qty diterima, qty lebih disetujui) dan dipotong reject
- * kantor. Dicatat di bulan tanggal invoice (= tanggal SJ). Satu sumber untuk Laba Rugi, Ringkasan,
- * Laporan Bulan & Proyeksi Surplus.
+ * kantor. Dicatat di bulan tanggal invoice (= tanggal SJ). Dipakai mesin Kinerja Keuangan
+ * (lib/keuangan/kinerja.server.ts) untuk Kinerja Keuangan, Ringkasan & Laporan Per PO.
  * Periode baru: hanya porsi barang bundle PO periode baru, dan invoice mulai TANGGAL_AWAL_PERIODE.
  */
 export async function pendapatanSjPerBulan(
