@@ -236,7 +236,7 @@ export async function hitungKinerja(supabase: Supa, periode = 'semua'): Promise<
     const j = String(r.jenis_id);
     const cur = pembantuPerJenis.get(j) ?? { lama: 0, belanja: 0, sisa: 0, sisaLama: 0 };
     if (r.tipe === 'modal') cur.lama += Number(r.nominal);
-    if (r.tipe === 'beli') cur.belanja += Number(r.nominal);
+    if (r.tipe === 'beli' || r.tipe === 'potong') cur.belanja += Number(r.nominal); // potong variasi: nilai pindah dari stok bahan utama
     cur.sisa = Number(r.saldo ?? 0);            // urut per jenis → baris terakhir = sisa
     cur.sisaLama = Number(r.saldo_modal ?? 0);
     pembantuPerJenis.set(j, cur);

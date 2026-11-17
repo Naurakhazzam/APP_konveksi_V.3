@@ -185,6 +185,8 @@ export default function SaldoPembantuClient({ data, bolehUbah = false }: { data:
                         ? <span className="text-sky-300">Saldo awal (barang lama)</span>
                         : m.tipe === 'beli'
                         ? <span className="text-orange-300">Belanja</span>
+                        : m.tipe === 'potong'
+                        ? <span className="text-orange-300">Potong Drill mandiri <span className="text-[10px] text-[#9aa0a6]">({m.pcs?.toLocaleString('id-ID')} dari stok bahan)</span></span>
                         : <span className="text-[#9aa0a6]">
                             Jatah {m.pcs?.toLocaleString('id-ID')} pcs
                             {m.ke_modal < 0 && <span className="block text-[10px] text-sky-300/80">{idr(m.ke_modal)} dari barang lama</span>}

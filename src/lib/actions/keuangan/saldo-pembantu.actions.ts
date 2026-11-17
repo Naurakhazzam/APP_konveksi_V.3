@@ -42,7 +42,7 @@ export interface MutasiPembantu {
   jenis_id: string;
   jenis: string;
   tanggal: string;
-  tipe: 'modal' | 'beli' | 'jatah';
+  tipe: 'modal' | 'beli' | 'potong' | 'jatah';
   nominal: number;
   pcs: number | null;
   ke_saldo: number;
@@ -104,7 +104,7 @@ export async function getSaldoPembantu(): Promise<SaldoPembantuData> {
   const bulanan = new Map<string, PenghematanBulan>();
 
   type Row = {
-    jenis_id: string; tanggal: string; tipe: 'modal' | 'beli' | 'jatah'; nominal: number | string;
+    jenis_id: string; tanggal: string; tipe: 'modal' | 'beli' | 'potong' | 'jatah'; nominal: number | string;
     pcs: number | string | null; ke_saldo: number | string; ke_hemat: number | string; saldo: number | string;
     ke_modal: number | string | null; saldo_modal: number | string | null; hemat_final: number | string | null;
   };
@@ -126,7 +126,7 @@ export async function getSaldoPembantu(): Promise<SaldoPembantuData> {
     const s = ringkas.get(m.jenis_id);
     if (s) {
       if (m.tipe === 'modal') s.total_modal += m.nominal;
-      else if (m.tipe === 'beli') s.total_beli += m.nominal;
+      else if (m.tipe === 'beli' || m.tipe === 'potong') s.total_beli += m.nominal; // potong variasi = barang masuk dari stok bahan utama
       else { s.total_jatah += m.nominal; s.pcs += m.pcs ?? 0; }
       s.saldo = m.saldo; // mutasi urut per jenis (saldo awal dulu, lalu tanggal) → baris terakhir = saldo akhir
       s.sisa_modal = m.saldo_modal;

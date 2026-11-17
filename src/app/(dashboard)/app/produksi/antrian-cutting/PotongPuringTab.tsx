@@ -4,6 +4,7 @@ import React, { useMemo, useState } from 'react';
 import { Loader2, Scissors, Undo2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { potongPuring, batalPotongPuring, type PuringData } from '@/lib/actions/produksi/potong-puring.actions';
+import { UKURAN_POTONG } from '@/lib/produksi/variasi';
 
 interface Props {
   data: PuringData;
@@ -18,7 +19,7 @@ export default function PotongPuringTab({ data, isOwner, onChanged }: Props) {
   const [bahanId, setBahanId] = useState(data.bahan[0]?.id ?? '');
   const [habis, setHabis] = useState(true);
   const [kg, setKg] = useState('');
-  const [pcs, setPcs] = useState('');
+  const [perSize, setPerSize] = useState<Record<string, string>>({});
   const [catatan, setCatatan] = useState('');
   const [busy, setBusy] = useState(false);
   const [batalId, setBatalId] = useState<string | null>(null);
@@ -26,7 +27,10 @@ export default function PotongPuringTab({ data, isOwner, onChanged }: Props) {
 
   const bahan = useMemo(() => data.bahan.find(b => b.id === bahanId), [data.bahan, bahanId]);
   const kgPakai = habis ? (bahan?.stok_aktual ?? 0) : parseFloat(kg) || 0;
-  const pcsNum = parseInt(pcs, 10) || 0;
+  const sizeNum = useMemo(() => Object.fromEntries(
+    UKURAN_POTONG.map(s => [s, Math.max(0, parseInt(perSize[s] ?? '', 10) || 0)]),
+  ) as Record<string, number>, [perSize]);
+  const pcsNum = Object.values(sizeNum).reduce((s, n) => s + n, 0);
 
   // Perkiraan biaya FIFO: ambil dari LOT paling lama dulu (sama seperti di server)
   const biayaFifo = useMemo(() => {
@@ -46,13 +50,16 @@ export default function PotongPuringTab({ data, isOwner, onChanged }: Props) {
     if (!bahan) { toast.error('Pilih bahan puring'); return; }
     if (kgPakai <= 0) { toast.error(habis ? `Stok ${bahan.nama} kosong — input belanja di Stok Masuk dulu` : 'Isi kg yang dipotong'); return; }
     if (kgPakai > bahan.stok_aktual + 0.0005) { toast.error(`Stok ${bahan.nama} hanya ${fmt(bahan.stok_aktual)} ${bahan.satuan}`); return; }
-    if (pcsNum <= 0) { toast.error('Isi jumlah lembar puring yang jadi'); return; }
+    if (pcsNum <= 0) { toast.error('Isi jumlah lembar puring per ukuran'); return; }
     setBusy(true);
-    const res = await potongPuring({ bahan_item_id: bahan.id, kg: kgPakai, pcs: pcsNum, habis_roll: habis, catatan });
+    const res = await potongPuring({
+      bahan_item_id: bahan.id, kg: kgPakai, pcs: pcsNum, habis_roll: habis, catatan,
+      per_size: Object.fromEntries(Object.entries(sizeNum).filter(([, n]) => n > 0)),
+    });
     setBusy(false);
     if (!res.success) { toast.error(res.error ?? 'Gagal menyimpan'); return; }
     toast.success(`${pcsNum} lembar puring masuk stok · ${rp(res.harga_per_pcs ?? 0)}/lembar`);
-    setKg(''); setPcs(''); setCatatan('');
+    setKg(''); setPerSize({}); setCatatan('');
     onChanged();
   };
 
@@ -128,10 +135,19 @@ export default function PotongPuringTab({ data, isOwner, onChanged }: Props) {
               </div>
             )}
 
-            <div className="space-y-1.5">
-              <label className="text-xs text-[#9aa0a6]">Jadi berapa lembar (pcs)</label>
-              <input type="number" min={1} step={1} value={pcs} onChange={e => setPcs(e.target.value)}
-                placeholder="mis. 120" className={`${inputCls} w-full`} />
+            <div className="space-y-1.5 md:col-span-2">
+              <label className="text-xs text-[#9aa0a6]">Jadi berapa lembar per ukuran</label>
+              <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                {UKURAN_POTONG.map(s => (
+                  <div key={s} className="space-y-1">
+                    <div className="text-[11px] font-bold text-center text-[#9aa0a6]">{s}</div>
+                    <input type="number" min={0} step={1} value={perSize[s] ?? ''}
+                      onChange={e => setPerSize(p => ({ ...p, [s]: e.target.value }))}
+                      placeholder="0" className={`${inputCls} w-full text-center`} />
+                  </div>
+                ))}
+              </div>
+              <p className="text-[11px] text-[#9aa0a6]">Total <b className="text-[#e8eaed]">{pcsNum.toLocaleString('id-ID')} lembar</b></p>
             </div>
 
             <div className="space-y-1.5 md:col-span-2">
@@ -183,7 +199,14 @@ export default function PotongPuringTab({ data, isOwner, onChanged }: Props) {
                   <td className="px-4 py-2 text-[#e8eaed]">{new Date(r.tanggal).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
                   <td className="px-4 py-2 text-[#e8eaed]">{r.bahan_nama}{r.habis_roll && <span className="ml-1 text-[10px] text-emerald-400 no-underline">habis</span>}</td>
                   <td className="px-4 py-2 text-right text-[#e8eaed]">{fmt(r.kg_pakai)} kg</td>
-                  <td className="px-4 py-2 text-right font-bold text-[#e5c17b]">{r.pcs_hasil}</td>
+                  <td className="px-4 py-2 text-right font-bold text-[#e5c17b]">
+                    {r.pcs_hasil}
+                    {r.per_size && (
+                      <span className="block text-[10px] font-normal text-[#9aa0a6] whitespace-nowrap">
+                        {UKURAN_POTONG.filter(s => r.per_size?.[s]).map(s => `${s} ${r.per_size?.[s]}`).join(' · ')}
+                      </span>
+                    )}
+                  </td>
                   <td className="px-4 py-2 text-right text-[#e8eaed]">{rp(r.biaya_total)}</td>
                   <td className="px-4 py-2 text-right text-[#e8eaed]">{rp(r.harga_per_pcs)}</td>
                   <td className="px-4 py-2 text-[#9aa0a6]">{r.catatan ?? '-'}</td>
