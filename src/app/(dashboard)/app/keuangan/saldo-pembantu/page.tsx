@@ -1,5 +1,6 @@
 import { getSaldoPembantu, type SaldoPembantuData } from '@/lib/actions/keuangan/saldo-pembantu.actions';
 import { PageWrapper } from '@/components/ui/PageWrapper';
+import { getCurrentUserProfile } from '@/lib/auth/permissions';
 import SaldoPembantuClient from './SaldoPembantuClient';
 
 export const metadata = {
@@ -10,6 +11,8 @@ export const metadata = {
 export default async function SaldoPembantuPage() {
   let data: SaldoPembantuData | null = null;
   let error: string | null = null;
+  const profile = await getCurrentUserProfile();
+  const bolehUbah = !!profile && ['owner', 'admin_keuangan'].includes(profile.role);
   try {
     data = await getSaldoPembantu();
   } catch (e) {
@@ -23,10 +26,10 @@ export default async function SaldoPembantuPage() {
   return (
     <PageWrapper
       title="Saldo Bahan Pembantu"
-      subtitle="Belanja (Buku Kas) dihabiskan oleh jatah HPP × pcs selesai jahit; sisa jatah = penghematan"
+      subtitle="Barang lama (saldo awal) & belanja Buku Kas dihabiskan oleh jatah HPP × pcs selesai jahit; sisa jatah = penghematan"
     >
       <div className="mt-6">
-        <SaldoPembantuClient data={data} />
+        <SaldoPembantuClient data={data} bolehUbah={bolehUbah} />
       </div>
     </PageWrapper>
   );

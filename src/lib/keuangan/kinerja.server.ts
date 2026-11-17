@@ -11,6 +11,8 @@
  *    Bulan tanpa pemotongan: overhead langsung jadi beban ("overhead tanpa produksi").
  *  - Beban operasional (Biaya Operasional, Lainnya) dibebankan di bulan terjadinya.
  *  - Pembelian bahan = persediaan (aset), baru jadi biaya saat dipakai.
+ *  - Bahan pembantu lama (saldo awal = setoran modal berupa barang, tabel pembantu_saldo_awal):
+ *    sisanya = aset; bagian yang terpakai jatah HPP jadi overhead produksi di bulan pemakaiannya.
  */
 import { PO_AWAL_PERIODE, TANGGAL_AWAL_PERIODE, poPeriodeBaru } from './periode-po';
 import { pendapatanSjPerBulan } from './pendapatan.server';
@@ -109,6 +111,8 @@ export interface KinerjaData {
 
   posisi: {
     persediaanBahan: number;
+    /** Bahan pembantu lama (setoran modal barang) yang belum terpakai */
+    persediaanPembantu: number;
     barangDalamProses: number;
     piutang: number;
     sewaDibayarDimuka: number;
@@ -118,6 +122,7 @@ export interface KinerjaData {
     totalKewajiban: number;
   };
   stokTersisaRinci: { nama: string; qty: number; satuan: string; nilai: number }[];
+  pembantuLamaRinci: { nama: string; awal: number; sisa: number }[];
   sewaSisa: { nama: string; sejak: string; sampai: string; hari: number; nominal: number }[];
 
   arusKas: {
@@ -187,7 +192,7 @@ export async function hitungKinerja(supabase: Supa, periode = 'semua'): Promise<
   const dalamPeriode = (ym: string) => periodeValid === 'semua' || ym === periodeValid;
   const perTanggal = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Jakarta' });
 
-  const [poRes, poBulanRes, kasRes, lotRes, btRes, sjMap] = await Promise.all([
+  const [poRes, poBulanRes, kasRes, lotRes, btRes, sjMap, pembRes, jenisRes] = await Promise.all([
     supabase.rpc('get_proyeksi_surplus_po', { p_tenant_id: TENANT_ID, p_po_mulai: PO_AWAL_PERIODE }),
     supabase.rpc('get_kinerja_po_bulan', { p_tenant_id: TENANT_ID, p_po_mulai: PO_AWAL_PERIODE }),
     supabase.from('buku_kas')
@@ -199,8 +204,38 @@ export async function hitungKinerja(supabase: Supa, periode = 'semua'): Promise<
     supabase.from('biaya_tetap')
       .select('nama, nominal, tanggal_mulai, tanggal_selesai, overhead_sub_id').eq('tenant_id', TENANT_ID),
     pendapatanSjPerBulan(supabase, TANGGAL_AWAL_PERIODE, akhirSekarang, true),
+    supabase.rpc('get_mutasi_saldo_pembantu', { p_tenant_id: TENANT_ID, p_mulai: PO_AWAL_PERIODE }),
+    supabase.from('pembantu_jenis').select('id, nama').eq('tenant_id', TENANT_ID),
   ]);
-  for (const r of [poRes, poBulanRes, kasRes, lotRes, btRes]) if (r.error) throw new Error(r.error.message);
+  for (const r of [poRes, poBulanRes, kasRes, lotRes, btRes, pembRes, jenisRes]) if (r.error) throw new Error(r.error.message);
+
+  // ── Bahan pembantu lama (saldo awal = setoran modal barang) ──
+  const namaJenis = new Map(((jenisRes.data ?? []) as any[]).map(j => [String(j.id), String(j.nama)]));
+  const keBulanPeriode = (tgl: string) => {
+    const m = String(tgl).slice(0, 7);
+    return m < blnAwal ? blnAwal : m > blnSekarang ? blnSekarang : m;
+  };
+  /** bulan → jenis → nilai barang lama yang terpakai */
+  const pakaiLama = new Map<string, Map<string, number>>();
+  const lamaPerJenis = new Map<string, { awal: number; sisa: number }>();
+  ((pembRes.data ?? []) as any[]).forEach(r => {
+    const j = String(r.jenis_id);
+    const cur = lamaPerJenis.get(j) ?? { awal: 0, sisa: 0 };
+    if (r.tipe === 'modal') cur.awal += Number(r.nominal);
+    cur.sisa = Number(r.saldo_modal ?? 0); // urut per jenis → baris terakhir = sisa
+    lamaPerJenis.set(j, cur);
+    const pakai = -Number(r.ke_modal ?? 0);
+    if (r.tipe === 'jatah' && pakai > 0) {
+      const m = keBulanPeriode(r.tanggal);
+      const per = pakaiLama.get(m) ?? new Map<string, number>();
+      per.set(j, (per.get(j) ?? 0) + pakai);
+      pakaiLama.set(m, per);
+    }
+  });
+  const pembantuLamaRinci = [...lamaPerJenis.entries()].filter(([, v]) => v.awal > 0)
+    .map(([j, v]) => ({ nama: namaJenis.get(j) ?? '?', awal: v.awal, sisa: v.sisa }))
+    .sort((a, b) => b.sisa - a.sisa);
+  const persediaanPembantu = pembantuLamaRinci.reduce((s, x) => s + x.sisa, 0);
 
   // ── Buku Kas periode baru (baris bertanda PO lama diabaikan) ──
   const btData = (btRes.data ?? []) as any[];
@@ -239,6 +274,10 @@ export async function hitungKinerja(supabase: Supa, periode = 'semua'): Promise<
   // ── Overhead produksi per bulan → tarif per pcs potong bulan itu ──
   const overheadBulan: OverheadBulan[] = bulanList.map(m => {
     const transaksi = kasBiaya.filter(k => ym(k) === m && KATEGORI_OVERHEAD_PRODUKSI.includes(k.kategori)).map(keTransaksi);
+    (pakaiLama.get(m) ?? new Map<string, number>()).forEach((nominal, j) => transaksi.push({
+      tanggal: akhirBulan(m), kategori: 'Bahan Pembantu', sub: 'Barang lama (modal)',
+      keterangan: `Pemakaian ${namaJenis.get(j) ?? 'bahan pembantu'} lama (saldo awal, tanpa uang keluar)`, nominal,
+    }));
     const sewa = sewaBulan(m);
     const total = transaksi.reduce((s, t) => s + t.nominal, 0) + sewa.reduce((s, x) => s + x.nominal, 0);
     const pcsPotong = poBulan.filter(r => r.bulan === m).reduce((s, r) => s + r.potong, 0);
@@ -341,7 +380,7 @@ export async function hitungKinerja(supabase: Supa, periode = 'semua'): Promise<
   }).filter(x => x.hari > 0);
   const sewaDibayarDimuka = sewaSisa.reduce((s, x) => s + x.nominal, 0);
   const upahTerutang = po.reduce((s, p) => s + p.upah_belum_lunas, 0);
-  const totalAset = persediaanBahan + barangDalamProses + piutang + sewaDibayarDimuka;
+  const totalAset = persediaanBahan + persediaanPembantu + barangDalamProses + piutang + sewaDibayarDimuka;
 
   // ── Arus kas periode terpilih ──
   const diRentang = (k: any) => dalamPeriode(ym(k));
@@ -376,10 +415,10 @@ export async function hitungKinerja(supabase: Supa, periode = 'semua'): Promise<
       bebanOperasional: kasBiaya.filter(k => diRentang(k) && KATEGORI_BEBAN_OPERASIONAL.includes(k.kategori)).map(keTransaksi),
     },
     posisi: {
-      persediaanBahan, barangDalamProses, piutang, sewaDibayarDimuka, totalAset,
+      persediaanBahan, persediaanPembantu, barangDalamProses, piutang, sewaDibayarDimuka, totalAset,
       upahTerutang, uangMukaPelanggan, totalKewajiban: upahTerutang + uangMukaPelanggan,
     },
-    stokTersisaRinci, sewaSisa,
+    stokTersisaRinci, pembantuLamaRinci, sewaSisa,
     arusKas: {
       masukKlien, masukKlienTanpaPo: jml(masukP.filter(k => isKlien(k) && !k.po_id)),
       setoranModal, pendapatanLain, totalMasuk, keluar, totalKeluar, bersih: totalMasuk - totalKeluar,

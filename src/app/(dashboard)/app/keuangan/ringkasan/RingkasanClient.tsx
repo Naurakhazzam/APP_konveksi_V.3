@@ -84,7 +84,10 @@ export default function RingkasanClient({ initialData }: { initialData: Ringkasa
             ? <Kartu judul="Uang muka pelanggan" nilai={idr(k.posisi.uangMukaPelanggan)} kelas="text-sky-300" ket="DP untuk barang yang belum dikirim" />
             : <Kartu judul="Piutang usaha" nilai={idr(k.posisi.piutang)} kelas="text-amber-300" ket="Sudah dikirim, belum dibayar" />}
           <Kartu judul="Upah terutang" nilai={idr(k.posisi.upahTerutang)} kelas="text-orange-400" ket="Sudah dikerjakan, belum dibayar" />
-          <Kartu judul="Persediaan bahan" nilai={idr(k.posisi.persediaanBahan)} ket="Bahan dibeli, belum dipotong" />
+          <Kartu judul="Persediaan bahan" nilai={idr(k.posisi.persediaanBahan + k.posisi.persediaanPembantu)}
+            ket={k.posisi.persediaanPembantu > 0
+              ? `Bahan baku ${idr(k.posisi.persediaanBahan)} + pembantu lama ${idr(k.posisi.persediaanPembantu)}`
+              : 'Bahan dibeli, belum dipotong'} />
         </div>
       </div>
 

@@ -248,6 +248,15 @@ export default function ProyeksiSurplusClient({ data: awal }: { data: KinerjaDat
                   label={`${s.nama} — ${s.qty.toLocaleString('id-ID', { maximumFractionDigits: 2 })} ${s.satuan}`} />
               )) : undefined}
             </Pos>
+            {posisi.persediaanPembantu > 0 && (
+              <Pos label="Persediaan bahan pembantu (barang lama)" nilai={posisi.persediaanPembantu}
+                sub="Setoran modal berupa barang, harga perkiraan — belum terpakai">
+                {data.pembantuLamaRinci.filter(p => p.sisa > 0).map(p => (
+                  <Rinci key={p.nama} nilai={p.sisa}
+                    label={`${p.nama} — sisa dari saldo awal Rp ${Math.round(p.awal).toLocaleString('id-ID')}`} />
+                ))}
+              </Pos>
+            )}
             <Pos label="Barang dalam proses" nilai={posisi.barangDalamProses}
               sub="Biaya bahan, upah & overhead untuk barang yang belum dikirim" />
             {posisi.piutang > 0 && <Pos label="Piutang usaha" nilai={posisi.piutang} sub="Sudah dikirim, belum dibayar pelanggan" />}
