@@ -12,10 +12,6 @@ interface Props {
   onChanged: () => void;
 }
 
-/** Patokan HPP: variasi Drill 0,10 per baju. 1 set = variasi untuk 1 Zubair + 1 Arslan (ukuran sama). */
-const PATOKAN_PER_BAJU = 0.1;
-/** Jumlah baju per set: "Zubair & Arslan" = 2, satu model saja = 1 */
-const bajuPerSet = (untuk: string) => (untuk === 'Zubair & Arslan' ? 2 : 1);
 
 const rp = (n: number) => 'Rp' + Math.round(n).toLocaleString('id-ID');
 const fmt = (n: number) => Number(n.toFixed(3)).toLocaleString('id-ID');
@@ -37,8 +33,6 @@ export default function PotongVariasiTab({ data, isOwner, onChanged }: Props) {
     UKURAN_POTONG.map(s => [s, Math.max(0, parseInt(perSize[s] ?? '', 10) || 0)]),
   ) as Record<string, number>, [perSize]);
   const totalPcs = Object.values(sizeNum).reduce((s, n) => s + n, 0);
-  const totalBaju = totalPcs * bajuPerSet(untuk || 'Zubair & Arslan');
-  const patokan = totalBaju * PATOKAN_PER_BAJU;
 
   const biayaFifo = useMemo(() => {
     if (!bahan || qtyPakai <= 0) return 0;
@@ -58,7 +52,7 @@ export default function PotongVariasiTab({ data, isOwner, onChanged }: Props) {
     if (!untuk) { toast.error('Pilih variasi untuk model apa'); return; }
     if (qtyPakai <= 0) { toast.error(habis ? `Stok ${bahan.nama} kosong` : 'Isi jumlah bahan yang dipotong'); return; }
     if (qtyPakai > bahan.stok_aktual + 0.0005) { toast.error(`Stok ${bahan.nama} hanya ${fmt(bahan.stok_aktual)} ${bahan.satuan}`); return; }
-    if (totalPcs <= 0) { toast.error('Isi jumlah set variasi per ukuran'); return; }
+    if (totalPcs <= 0) { toast.error('Isi jumlah pcs variasi per ukuran'); return; }
     setBusy(true);
     const res = await potongVariasi({
       bahan_item_id: bahan.id, qty: qtyPakai, habis_roll: habis, untuk_model: untuk,
@@ -84,7 +78,6 @@ export default function PotongVariasiTab({ data, isOwner, onChanged }: Props) {
 
   const inputCls = 'h-9 rounded-md border border-[#2A2D31] bg-[#0D0E10] px-3 text-sm text-[#e8eaed] focus:outline-none focus:ring-1 focus:ring-[#e5c17b]';
   const card = 'rounded-xl border border-[#2A2D31] bg-[#1A1D1F]';
-  const selisih = qtyPakai - patokan;
 
   return (
     <div className="space-y-6">
@@ -165,7 +158,7 @@ export default function PotongVariasiTab({ data, isOwner, onChanged }: Props) {
             )}
 
             <div className="space-y-1.5 md:col-span-2">
-              <label className="text-xs text-[#9aa0a6]">Jadi berapa set variasi per ukuran <span className="text-[#5f6368]">(1 set = 1 Zubair + 1 Arslan)</span></label>
+              <label className="text-xs text-[#9aa0a6]">Jadi berapa pcs variasi per ukuran</label>
               <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
                 {UKURAN_POTONG.map(s => (
                   <div key={s} className="space-y-1">
@@ -176,8 +169,7 @@ export default function PotongVariasiTab({ data, isOwner, onChanged }: Props) {
                   </div>
                 ))}
               </div>
-              <p className="text-[11px] text-[#9aa0a6]">Total <b className="text-[#e8eaed]">{totalPcs.toLocaleString('id-ID')} set</b>
-                {totalPcs > 0 && <> = <b className="text-[#e8eaed]">{totalBaju.toLocaleString('id-ID')} baju</b></>}</p>
+              <p className="text-[11px] text-[#9aa0a6]">Total <b className="text-[#e8eaed]">{totalPcs.toLocaleString('id-ID')} pcs</b></p>
             </div>
 
             <div className="space-y-1.5 md:col-span-2">
@@ -192,19 +184,12 @@ export default function PotongVariasiTab({ data, isOwner, onChanged }: Props) {
           <div className="text-xs text-[#9aa0a6] space-y-0.5">
             {qtyPakai > 0
               ? <p>Pakai <b className="text-[#e8eaed]">{fmt(qtyPakai)} {bahan?.satuan}</b> → masuk saldo Variasi <b className="text-[#e5c17b]">{rp(biayaFifo)}</b>
-                  {totalBaju > 0 && <> · <b className="text-[#e5c17b]">{rp(biayaFifo / totalBaju)}/baju</b>
-                    <span> ({fmt(qtyPakai / totalBaju)} {bahan?.satuan}/baju)</span></>}</p>
+                  {totalPcs > 0 && <> · <b className="text-[#e5c17b]">{rp(biayaFifo / totalPcs)}/pcs</b>
+                    <span> ({fmt(qtyPakai / totalPcs)} {bahan?.satuan}/pcs)</span></>}</p>
               : <p>Isi data untuk melihat perhitungan</p>}
-            {qtyPakai > 0 && totalPcs > 0 && (
-              <p>
-                Patokan HPP {fmt(PATOKAN_PER_BAJU)} × {totalBaju} baju = <b className="text-[#e8eaed]">{fmt(patokan)}</b> →{' '}
-                {Math.abs(selisih) < 0.0005
-                  ? <b className="text-[#e8eaed]">sesuai</b>
-                  : selisih > 0
-                  ? <b className="text-red-300">boros {fmt(selisih)}</b>
-                  : <b className="text-green-400">irit {fmt(-selisih)}</b>}
-              </p>
-            )}
+            <p className="text-[11px] text-[#5f6368]">
+              Hemat/boros variasi dinilai gabungan Zubair + Arslan di Keuangan › Saldo Bahan Pembantu › Variasi (HPP 0,10/baju adalah rata-rata keduanya).
+            </p>
           </div>
           <button onClick={simpan} disabled={busy || data.bahan.length === 0}
             className="flex items-center gap-2 px-5 h-10 rounded-md bg-[#e5c17b] text-[#0D0E10] text-sm font-semibold hover:bg-[#d4b06a] disabled:opacity-30">
@@ -245,7 +230,7 @@ export default function PotongVariasiTab({ data, isOwner, onChanged }: Props) {
                     <td className="px-4 py-2 text-right text-[#e8eaed] whitespace-nowrap">{fmt(r.qty_pakai)} {r.satuan}</td>
                     <td className="px-4 py-2 text-[#9aa0a6]">
                       {total > 0
-                        ? <>{UKURAN_POTONG.filter(s => ps[s]).map(s => `${s} ${ps[s]}`).join(' · ')} <b className="text-[#e8eaed]">({total} set)</b></>
+                        ? <>{UKURAN_POTONG.filter(s => ps[s]).map(s => `${s} ${ps[s]}`).join(' · ')} <b className="text-[#e8eaed]">({total} pcs · {fmt(r.qty_pakai / total)} {r.satuan}/pcs)</b></>
                         : '-'}
                     </td>
                     <td className="px-4 py-2 text-right text-[#e5c17b] font-bold">{rp(r.biaya_total)}</td>
