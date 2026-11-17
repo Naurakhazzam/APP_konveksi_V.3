@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
+import Link from 'next/link';
 import { 
   Plus, 
   Search, 
@@ -59,6 +60,8 @@ interface Props {
   bolehSetoranModal?: boolean;
 }
 
+const SALDO_PEMBANTU_PATH = '/app/keuangan/saldo-pembantu';
+
 export default function InventoryOverviewClient({ items, kategoriTrxList, warnaList, bolehSetoranModal = false }: Props) {
   // Jadikan stok minus (sisa bahan lama) sebagai Setoran Modal — per bahan
   const [modalItem, setModalItem] = useState<InventoryOverviewItem | null>(null);
@@ -114,7 +117,8 @@ export default function InventoryOverviewClient({ items, kategoriTrxList, warnaL
 
   // Summary counts
   const totalItems = localItems.length;
-  const lowStockCount = localItems.filter(i => i.status === 'low' || i.status === 'minus').length;
+  // Bahan pembantu dihitung lewat Saldo Bahan Pembantu (rupiah), bukan qty di sini
+  const lowStockCount = localItems.filter(i => i.jenis !== 'pembantu' && (i.status === 'low' || i.status === 'minus')).length;
 
   // --- Handlers ---
 
@@ -394,10 +398,11 @@ export default function InventoryOverviewClient({ items, kategoriTrxList, warnaL
                   <TableCell className="font-semibold text-[#e8eaed]">
                     {item.nama}
                     {item.jenis === 'pembantu' && (
-                      <span className="ml-2 text-[10px] font-normal px-1.5 py-0.5 rounded border border-sky-500/30 text-sky-300"
+                      <Link href={SALDO_PEMBANTU_PATH}
+                        className="ml-2 text-[10px] font-normal px-1.5 py-0.5 rounded border border-sky-500/30 text-sky-300 hover:bg-sky-500/10"
                         title="Bahan pembantu: belanja dicatat di Buku Kas, dipantau di Keuangan → Saldo Bahan Pembantu">
                         pembantu
-                      </span>
+                      </Link>
                     )}
                   </TableCell>
                   <TableCell className="text-[#9aa0a6]">{item.satuan}</TableCell>
@@ -410,6 +415,19 @@ export default function InventoryOverviewClient({ items, kategoriTrxList, warnaL
                       <span className="text-[#5f6368] text-xs">—</span>
                     )}
                   </TableCell>
+                  {item.jenis === 'pembantu' ? (
+                    <>
+                      <TableCell className="text-center text-[#5f6368]">—</TableCell>
+                      <TableCell className="text-center text-[#5f6368]">—</TableCell>
+                      <TableCell>
+                        <Link href={SALDO_PEMBANTU_PATH}
+                          title="Qty di sini tidak dipakai. Belanja, barang lama & pemakaian dihitung dalam rupiah di Saldo Bahan Pembantu."
+                          className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium whitespace-nowrap bg-sky-500/10 text-sky-300 border border-sky-500/20 hover:bg-sky-500/20">
+                          Dihitung di Saldo Bahan Pembantu →
+                        </Link>
+                      </TableCell>
+                    </>
+                  ) : (<>
                   <TableCell className="text-center font-bold">
                     <span className={
                       item.status === 'minus' ? 'text-red-500' : 
@@ -428,6 +446,7 @@ export default function InventoryOverviewClient({ items, kategoriTrxList, warnaL
                       {item.status === 'minus' ? 'Minus' : item.status === 'low' ? 'Stok Rendah' : 'Normal'}
                     </Badge>
                   </TableCell>
+                  </>)}
                   <TableCell className="text-center">
                     <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#2A2D31] text-[#e8eaed] text-xs font-medium">
                       <Hash size={10} className="text-[#e5c17b]" />
