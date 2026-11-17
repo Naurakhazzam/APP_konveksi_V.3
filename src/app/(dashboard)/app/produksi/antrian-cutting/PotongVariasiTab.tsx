@@ -28,6 +28,7 @@ export default function PotongVariasiTab({ data, isOwner, onChanged }: Props) {
   const [busy, setBusy] = useState(false);
   const [batalId, setBatalId] = useState<string | null>(null);
   const [alasan, setAlasan] = useState('');
+  const [lihatMutasi, setLihatMutasi] = useState(false);
 
   const bahan = useMemo(() => data.bahan.find(b => b.id === bahanId), [data.bahan, bahanId]);
   const qtyPakai = habis ? (bahan?.stok_aktual ?? 0) : parseFloat(qty) || 0;
@@ -96,6 +97,85 @@ export default function PotongVariasiTab({ data, isOwner, onChanged }: Props) {
             </div>
           </button>
         ))}
+      </div>
+
+      {/* Stok potongan variasi per warna */}
+      <div className={`${card} overflow-hidden`}>
+        <div className="px-5 py-3 border-b border-[#2A2D31] flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <div className="text-sm font-bold text-[#e8eaed]">Stok Potongan Variasi per Warna</div>
+            <div className="text-[11px] text-[#9aa0a6]">
+              Zubair/Arslan selesai jahit memotong {fmt(PATOKAN_PER_PCS)}/pcs dari Drill warna kedua (Brown x <b>Black</b> → Hitam, Grey → Light grey).
+              Bila potongan warna itu habis, dianggap dari celah pola celana.
+            </div>
+          </div>
+          {data.mutasi.length > 0 && (
+            <button type="button" onClick={() => setLihatMutasi(v => !v)} className="text-xs text-[#e5c17b] hover:underline">
+              {lihatMutasi ? 'Sembunyikan rincian' : 'Lihat rincian'}
+            </button>
+          )}
+        </div>
+        <div className="overflow-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="bg-[#16181A] text-[#9aa0a6] uppercase tracking-wider">
+                <th className="text-left px-4 py-2">Warna Drill</th>
+                <th className="text-right px-4 py-2">Dipotong</th>
+                <th className="text-right px-4 py-2">Pcs dijahit</th>
+                <th className="text-right px-4 py-2">Terpakai</th>
+                <th className="text-right px-4 py-2">Dari celah celana</th>
+                <th className="text-right px-4 py-2">Sisa potongan</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#2A2D31]">
+              {data.stok.length === 0 && (
+                <tr><td colSpan={6} className="px-4 py-6 text-center text-[#9aa0a6]">Belum ada potongan atau jahitan Zubair/Arslan</td></tr>
+              )}
+              {data.stok.map(s => (
+                <tr key={s.item_id}>
+                  <td className="px-4 py-2 text-[#e8eaed]">{s.nama}</td>
+                  <td className="px-4 py-2 text-right text-[#e8eaed]">{s.masuk > 0 ? `${fmt(s.masuk)} ${s.satuan}` : '-'}</td>
+                  <td className="px-4 py-2 text-right text-[#9aa0a6]">{s.pcs_jahit > 0 ? s.pcs_jahit.toLocaleString('id-ID') : '-'}</td>
+                  <td className="px-4 py-2 text-right text-[#e8eaed]">{s.terpakai > 0 ? fmt(s.terpakai) : '-'}</td>
+                  <td className="px-4 py-2 text-right text-green-400">{s.dari_celah > 0 ? fmt(s.dari_celah) : '-'}</td>
+                  <td className={`px-4 py-2 text-right font-bold ${s.sisa > 0 ? 'text-[#e5c17b]' : 'text-[#5f6368]'}`}>{fmt(s.sisa)} {s.satuan}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {lihatMutasi && (
+          <div className="border-t border-[#2A2D31] max-h-80 overflow-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="bg-[#16181A] text-[#9aa0a6] uppercase tracking-wider">
+                  <th className="text-left px-4 py-2">Waktu</th>
+                  <th className="text-left px-4 py-2">Warna</th>
+                  <th className="text-left px-4 py-2">Keterangan</th>
+                  <th className="text-right px-4 py-2">Yard</th>
+                  <th className="text-right px-4 py-2">Terpakai</th>
+                  <th className="text-right px-4 py-2">Dari celah</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#2A2D31]">
+                {data.mutasi.map((m, i) => (
+                  <tr key={i}>
+                    <td className="px-4 py-1.5 text-[#9aa0a6] whitespace-nowrap">{new Date(m.waktu).toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</td>
+                    <td className="px-4 py-1.5 text-[#e8eaed]">{m.nama}</td>
+                    <td className="px-4 py-1.5 text-[#e8eaed]">
+                      {m.tipe === 'potong'
+                        ? <span className="text-[#e5c17b]">Potong variasi · {m.ref}</span>
+                        : <>{m.ref} <span className="text-[#9aa0a6]">({m.pcs} pcs jahit)</span></>}
+                    </td>
+                    <td className={`px-4 py-1.5 text-right ${m.tipe === 'potong' ? 'text-[#e5c17b]' : 'text-[#e8eaed]'}`}>{m.tipe === 'potong' ? '+' : '−'}{fmt(m.yard)}</td>
+                    <td className="px-4 py-1.5 text-right text-[#e8eaed]">{m.tipe === 'jahit' && m.terpakai > 0 ? fmt(m.terpakai) : '-'}</td>
+                    <td className="px-4 py-1.5 text-right text-green-400">{m.dari_celah > 0 ? fmt(m.dari_celah) : '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* Form */}
