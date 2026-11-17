@@ -93,8 +93,11 @@ export default function InventoryOverviewClient({ items, kategoriTrxList, warnaL
   const konversiAktif = !!(selectedItem?.satuan_beli && selectedItem?.faktor_konversi);
   const qtyPakai  = konversiAktif && qtyBeli
     ? parseFloat(qtyBeli)  * (selectedItem!.faktor_konversi!) : null;
+  // Hanya untuk tampilan & biaya per pcs; uang keluar = qty beli × harga beli (dihitung di DB)
   const hargaPerPakai = konversiAktif && hargaBeli && selectedItem?.faktor_konversi
-    ? Math.round(parseFloat(hargaBeli) / selectedItem!.faktor_konversi!) : null;
+    ? parseFloat(hargaBeli) / selectedItem!.faktor_konversi! : null;
+  const totalBeli = konversiAktif && qtyBeli && hargaBeli
+    ? Math.round(parseFloat(qtyBeli) * parseFloat(hargaBeli) * 100) / 100 : null;
 
   // reset konversi fields saat item ganti
   useEffect(() => {
@@ -171,6 +174,9 @@ export default function InventoryOverviewClient({ items, kategoriTrxList, warnaL
       no_faktur: formData.get('no_faktur') as string || undefined,
       kategori_trx_id: formData.get('kategori_trx_id') as string,
       keterangan: formData.get('keterangan') as string || undefined,
+      ...(konversiAktif && qtyBeli && hargaBeli
+        ? { qty_beli: parseFloat(qtyBeli), harga_beli: parseFloat(hargaBeli) }
+        : {}),
     };
 
     try {
@@ -613,11 +619,16 @@ export default function InventoryOverviewClient({ items, kategoriTrxList, warnaL
                     />
                     {hargaPerPakai !== null && (
                       <p className="text-xs text-[#e5c17b]">
-                        = Rp {hargaPerPakai.toLocaleString('id-ID')} / {selectedItem!.satuan}
+                        = Rp {hargaPerPakai.toLocaleString('id-ID', { maximumFractionDigits: 2 })} / {selectedItem!.satuan}
                       </p>
                     )}
                   </div>
                 </div>
+                {totalBeli !== null && (
+                  <p className="text-sm text-[#9aa0a6]">
+                    Total belanja (kas keluar): <b className="text-[#e8eaed]">Rp {totalBeli.toLocaleString('id-ID')}</b>
+                  </p>
+                )}
                 {/* hidden fields tetap diperlukan agar form action bisa baca */}
                 <input type="hidden" name="qty"          value={qtyPakai      ?? ''} />
                 <input type="hidden" name="harga_satuan" value={hargaPerPakai ?? ''} />

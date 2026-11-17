@@ -65,6 +65,10 @@ export interface StokMasukInput {
   no_faktur?: string;
   keterangan?: string;
   kategori_trx_id: string;
+  /** Diisi bila item punya satuan beli (mis. lusin): stok & harga per pcs dihitung di DB,
+   *  uang keluar = qty_beli × harga_beli persis (tanpa pembulatan harga per pcs). */
+  qty_beli?: number;
+  harga_beli?: number;
 }
 
 export interface TambahItemInput {
@@ -277,7 +281,9 @@ export async function addStokMasuk(input: StokMasukInput): Promise<{ batch_id: s
     p_kategori_trx_id:   input.kategori_trx_id,
     p_keterangan:        input.keterangan ?? null,
     p_user_id:           userId,
-    p_tenant_id:         TENANT_ID
+    p_tenant_id:         TENANT_ID,
+    p_qty_beli:          input.qty_beli ?? null,
+    p_harga_beli:        input.harga_beli ?? null,
   });
 
   if (error) throw new Error(error.message);
