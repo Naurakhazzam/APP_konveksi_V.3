@@ -62,7 +62,8 @@ export async function getVariasiData(): Promise<VariasiData> {
       .eq('tenant_id', TENANT_ID).ilike('nama', 'drill%').order('nama'),
     supabase.from('potong_variasi')
       .select('id, tanggal, qty_pakai, biaya_total, habis_roll, untuk_model, per_size, catatan, dibatalkan_at, bahan:bahan_item_id ( nama, satuan )')
-      .eq('tenant_id', TENANT_ID).order('created_at', { ascending: false }).limit(50),
+      // Yang sudah dibatalkan disembunyikan (jejaknya tetap di audit_log)
+      .eq('tenant_id', TENANT_ID).is('dibatalkan_at', null).order('created_at', { ascending: false }).limit(50),
   ]);
   if (bahanRes.error) throw new Error(bahanRes.error.message);
   if (riwayatRes.error) throw new Error(riwayatRes.error.message);
