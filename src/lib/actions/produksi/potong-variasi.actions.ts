@@ -12,7 +12,6 @@ import { getUserFromClaims } from '@/lib/auth/session';
 import { revalidatePath } from 'next/cache';
 import { assertCanEditProduksi } from '@/lib/auth/permissions';
 import { MODEL_VARIASI } from '@/lib/produksi/variasi';
-import { PO_AWAL_PERIODE } from '@/lib/keuangan/periode-po';
 
 const TENANT_ID = 'STX-001';
 const PATH = '/app/produksi/antrian-cutting';
@@ -51,50 +50,22 @@ export interface RiwayatPotongVariasi {
   dibatalkan_at: string | null;
 }
 
-/** Stok potongan variasi per warna Drill: masuk dari Potong Variasi, terpakai saat Zubair/Arslan selesai jahit */
-export interface StokVariasiWarna {
-  item_id: string;
-  nama: string;
-  satuan: string;
-  masuk: number;
-  terpakai: number;
-  /** Jahitan yang tidak tertutup potongan → dianggap dari celah pola celana */
-  dari_celah: number;
-  pcs_jahit: number;
-  sisa: number;
-}
-
-export interface MutasiStokVariasi {
-  nama: string;
-  waktu: string;
-  tipe: 'potong' | 'jahit';
-  ref: string;
-  pcs: number | null;
-  yard: number;
-  terpakai: number;
-  dari_celah: number;
-}
-
 export interface VariasiData {
   bahan: BahanVariasiOption[];
   riwayat: RiwayatPotongVariasi[];
-  stok: StokVariasiWarna[];
-  mutasi: MutasiStokVariasi[];
 }
 
 export async function getVariasiData(): Promise<VariasiData> {
   const supabase = await createClient();
-  const [bahanRes, riwayatRes, stokRes] = await Promise.all([
+  const [bahanRes, riwayatRes] = await Promise.all([
     supabase.from('inventory_item').select('id, nama, satuan, stok_aktual, harga_referensi, jenis, aktif')
       .eq('tenant_id', TENANT_ID).ilike('nama', 'drill%').order('nama'),
     supabase.from('potong_variasi')
       .select('id, tanggal, qty_pakai, biaya_total, habis_roll, untuk_model, per_size, catatan, dibatalkan_at, bahan:bahan_item_id ( nama, satuan )')
       .eq('tenant_id', TENANT_ID).order('created_at', { ascending: false }).limit(50),
-    supabase.rpc('get_stok_variasi', { p_tenant_id: TENANT_ID, p_mulai: PO_AWAL_PERIODE }),
   ]);
   if (bahanRes.error) throw new Error(bahanRes.error.message);
   if (riwayatRes.error) throw new Error(riwayatRes.error.message);
-  if (stokRes.error) throw new Error(stokRes.error.message);
 
   const bahanRows = (bahanRes.data ?? []).filter((b: any) => b.jenis !== 'pembantu' && b.aktif !== false);
   const ids = bahanRows.map((b: any) => b.id as string);
@@ -105,27 +76,7 @@ export async function getVariasiData(): Promise<VariasiData> {
     : { data: [], error: null };
   if (lotRes.error) throw new Error(lotRes.error.message);
 
-  const namaItem = new Map<string, { nama: string; satuan: string }>(
-    (bahanRes.data ?? []).map((b: any) => [b.id as string, { nama: b.nama as string, satuan: b.satuan as string }]));
-  const stokMap = new Map<string, StokVariasiWarna>();
-  const mutasi: MutasiStokVariasi[] = [];
-  ((stokRes.data ?? []) as any[]).forEach(r => {
-    const id = String(r.inventory_item_id);
-    const info = namaItem.get(id) ?? { nama: '?', satuan: '' };
-    const s = stokMap.get(id) ?? { item_id: id, nama: info.nama, satuan: info.satuan, masuk: 0, terpakai: 0, dari_celah: 0, pcs_jahit: 0, sisa: 0 };
-    if (r.tipe === 'potong') s.masuk += Number(r.yard);
-    else { s.terpakai += Number(r.terpakai); s.dari_celah += Number(r.dari_celah); s.pcs_jahit += Number(r.pcs ?? 0); }
-    s.sisa = Number(r.sisa); // urut per warna → baris terakhir = sisa akhir
-    stokMap.set(id, s);
-    mutasi.push({
-      nama: info.nama, waktu: r.waktu, tipe: r.tipe, ref: r.ref, pcs: r.pcs == null ? null : Number(r.pcs),
-      yard: Number(r.yard), terpakai: Number(r.terpakai), dari_celah: Number(r.dari_celah),
-    });
-  });
-
   return {
-    stok: [...stokMap.values()].sort((a, b) => b.sisa - a.sisa || a.nama.localeCompare(b.nama)),
-    mutasi: mutasi.sort((a, b) => b.waktu.localeCompare(a.waktu)).slice(0, 100),
     bahan: bahanRows
       .map((b: any) => ({
         id: b.id, nama: b.nama, satuan: b.satuan, stok_aktual: Number(b.stok_aktual),
