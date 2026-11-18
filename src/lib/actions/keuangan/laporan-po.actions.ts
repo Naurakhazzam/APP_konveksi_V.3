@@ -17,32 +17,18 @@
 import { createClient } from '@/lib/supabase/server';
 import { hitungKinerja, type KinerjaPO } from '@/lib/keuangan/kinerja.server';
 import { PO_AWAL_PERIODE, poPeriodeBaru } from '@/lib/keuangan/periode-po';
+import {
+  hitungKesimpulan, susunQty,
+  type BarisKomponen, type BarisQty, type KesimpulanPO,
+} from '@/lib/keuangan/komponen-po';
+
+export type { BarisKomponen, BarisQty, KesimpulanPO, GrupKomponen, TandaBaris } from '@/lib/keuangan/komponen-po';
 
 const TENANT_ID = 'STX-001';
-/** Batas selisih PO dianggap boros / hemat (Rp) */
+/** Batas selisih PO (di luar beda tarif) dianggap boros / hemat (Rp) */
 const AMBANG_SELISIH = 50_000;
 
-const LABEL_TAHAP: Record<string, string> = {
-  cutting: 'Cutting', jahit: 'Jahit', buang_benang: 'Buang Benang', lubang_kancing: 'Lubang Kancing',
-  steam: 'Steam', packing: 'Packing', qc: 'QC', pengiriman: 'Pengiriman', lainnya: 'Lainnya',
-};
-const URUT_TAHAP = Object.keys(LABEL_TAHAP);
-
-export type GrupKomponen = 'bahan' | 'aksesori' | 'pembantu' | 'upah' | 'lain' | 'overhead';
-export type TandaBaris = 'final' | 'berjalan' | 'menunggu_harga' | 'belum_tercatat' | 'sementara';
 export type TandaPO = 'final' | 'berjalan' | 'menunggu_harga' | 'belum_dipotong';
-
-export interface BarisKomponen {
-  grup: GrupKomponen;
-  nama: string;
-  keterangan: string | null;
-  perkiraan: number;
-  aktual: number;
-  sisa: number;
-  /** aktual + sisa − perkiraan */
-  selisih: number;
-  tanda: TandaBaris;
-}
 
 export interface POLaporanItem {
   po_id: string;
@@ -57,156 +43,45 @@ export interface POLaporanItem {
   aktual: number;
   sisa: number;
   selisih: number;
+  /** Bagian selisih karena tarif HPP berubah (bukan hemat/boros) */
+  beda_tarif: number;
   tanda: TandaPO;
   overhead: number;
   overhead_sementara: boolean;
-  /** Alias lama (dipakai Ringkasan Keuangan): gap = selisih */
+  /** Selisih di luar beda tarif (dipakai Ringkasan Keuangan) */
   gap: number;
   status: 'hemat' | 'boncos' | 'on_budget';
   nilai_project: number;
-  /** Laba PO dari Kinerja Keuangan (nilai jual − bahan − upah termasuk sisa tahap − overhead) */
+  /** Laba PO dari Kinerja Keuangan (nilai jual − aktual − sisa perkiraan lengkap) */
   profit_final: number;
   margin_pct_final: number;
+  kesimpulan: KesimpulanPO | null;
 }
 
-// ─── Mesin susun baris per komponen ───────────────────────────────────────────
-
-/** Aksesori (item inventory) → nama komponen HPP */
-function komponenAksesori(item: string, adaKomponen: Set<string>): string {
-  const n = item.toLowerCase();
-  if (n.includes('puring')) return 'Puring';
-  if (n.includes('sleting') && n.includes('saku')) return 'Sleting Saku';
-  if (n.includes('sleting')) return 'Sleting Badan';
-  const sama = [...adaKomponen].find(k => k.toLowerCase() === n);
-  return sama ?? item;
-}
+// ─── Susun data dari mesin Kinerja ───────────────────────────────────────────
 
 interface DataLaporan {
   baris: Map<string, BarisKomponen[]>;
   kinerja: Map<string, KinerjaPO>;
+  qty: Map<string, BarisQty[]>;
   overheadSementara: boolean;
 }
 
-async function susunLaporan(supabase: any): Promise<DataLaporan> {
-  const [perkRes, aktRes, pembRes, jenisRes, k] = await Promise.all([
-    supabase.rpc('get_laporan_po_perkiraan', { p_tenant_id: TENANT_ID, p_po_mulai: PO_AWAL_PERIODE }),
-    supabase.rpc('get_laporan_po_aktual', { p_tenant_id: TENANT_ID, p_po_mulai: PO_AWAL_PERIODE }),
-    supabase.rpc('get_pembantu_per_po', { p_tenant_id: TENANT_ID, p_mulai: PO_AWAL_PERIODE }),
-    supabase.from('pembantu_jenis').select('id, nama').eq('tenant_id', TENANT_ID),
+async function susunLaporan(supabase: any, po_id?: string): Promise<DataLaporan> {
+  const [k, qtyRes] = await Promise.all([
     hitungKinerja(supabase, 'semua'),
+    supabase.rpc('get_laporan_po_qty', { p_tenant_id: TENANT_ID, p_po_mulai: po_id ? null : PO_AWAL_PERIODE, p_po_id: po_id ?? null }),
   ]);
-  for (const r of [perkRes, aktRes, pembRes, jenisRes]) if (r.error) throw new Error(r.error.message);
+  if (qtyRes.error) throw new Error(qtyRes.error.message);
   const kinerja = new Map(k.po.map(p => [p.po_id, p]));
-  const namaJenis = new Map(((jenisRes.data ?? []) as any[]).map(j => [String(j.id), String(j.nama)]));
-
-  type Acc = { grup: GrupKomponen; nama: string; ket: Set<string>; perkiraan: number; aktual: number; sisa: number;
-               qty: number; qtyTunggu: number; satuan?: string };
-  const perPo = new Map<string, Map<string, Acc>>();
-  const ambil = (po: string, kunci: string, grup: GrupKomponen, nama: string): Acc => {
-    const m = perPo.get(po) ?? new Map<string, Acc>();
-    perPo.set(po, m);
-    let a = m.get(kunci);
-    if (!a) { a = { grup, nama, ket: new Set(), perkiraan: 0, aktual: 0, sisa: 0, qty: 0, qtyTunggu: 0 }; m.set(kunci, a); }
-    return a;
-  };
-
-  // Perkiraan & sisa
-  const komponenAks = new Map<string, Set<string>>(); // po → nama komponen aksesori
-  ((perkRes.data ?? []) as any[]).forEach(r => {
-    const po = String(r.po_id), nama = String(r.nama), perk = Number(r.perkiraan), sisa = Number(r.sisa);
-    let a: Acc;
-    if (r.kategori === 'overhead') {
-      a = ambil(po, 'overhead', 'overhead', 'Overhead produksi'); a.ket.add(nama);
-    } else if (r.jenis_id) {
-      const j = String(r.jenis_id);
-      a = ambil(po, `pembantu:${j}`, 'pembantu', namaJenis.get(j) ?? 'Bahan pembantu');
-      if (nama !== a.nama) a.ket.add(`HPP ${nama}`);
-    } else if (r.tahap) {
-      a = ambil(po, `upah:${r.tahap}`, 'upah', `Upah ${LABEL_TAHAP[r.tahap] ?? r.tahap}`);
-    } else if (r.kategori === 'bahan_baku' && nama === 'HPP Bahan') {
-      a = ambil(po, 'kain', 'bahan', 'Kain');
-    } else if (r.kategori === 'bahan_baku') {
-      a = ambil(po, `aks:${nama}`, 'aksesori', nama);
-      const s = komponenAks.get(po) ?? new Set<string>(); s.add(nama); komponenAks.set(po, s);
-    } else {
-      a = ambil(po, `lain:${nama}`, 'lain', nama);
-    }
-    a.perkiraan += perk; a.sisa += sisa;
+  const baris = new Map(k.po.map(p => [p.po_id, p.komponen]));
+  const perPo = new Map<string, any[]>();
+  ((qtyRes.data ?? []) as any[]).forEach(r => {
+    const id = String(r.po_id);
+    perPo.set(id, [...(perPo.get(id) ?? []), r]);
   });
-
-  // Aktual kain, aksesori, upah
-  ((aktRes.data ?? []) as any[]).forEach(r => {
-    const po = String(r.po_id), n = Number(r.nominal);
-    if (r.sumber === 'kain') {
-      const a = ambil(po, 'kain', 'bahan', 'Kain'); a.aktual += n; a.ket.add(String(r.kunci));
-    } else if (r.sumber === 'aksesori') {
-      const nama = komponenAksesori(String(r.kunci), komponenAks.get(po) ?? new Set());
-      const a = ambil(po, `aks:${nama}`, 'aksesori', nama);
-      a.aktual += n; a.qty += Number(r.qty); a.qtyTunggu += Number(r.qty_tunggu);
-      if (String(r.kunci) !== nama) a.ket.add(String(r.kunci));
-    } else if (r.sumber === 'upah') {
-      const t = String(r.kunci);
-      const a = ambil(po, `upah:${t}`, 'upah', `Upah ${LABEL_TAHAP[t] ?? t}`); a.aktual += n;
-    }
-  });
-
-  // Bahan pembantu: biaya aktual = pemakaian dari saldo (jatah yang tak tertutup saldo = penghematan)
-  const hematPembantu = new Map<string, number>();
-  ((pembRes.data ?? []) as any[]).forEach(r => {
-    const po = String(r.po_id), j = String(r.jenis_id);
-    const a = ambil(po, `pembantu:${j}`, 'pembantu', namaJenis.get(j) ?? 'Bahan pembantu');
-    a.aktual += Number(r.pakai ?? 0);
-    hematPembantu.set(`${po}|${j}`, (hematPembantu.get(`${po}|${j}`) ?? 0) + Number(r.hemat ?? 0));
-  });
-
-  // Overhead pcs-hari & bertanda PO (pembantu sudah di grup pembantu)
-  kinerja.forEach(p => {
-    const n = p.overhead_alokasi + p.overhead_langsung_kas;
-    if (n > 0 || perPo.has(p.po_id)) {
-      const a = ambil(p.po_id, 'overhead', 'overhead', 'Overhead produksi'); a.aktual += n;
-    }
-  });
-
-  const urutGrup: GrupKomponen[] = ['bahan', 'aksesori', 'pembantu', 'upah', 'lain', 'overhead'];
-  const baris = new Map<string, BarisKomponen[]>();
-  perPo.forEach((m, po) => {
-    const packingBelum = (m.get('upah:packing')?.sisa ?? 0) > 0;
-    const rows: BarisKomponen[] = [...m.entries()].map(([kunci, a]) => {
-      let sisa = a.sisa;
-      let tanda: TandaBaris = sisa > 0.5 ? 'berjalan' : 'final';
-      const ket = [...a.ket];
-      if (a.grup === 'aksesori' && a.qtyTunggu > 0) {
-        // Bagian yang menunggu harga LOT: perkiraannya dihitung sebanding qty (bukan harga referensi)
-        const dipakai = Math.max(0, a.perkiraan - a.sisa);
-        sisa += a.qty > 0 ? dipakai * Math.min(1, a.qtyTunggu / a.qty) : 0;
-        tanda = 'menunggu_harga';
-        ket.push(`${a.qtyTunggu.toLocaleString('id-ID')} dari ${a.qty.toLocaleString('id-ID')} menunggu harga`);
-      }
-      if (a.grup === 'pembantu') {
-        const j = kunci.slice('pembantu:'.length);
-        const hemat = hematPembantu.get(`${po}|${j}`) ?? 0;
-        if (hemat > 0.5) ket.push(`hemat saldo Rp ${Math.round(hemat).toLocaleString('id-ID')}`);
-      }
-      if (a.grup === 'lain' && a.aktual === 0) {
-        sisa = a.perkiraan; tanda = 'belum_tercatat';
-      }
-      if (a.grup === 'overhead') {
-        tanda = packingBelum ? 'berjalan' : 'sementara';
-      }
-      return {
-        grup: a.grup, nama: a.nama, keterangan: ket.length ? ket.join(' · ') : null,
-        perkiraan: a.perkiraan, aktual: a.aktual, sisa, selisih: a.aktual + sisa - a.perkiraan, tanda,
-      };
-    });
-    // Urut: grup → (upah: urutan tahap) → perkiraan terbesar
-    const urutTahap = (r: BarisKomponen) => URUT_TAHAP.findIndex(t => r.nama === `Upah ${LABEL_TAHAP[t]}`);
-    rows.sort((x, y) => urutGrup.indexOf(x.grup) - urutGrup.indexOf(y.grup)
-      || (x.grup === 'upah' ? urutTahap(x) - urutTahap(y) : 0)
-      || y.perkiraan - x.perkiraan);
-    baris.set(po, rows);
-  });
-
-  return { baris, kinerja, overheadSementara: k.overheadSementara };
+  const qty = new Map([...perPo.entries()].map(([id, rows]) => [id, susunQty(rows)]));
+  return { baris, kinerja, qty, overheadSementara: k.overheadSementara };
 }
 
 function ringkas(rows: BarisKomponen[], overheadSementara: boolean) {
@@ -216,9 +91,21 @@ function ringkas(rows: BarisKomponen[], overheadSementara: boolean) {
     : rows.some(r => r.tanda === 'menunggu_harga') ? 'menunggu_harga'
     : rows.some(r => r.tanda === 'berjalan' || r.tanda === 'belum_tercatat') ? 'berjalan'
     : 'final';
-  const overhead = rows.filter(r => r.grup === 'overhead').reduce((s, r) => s + r.aktual, 0)
-    + rows.filter(r => r.grup === 'pembantu').reduce((s, r) => s + r.aktual, 0);
-  return { perkiraan, aktual, sisa, selisih: aktual + sisa - perkiraan, tanda, overhead, overhead_sementara: overheadSementara && rows.length > 0 };
+  const overhead = rows.filter(r => r.grup === 'overhead' || r.grup === 'pembantu').reduce((s, r) => s + r.aktual, 0);
+  return {
+    perkiraan, aktual, sisa, selisih: aktual + sisa - perkiraan, beda_tarif: jml(r => r.beda_tarif),
+    tanda, overhead, overhead_sementara: overheadSementara && rows.length > 0,
+  };
+}
+
+function kesimpulanPO(lap: DataLaporan, po_id: string, r: ReturnType<typeof ringkas>): KesimpulanPO | null {
+  const k = lap.kinerja.get(po_id);
+  const baris = lap.baris.get(po_id) ?? [];
+  if (!k || baris.length === 0) return null;
+  return hitungKesimpulan({
+    nilai_jual: k.nilai_jual, baris, qty: lap.qty.get(po_id) ?? [],
+    sementara: r.tanda !== 'final' || r.overhead_sementara,
+  });
 }
 
 // ─── Daftar PO ────────────────────────────────────────────────────────────────
@@ -260,16 +147,18 @@ export async function getLaporanPOList(filters?: { bulan?: string; tahun?: strin
       const nilai_project = k ? k.nilai_jual : (po.po_item ?? []).reduce((s: number, pi: any) =>
         s + Number(pi.produk?.harga_jual ?? 0) * Number(pi.qty_order), 0);
       const profit_final = k ? Math.round(k.laba) : 0;
-      const status: POLaporanItem['status'] = r.selisih > AMBANG_SELISIH ? 'boncos'
-        : r.selisih < -AMBANG_SELISIH ? 'hemat' : 'on_budget';
+      const gap = r.selisih - r.beda_tarif;
+      const status: POLaporanItem['status'] = gap > AMBANG_SELISIH ? 'boncos'
+        : gap < -AMBANG_SELISIH ? 'hemat' : 'on_budget';
       return {
         po_id: po.id, no_po: po.no_po, klien_nama: (po.klien as any)?.nama ?? '-', tanggal: po.tanggal_order,
         total_qty, pcs_potong: k?.pcs ?? 0, qty_shipped: k?.pcs_kirim ?? 0,
-        perkiraan: r.perkiraan, aktual: r.aktual, sisa: r.sisa, selisih: r.selisih, tanda: r.tanda,
+        perkiraan: r.perkiraan, aktual: r.aktual, sisa: r.sisa, selisih: r.selisih, beda_tarif: r.beda_tarif, tanda: r.tanda,
         overhead: r.overhead, overhead_sementara: r.overhead_sementara,
-        gap: r.selisih, status,
+        gap, status,
         nilai_project, profit_final,
         margin_pct_final: nilai_project > 0 && k ? Math.round((profit_final / nilai_project) * 100) : 0,
+        kesimpulan: kesimpulanPO(lap, po.id, r),
       };
     });
 }
@@ -278,6 +167,8 @@ export async function getLaporanPOList(filters?: { bulan?: string; tahun?: strin
 
 export interface POHPPDetail {
   baris: BarisKomponen[];
+  qty: BarisQty[];
+  kesimpulan: KesimpulanPO | null;
   aktual_breakdown: {
     jenis: 'direct_bahan' | 'direct_upah' | 'pembantu' | 'overhead';
     keterangan: string;
@@ -289,6 +180,7 @@ export interface POHPPDetail {
     aktual: number;
     sisa: number;
     selisih: number;
+    beda_tarif: number;
     tanda: TandaPO;
     overhead_sementara: boolean;
   };
@@ -297,7 +189,7 @@ export interface POHPPDetail {
 export async function getPOHPPDetail(po_id: string): Promise<POHPPDetail> {
   const supabase = await createClient();
   const [lap, pemRes, upahRes] = await Promise.all([
-    susunLaporan(supabase),
+    susunLaporan(supabase, po_id),
     supabase.rpc('get_biaya_pemakaian_detail_po', { p_po_id: po_id, p_tenant_id: TENANT_ID }),
     supabase.rpc('get_biaya_upah_detail_po', { p_po_id: po_id, p_tenant_id: TENANT_ID }),
   ]);
@@ -343,9 +235,11 @@ export async function getPOHPPDetail(po_id: string): Promise<POHPPDetail> {
 
   return {
     baris,
+    qty: lap.qty.get(po_id) ?? [],
+    kesimpulan: kesimpulanPO(lap, po_id, r),
     aktual_breakdown,
     totals: {
-      perkiraan: r.perkiraan, aktual: r.aktual, sisa: r.sisa, selisih: r.selisih,
+      perkiraan: r.perkiraan, aktual: r.aktual, sisa: r.sisa, selisih: r.selisih, beda_tarif: r.beda_tarif,
       tanda: r.tanda, overhead_sementara: r.overhead_sementara,
     },
   };

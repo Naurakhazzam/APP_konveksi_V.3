@@ -339,7 +339,7 @@ export default function ProyeksiSurplusClient({ data: awal }: { data: KinerjaDat
       {/* ── 4. Per PO ── */}
       <div>
         <div className="flex flex-wrap items-end justify-between gap-2 mb-2">
-          <Judul no="4" sub="Seluruh PO periode ini (tidak ikut pilihan bulan). Laba = nilai jual − bahan − upah − overhead produksi.">
+          <Judul no="4" sub="Seluruh PO periode ini (tidak ikut pilihan bulan). Laba = nilai jual − bahan − upah − overhead produksi, termasuk perkiraan biaya yang belum tercatat.">
             Laba per PO
           </Judul>
           {poTerkirim.length > 0 && (
@@ -391,12 +391,18 @@ export default function ProyeksiSurplusClient({ data: awal }: { data: KinerjaDat
                     {adaDiterimaPo && (
                       <TableCell className="text-sm text-[#9aa0a6] text-right whitespace-nowrap">{p.diterima ? idr(p.diterima) : '—'}</TableCell>
                     )}
-                    <TableCell className="text-sm text-[#9aa0a6] text-right whitespace-nowrap">{idr(p.kain + p.aksesori)}</TableCell>
+                    <TableCell className="text-sm text-[#9aa0a6] text-right whitespace-nowrap"
+                      title={`Kain ${idr(p.kain)} · aksesori ${idr(p.aksesori)}${p.sisa_bahan > 0.5 ? ` · perkiraan aksesori belum tercatat ${idr(p.sisa_bahan)}` : ''}`}>
+                      {idr(p.kain + p.aksesori + p.sisa_bahan)}
+                    </TableCell>
                     <TableCell className="text-sm text-[#9aa0a6] text-right whitespace-nowrap"
                       title={`Dibayar ${idr(p.upah_lunas)} · terutang ${idr(p.upah_belum_lunas)} · perkiraan tahap berikutnya ${idr(p.upah_sisa)}`}>
                       {idr(upah)}
                     </TableCell>
-                    <TableCell className="text-sm text-[#9aa0a6] text-right whitespace-nowrap">{idr(p.overhead)}</TableCell>
+                    <TableCell className="text-sm text-[#9aa0a6] text-right whitespace-nowrap"
+                      title={p.sisa_pembantu > 0.5 ? `Overhead tercatat ${idr(p.overhead)} · perkiraan bahan pembantu pcs belum jahit ${idr(p.sisa_pembantu)}` : undefined}>
+                      {idr(p.overhead + p.sisa_pembantu)}
+                    </TableCell>
                     <TableCell className={`text-sm font-semibold text-right whitespace-nowrap ${warnaAngka(p.laba)}`}>
                       {akt(p.laba)}
                       {p.nilai_jual > 0 && (

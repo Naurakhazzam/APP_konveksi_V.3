@@ -19,12 +19,16 @@
  *    mengikuti Saldo Bahan Pembantu. Yang terpakai jatah HPP jadi overhead produksi di bulan pemakaiannya;
  *    sisa saldo = aset. Jatah yang tidak tertutup saldo = penghematan permanen (margin, tanpa biaya);
  *    belanja berikutnya hanya menambah saldo, tidak menutup penghematan lalu.
+ *  - Laba PO = nilai jual − (biaya aktual + sisa perkiraan LENGKAP): upah tahap tersisa, aksesori &
+ *    bahan pembantu untuk pcs yang belum sampai tahapnya / masih menunggu harga, biaya lain yang belum
+ *    tercatat (komponen-po.ts). Angka ini sama persis dengan margin di Laporan Per PO.
  */
 import { PO_AWAL_PERIODE, TANGGAL_AWAL_PERIODE, poPeriodeBaru } from './periode-po';
 import { pendapatanSjPerBulan } from './pendapatan.server';
 import { KATEGORI_BAYAR_KLIEN } from './pendapatan.server';
 import { KATEGORI_SETORAN_MODAL } from '@/lib/actions/keuangan/buku-kas.types';
 import { bulanBerjalan } from '@/lib/bulan-berjalan';
+import { susunKomponen, sisaNonUpah, type BarisKomponen } from './komponen-po';
 
 type Supa = any;
 const TENANT_ID = 'STX-001';
@@ -104,7 +108,13 @@ export interface KinerjaPO {
   /** Bagian overhead yang sudah ikut barang terkirim (semua bulan / periode terpilih) */
   overhead_kirim: number;
   overhead_kirim_periode: number;
-  /** Nilai jual − bahan − upah − overhead produksi */
+  /** Perkiraan aksesori & biaya lain untuk pcs yang belum tercatat (termasuk menunggu harga) */
+  sisa_bahan: number;
+  /** Perkiraan bahan pembantu untuk pcs yang belum selesai jahit */
+  sisa_pembantu: number;
+  /** Rincian per komponen HPP (Perkiraan | Aktual | Sisa | Selisih) */
+  komponen: BarisKomponen[];
+  /** Nilai jual − bahan − upah − overhead produksi − sisa perkiraan */
   laba: number;
   /** Pcs & nilai terkirim dalam periode yang dipilih */
   pcs_kirim_periode: number;
@@ -221,7 +231,7 @@ export async function hitungKinerja(supabase: Supa, periode = 'semua'): Promise<
   const dalamPeriode = (ym: string) => periodeValid === 'semua' || ym === periodeValid;
   const perTanggal = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Jakarta' });
 
-  const [poRes, poBulanRes, kasRes, lotRes, btRes, sjMap, pembRes, jenisRes, ohBundleRes, pembPoRes] = await Promise.all([
+  const [poRes, poBulanRes, kasRes, lotRes, btRes, sjMap, pembRes, jenisRes, ohBundleRes, pembPoRes, perkRes, aktRes, bedaRes] = await Promise.all([
     supabase.rpc('get_proyeksi_surplus_po', { p_tenant_id: TENANT_ID, p_po_mulai: PO_AWAL_PERIODE }),
     supabase.rpc('get_kinerja_po_bulan', { p_tenant_id: TENANT_ID, p_po_mulai: PO_AWAL_PERIODE }),
     supabase.from('buku_kas')
@@ -237,8 +247,11 @@ export async function hitungKinerja(supabase: Supa, periode = 'semua'): Promise<
     supabase.from('pembantu_jenis').select('id, nama').eq('tenant_id', TENANT_ID),
     supabase.rpc('get_overhead_bundle', { p_tenant_id: TENANT_ID, p_po_mulai: PO_AWAL_PERIODE }),
     supabase.rpc('get_pembantu_per_po', { p_tenant_id: TENANT_ID, p_mulai: PO_AWAL_PERIODE }),
+    supabase.rpc('get_laporan_po_perkiraan', { p_tenant_id: TENANT_ID, p_po_mulai: PO_AWAL_PERIODE }),
+    supabase.rpc('get_laporan_po_aktual', { p_tenant_id: TENANT_ID, p_po_mulai: PO_AWAL_PERIODE }),
+    supabase.rpc('get_laporan_po_beda_tarif', { p_tenant_id: TENANT_ID, p_po_mulai: PO_AWAL_PERIODE }),
   ]);
-  for (const r of [poRes, poBulanRes, kasRes, lotRes, btRes, pembRes, jenisRes, ohBundleRes, pembPoRes]) if (r.error) throw new Error(r.error.message);
+  for (const r of [poRes, poBulanRes, kasRes, lotRes, btRes, pembRes, jenisRes, ohBundleRes, pembPoRes, perkRes, aktRes, bedaRes]) if (r.error) throw new Error(r.error.message);
 
   // ── Bahan pembantu lama (saldo awal = setoran modal barang) ──
   const namaJenis = new Map(((jenisRes.data ?? []) as any[]).map(j => [String(j.id), String(j.nama)]));
@@ -394,6 +407,19 @@ export async function hitungKinerja(supabase: Supa, periode = 'semua'): Promise<
   /** po → bulan → overhead yang ikut barang terkirim bulan itu */
   const ohKirim = new Map<string, Map<string, number>>();
 
+  // Rincian per komponen HPP (sumber sisa perkiraan lengkap)
+  const ohAktualPo = new Map<string, number>();
+  ohPo.forEach((v, id) => ohAktualPo.set(id, v.alokasi));
+  kasLangsungPo.forEach((n, id) => ohAktualPo.set(id, (ohAktualPo.get(id) ?? 0) + n));
+  const komponenPo = susunKomponen({
+    perkiraan: (perkRes.data ?? []) as any[], aktual: (aktRes.data ?? []) as any[],
+    pembantu: (pembPoRes.data ?? []) as any[], bedaTarif: (bedaRes.data ?? []) as any[],
+    namaJenis, overhead: ohAktualPo,
+  });
+
+  /** po → bulan → perkiraan bahan pembantu yang ikut barang terkirim (HPP, seperti upah sisa) */
+  const sisaPembantuKirim = new Map<string, Map<string, number>>();
+
   const po: KinerjaPO[] = ((poRes.data ?? []) as any[]).map(r => {
     const id = String(r.po_id);
     const baris = poBulan.filter(x => x.po_id === id);
@@ -405,13 +431,18 @@ export async function hitungKinerja(supabase: Supa, periode = 'semua'): Promise<
     const overhead_langsung_kas = kasLangsungPo.get(id) ?? 0;
     const langsungTotal = overhead_pembantu + overhead_langsung_kas;
     const overhead = overhead_alokasi + langsungTotal;
+    const komponen = komponenPo.get(id) ?? [];
+    const { bahan: sisa_bahan, pembantu: sisa_pembantu } = sisaNonUpah(komponen);
     // Alokasi pcs-hari ikut bundle yang dikirim; biaya langsung PO ikut barang terkirim sebanding pcs
     const perBulan = new Map<string, number>();
+    const sisaKirimBulan = new Map<string, number>();
     bulanList.forEach(m => {
       const kirimM = baris.filter(x => x.bulan === m).reduce((s, x) => s + x.kirim, 0);
       const n = (oh?.kirimBulan.get(m) ?? 0) + (pcs > 0 ? langsungTotal * Math.min(1, kirimM / pcs) : 0);
       if (n > 0) perBulan.set(m, n);
+      if (pcs > 0 && sisa_pembantu > 0 && kirimM > 0) sisaKirimBulan.set(m, sisa_pembantu * Math.min(1, kirimM / pcs));
     });
+    sisaPembantuKirim.set(id, sisaKirimBulan);
     ohKirim.set(id, perBulan);
     const kirimSemua = [...perBulan.values()].reduce((s, n) => s + n, 0);
     const p = {
@@ -421,6 +452,7 @@ export async function hitungKinerja(supabase: Supa, periode = 'semua'): Promise<
       kain: Number(r.biaya_kain), aksesori: Number(r.biaya_aksesori),
       upah_lunas: Number(r.upah_lunas), upah_belum_lunas: Number(r.upah_belum_lunas), upah_sisa,
       overhead, overhead_alokasi, overhead_pembantu, overhead_langsung_kas,
+      sisa_bahan, sisa_pembantu, komponen,
       overhead_kirim: Math.min(overhead, kirimSemua),
       overhead_kirim_periode: [...perBulan.entries()].filter(([m]) => dalamPeriode(m)).reduce((s, [, n]) => s + n, 0),
       pcs_kirim_periode: baris.filter(x => dalamPeriode(x.bulan)).reduce((s, x) => s + x.kirim, 0),
@@ -428,12 +460,13 @@ export async function hitungKinerja(supabase: Supa, periode = 'semua'): Promise<
       status: (pcs > 0 && pcs_kirim >= pcs && upah_sisa === 0 ? 'terkirim'
         : pcs_kirim > 0 ? 'kirim_sebagian' : 'produksi') as StatusPO,
     };
-    const laba = p.nilai_jual - p.kain - p.aksesori - p.upah_lunas - p.upah_belum_lunas - p.upah_sisa - overhead;
+    const laba = p.nilai_jual - p.kain - p.aksesori - p.upah_lunas - p.upah_belum_lunas - p.upah_sisa - overhead
+      - sisa_bahan - sisa_pembantu;
     return { ...p, laba };
   });
   const poMap = new Map(po.map(p => [p.po_id, p]));
   const perPcs = (p: KinerjaPO) => p.pcs > 0 ? {
-    bahan: (p.kain + p.aksesori) / p.pcs,
+    bahan: (p.kain + p.aksesori + p.sisa_bahan) / p.pcs,
     upah: (p.upah_lunas + p.upah_belum_lunas + p.upah_sisa) / p.pcs,
   } : { bahan: 0, upah: 0 };
 
@@ -445,7 +478,7 @@ export async function hitungKinerja(supabase: Supa, periode = 'semua'): Promise<
       if (!p) return;
       const pp = perPcs(p);
       bahan += pp.bahan * r.kirim; upah += pp.upah * r.kirim;
-      overheadProduksi += ohKirim.get(r.po_id)?.get(m) ?? 0;
+      overheadProduksi += (ohKirim.get(r.po_id)?.get(m) ?? 0) + (sisaPembantuKirim.get(r.po_id)?.get(m) ?? 0);
     });
     const ob = overheadBulan.find(o => o.bulan === m)!;
     return {
@@ -467,7 +500,9 @@ export async function hitungKinerja(supabase: Supa, periode = 'semua'): Promise<
     const sisa = Math.max(0, p.pcs - p.pcs_kirim);
     const pp = perPcs(p);
     bjPendapatan += Math.max(0, p.nilai_jual - p.nilai_kirim);
-    bjBahan += pp.bahan * sisa; bjUpah += pp.upah * sisa; bjOverhead += Math.max(0, p.overhead - p.overhead_kirim);
+    bjBahan += pp.bahan * sisa; bjUpah += pp.upah * sisa;
+    const sisaPembKirim = [...(sisaPembantuKirim.get(p.po_id)?.values() ?? [])].reduce((s, n) => s + n, 0);
+    bjOverhead += Math.max(0, p.overhead - p.overhead_kirim) + Math.max(0, p.sisa_pembantu - sisaPembKirim);
   });
   const orderBerjalan = kolom({ pendapatan: bjPendapatan, bahan: bjBahan, upah: bjUpah,
     overheadProduksi: bjOverhead, overheadTanpaProduksi: 0, bebanOperasional: 0 });

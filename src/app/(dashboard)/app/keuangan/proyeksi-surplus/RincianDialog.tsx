@@ -175,7 +175,8 @@ export default function RincianDialog({ jenis, data, onClose }: {
       case 'bahan':
         return (<>
           <SubJudul>Bahan terpakai per PO</SubJudul>
-          {tabelBiayaPo(['Kain', 'Aksesori'], p => [p.kain, p.aksesori], p => p.kain + p.aksesori)}
+          {tabelBiayaPo(['Kain', 'Aksesori', 'Perkiraan sisa'], p => [p.kain, p.aksesori, p.sisa_bahan], p => p.kain + p.aksesori + p.sisa_bahan)}
+          <p className="text-[11px] text-[#9aa0a6] mt-2">Perkiraan sisa = HPP aksesori untuk pcs yang belum dipasang / masih menunggu harga LOT, dan biaya lain yang belum tercatat.</p>
         </>);
       case 'upah':
         return (<>
@@ -216,19 +217,22 @@ export default function RincianDialog({ jenis, data, onClose }: {
             </div>
           ))}
           <SubJudul>Overhead yang melekat ke tiap PO</SubJudul>
-          <Tabel kepala={['PO', 'Pcs-hari', 'Pembantu', 'Langsung', 'Total', 'Per pcs', 'Terkirim (HPP)', ...(semua ? ['Belum dikirim'] : [])]}
+          <Tabel kepala={['PO', 'Pcs-hari', 'Pembantu', 'Langsung', 'Total', 'Per pcs', 'Terkirim (HPP)', ...(semua ? ['Belum dikirim'] : []), 'Perkiraan pembantu']}
             baris={poAda.map(p => [
               <span key="po" className="font-mono">{p.no_po}<span className="block text-[10px] text-[#9aa0a6] font-sans">{angka(p.pcs)} pcs dipotong</span></span>,
               idr(p.overhead_alokasi), idr(p.overhead_pembantu), idr(p.overhead_langsung_kas), idr(p.overhead),
               idr(perPcs(p.overhead, p)), idr(p.overhead_kirim_periode),
               ...(semua ? [idr(Math.max(0, p.overhead - p.overhead_kirim))] : []),
+              p.sisa_pembantu > 0.5 ? idr(p.sisa_pembantu) : '—',
             ])}
             kaki={['Total', ...([
               (p: KinerjaPO) => p.overhead_alokasi, (p: KinerjaPO) => p.overhead_pembantu, (p: KinerjaPO) => p.overhead_langsung_kas,
               (p: KinerjaPO) => p.overhead,
             ].map(f => idr(poAda.reduce((s, p) => s + f(p), 0)))), '',
               idr(poAda.reduce((s, p) => s + p.overhead_kirim_periode, 0)),
-              ...(semua ? [idr(poAda.reduce((s, p) => s + Math.max(0, p.overhead - p.overhead_kirim), 0))] : [])]} />
+              ...(semua ? [idr(poAda.reduce((s, p) => s + Math.max(0, p.overhead - p.overhead_kirim), 0))] : []),
+              idr(poAda.reduce((s, p) => s + p.sisa_pembantu, 0))]} />
+          <p className="text-[11px] text-[#9aa0a6] mt-2">Perkiraan pembantu = jatah HPP bahan pembantu untuk pcs yang belum selesai jahit; ikut dihitung di laba PO, belum di persediaan.</p>
           {data.overheadSementara && (
             <p className="text-[11px] text-amber-300 mt-2">Sementara: overhead bulan berjalan dihitung s/d hari ini dan bisa berubah sampai bulan tutup.</p>
           )}

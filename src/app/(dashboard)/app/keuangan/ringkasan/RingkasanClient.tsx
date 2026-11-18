@@ -115,6 +115,39 @@ export default function RingkasanClient({ initialData }: { initialData: Ringkasa
       </div>
 
       {/* PO melebihi patokan HPP */}
+      {data.po_peringatan.length > 0 && (
+        <div className="p-5 rounded-xl bg-[#1A1D1F] border border-red-500/25">
+          <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-red-400" />
+              <h4 className="text-xs font-bold text-red-400 uppercase tracking-widest">PO perlu perhatian</h4>
+            </div>
+            <Link href="/app/keuangan/laporan-po">
+              <Button variant="ghost" className="h-7 text-xs text-[#9aa0a6] hover:text-[#e8eaed]">
+                <ExternalLink className="h-3 w-3 mr-1" />Lihat Laporan Per PO
+              </Button>
+            </Link>
+          </div>
+          <p className="text-[11px] text-[#9aa0a6] mb-3">PO rugi, atau margin aktual turun lebih dari 20% dari margin perkiraan HPP.</p>
+          <div className="space-y-2">
+            {data.po_peringatan.map(po => (
+              <div key={po.po_id} className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-lg bg-red-500/5 border border-red-500/10">
+                <div className="flex items-center gap-3">
+                  <span className="font-mono text-sm text-[#e5c17b] font-bold">{po.no_po}</span>
+                  <span className="text-sm text-[#9aa0a6]">{po.klien_nama}</span>
+                  {po.sementara && <span className="text-[10px] text-orange-300">sementara</span>}
+                </div>
+                <span className="text-sm font-mono font-semibold text-red-300">
+                  {po.jenis === 'rugi'
+                    ? `Rugi ${idr(Math.abs(po.laba))} (${po.margin_pct}%)`
+                    : `Margin ${po.margin_pct}% vs perkiraan ${po.margin_perkiraan_pct}% (turun ${po.turun_pct}%)`}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {data.po_melebihi_patokan.length > 0 && (
         <div className="p-5 rounded-xl bg-[#1A1D1F] border border-amber-500/20">
           <div className="flex items-center justify-between mb-1">
@@ -128,7 +161,7 @@ export default function RingkasanClient({ initialData }: { initialData: Ringkasa
               </Button>
             </Link>
           </div>
-          <p className="text-[11px] text-[#9aa0a6] mb-3">Biaya bahan + upah aktual lebih besar dari patokan di sheet HPP. Bukan berarti rugi — cek laba PO di Kinerja Keuangan.</p>
+          <p className="text-[11px] text-[#9aa0a6] mb-3">Biaya aktual + sisa perkiraan lebih besar dari patokan di sheet HPP (selisih karena tarif HPP berubah tidak dihitung). Bukan berarti rugi — cek laba PO di Kinerja Keuangan.</p>
           <div className="space-y-2">
             {data.po_melebihi_patokan.map(po => (
               <div key={po.po_id} className="flex items-center justify-between p-2.5 rounded-lg bg-amber-500/5 border border-amber-500/10">

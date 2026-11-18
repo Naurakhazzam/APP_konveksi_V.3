@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Loader2, Filter, Eye } from 'lucide-react';
+import { Loader2, Filter, Eye, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import {
@@ -18,6 +18,8 @@ import {
   type POHPPDetail,
   type HPPPerSizeResult,
   type BarisKomponen,
+  type BarisQty,
+  type KesimpulanPO,
   type GrupKomponen,
   type TandaBaris,
   type TandaPO,
@@ -77,6 +79,8 @@ const JENIS_LABEL: Record<string, string> = {
 
 // ─── PROPS ──────────────────────────────────────────────────────────────────
 
+type KunciUrut = Exclude<keyof POLaporanItem, 'kesimpulan'>;
+
 interface Props {
   initialData: POLaporanItem[];
   defaultBulan: string;
@@ -94,7 +98,7 @@ export default function LaporanPOClient({ initialData, defaultBulan, defaultTahu
   const visible = React.useMemo(() => data.filter(p => poPeriodeBaru(p.no_po)), [data]);
 
   // ─── SORT STATE ────────────────────────────────────────────────────────
-  const [sortConfig, setSortConfig] = useState<{ key: keyof POLaporanItem; direction: 'asc' | 'desc' } | null>(null);
+  const [sortConfig, setSortConfig] = useState<{ key: KunciUrut; direction: 'asc' | 'desc' } | null>(null);
 
   const sortedData = React.useMemo(() => {
     const items = [...visible];
@@ -108,12 +112,12 @@ export default function LaporanPOClient({ initialData, defaultBulan, defaultTahu
     return items;
   }, [visible, sortConfig]);
 
-  const requestSort = (key: keyof POLaporanItem) => {
+  const requestSort = (key: KunciUrut) => {
     if (sortConfig?.key === key && sortConfig.direction === 'desc') { setSortConfig(null); return; }
     setSortConfig({ key, direction: sortConfig?.key === key && sortConfig.direction === 'asc' ? 'desc' : 'asc' });
   };
 
-  const kolomUrut = (label: string, sortKey: keyof POLaporanItem, align: "left" | "right" | "center" = "left") => {
+  const kolomUrut = (label: string, sortKey: KunciUrut, align: "left" | "right" | "center" = "left") => {
     const isActive = sortConfig?.key === sortKey;
     return (
       <TableHead key={sortKey}
@@ -137,7 +141,7 @@ export default function LaporanPOClient({ initialData, defaultBulan, defaultTahu
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailData, setDetailData] = useState<POHPPDetail | null>(null);
   const [detailPO, setDetailPO] = useState<POLaporanItem | null>(null);
-  const [activeDetailTab, setActiveDetailTab] = useState<'komponen' | 'jurnal' | 'hpp-size'>('komponen');
+  const [activeDetailTab, setActiveDetailTab] = useState<'komponen' | 'qty' | 'jurnal' | 'hpp-size'>('komponen');
   const [hppPerSizeData, setHppPerSizeData] = useState<HPPPerSizeResult | null>(null);
   const [isLoadingHpp, setIsLoadingHpp] = useState(false);
 
@@ -150,12 +154,15 @@ export default function LaporanPOClient({ initialData, defaultBulan, defaultTahu
   const totalLaba      = jml(p => p.profit_final);
   const adaSementara   = visible.some(p => p.overhead_sementara);
   const hitungTanda = (t: TandaPO) => visible.filter(p => p.tanda === t).length;
+  const poPeringatan = visible.filter(p => p.kesimpulan?.peringatan);
+  const totalBedaTarif = jml(p => p.beda_tarif);
 
-  const summaryCards = [
+  const summaryCards: { label: string; value: string; color: string; sub?: string }[] = [
     { label: 'Perkiraan (HPP × dipotong)', value: idrFmt(totalPerkiraan), color: 'text-[#e8eaed]' },
     { label: 'Aktual sejauh ini',          value: idrFmt(totalAktual),    color: 'text-[#e8eaed]' },
     { label: 'Sisa perkiraan',             value: idrFmt(totalSisa),      color: 'text-blue-300' },
-    { label: 'Selisih',                    value: selisihFmt(totalSelisih), color: selisihCls(totalSelisih) },
+    { label: 'Selisih',                    value: selisihFmt(totalSelisih), color: selisihCls(totalSelisih),
+      sub: Math.round(totalBedaTarif) ? `${selisihFmt(totalBedaTarif)} beda tarif` : undefined },
     { label: 'Laba (Kinerja)',             value: (totalLaba < 0 ? '−' : '') + idrFmt(totalLaba),
       color: totalLaba > 0 ? 'text-green-400' : totalLaba < 0 ? 'text-red-400' : 'text-[#9aa0a6]' },
   ];
@@ -216,7 +223,9 @@ export default function LaporanPOClient({ initialData, defaultBulan, defaultTahu
           (Saldo Bahan Pembantu) + upah tercatat (lunas & terutang) + overhead produksi metode pcs-hari.{' '}
           <b className="text-amber-300">Sisa perkiraan</b> = bagian HPP untuk pcs yang biayanya belum tercatat
           (tahap belum selesai, aksesori menunggu harga). <b className="text-amber-300">Selisih</b> = aktual + sisa − perkiraan
-          (<span className="text-red-400">+ boros</span>, <span className="text-green-400">− hemat</span>).
+          (<span className="text-red-400">+ boros</span>, <span className="text-green-400">− hemat</span>).{' '}
+          <b className="text-amber-300">Beda tarif</b> = bagian selisih upah karena tarif HPP berubah sesudah upah dicatat
+          — bukan hemat/boros.
         </p>
         <p>Laba memakai angka yang sama dengan <b>Kinerja Keuangan</b>.</p>
         {adaSementara && (
@@ -226,12 +235,27 @@ export default function LaporanPOClient({ initialData, defaultBulan, defaultTahu
         )}
       </div>
 
+      {poPeringatan.length > 0 && (
+        <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/25 text-xs text-red-300 space-y-1">
+          <p className="flex items-center gap-2 font-bold"><AlertTriangle className="h-4 w-4" /> {poPeringatan.length} PO perlu perhatian</p>
+          {poPeringatan.map(p => (
+            <p key={p.po_id}>
+              <span className="font-mono text-[#e5c17b]">{p.no_po}</span> — {p.kesimpulan!.peringatan === 'rugi'
+                ? `rugi ${idrFmt(p.kesimpulan!.margin_aktual)} (${p.kesimpulan!.margin_aktual_pct}%)`
+                : `margin ${p.kesimpulan!.margin_aktual_pct}%, turun ${p.kesimpulan!.turun_pct}% dari perkiraan ${p.kesimpulan!.margin_perkiraan_pct}%`}
+              {p.kesimpulan!.sementara && <span className="text-orange-300"> · sementara</span>}
+            </p>
+          ))}
+        </div>
+      )}
+
       {/* Summary Bar */}
       <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
         {summaryCards.map(card => (
           <div key={card.label} className="p-4 rounded-xl bg-[#1A1D1F] border border-[#2A2D31]">
             <p className="text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold mb-1">{card.label}</p>
             <p className={`text-sm font-bold ${card.color}`}>{card.value}</p>
+            {card.sub && <p className="text-[10px] text-[#9aa0a6] mt-0.5">{card.sub}</p>}
           </div>
         ))}
         <div className="p-4 rounded-xl bg-[#1A1D1F] border border-[#2A2D31]">
@@ -332,6 +356,9 @@ export default function LaporanPOClient({ initialData, defaultBulan, defaultTahu
                   <TableCell className="text-sm text-right text-blue-300 whitespace-nowrap">{kosong || Math.round(po.sisa) === 0 ? '—' : idrFmt(po.sisa)}</TableCell>
                   <TableCell className={`text-sm font-semibold text-right whitespace-nowrap ${selisihCls(po.selisih)}`}>
                     {kosong ? '—' : selisihFmt(po.selisih)}
+                    {!kosong && Math.round(po.beda_tarif) !== 0 && (
+                      <span className="block text-[10px] font-normal text-[#9aa0a6]">{selisihFmt(po.beda_tarif)} beda tarif</span>
+                    )}
                   </TableCell>
                   <TableCell className="text-sm text-right whitespace-nowrap">
                     {po.nilai_project === 0
@@ -356,6 +383,17 @@ export default function LaporanPOClient({ initialData, defaultBulan, defaultTahu
                     <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider whitespace-nowrap ${TANDA_PO[po.tanda].cls}`}>
                       {TANDA_PO[po.tanda].label}
                     </span>
+                    {po.kesimpulan?.peringatan && (
+                      <span title={po.kesimpulan.kalimat.join(' ')}
+                        className="block mt-1 text-[10px] font-bold text-red-400 whitespace-nowrap">
+                        ⚠ {po.kesimpulan.peringatan === 'rugi' ? 'Rugi' : `Margin turun ${po.kesimpulan.turun_pct}%`}
+                      </span>
+                    )}
+                    {(po.kesimpulan?.kurang_potong_pcs ?? 0) > 0 && (
+                      <span className="block mt-0.5 text-[10px] text-amber-300 whitespace-nowrap">
+                        kurang potong {po.kesimpulan!.kurang_potong_pcs} pcs
+                      </span>
+                    )}
                   </TableCell>
                   <TableCell className="text-center">
                     <Button
@@ -403,12 +441,13 @@ export default function LaporanPOClient({ initialData, defaultBulan, defaultTahu
               <div className="flex border-b border-[#3a3d41] mb-1">
                 {[
                   { key: 'komponen', label: 'Per Komponen' },
+                  { key: 'qty',      label: 'Qty Pesan vs Potong' },
                   { key: 'jurnal',   label: 'Rincian Aktual' },
                   { key: 'hpp-size', label: 'HPP per Size' },
                 ].map(tab => (
                   <button
                     key={tab.key}
-                    onClick={() => tab.key === 'hpp-size' ? handleHppTabClick() : setActiveDetailTab(tab.key as 'komponen' | 'jurnal')}
+                    onClick={() => tab.key === 'hpp-size' ? handleHppTabClick() : setActiveDetailTab(tab.key as 'komponen' | 'qty' | 'jurnal')}
                     className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${
                       activeDetailTab === tab.key
                         ? 'border-[#e5c17b] text-[#e5c17b]'
@@ -423,6 +462,7 @@ export default function LaporanPOClient({ initialData, defaultBulan, defaultTahu
               {/* ── TAB 1: PER KOMPONEN ── */}
               {activeDetailTab === 'komponen' && (
                 <div className="space-y-4">
+                  {detailData.kesimpulan && <KotakKesimpulan k={detailData.kesimpulan} />}
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                     {[
                       { label: 'Perkiraan',         value: idrFmt(detailData.totals.perkiraan), color: 'text-[#e8eaed]' },
@@ -442,6 +482,9 @@ export default function LaporanPOClient({ initialData, defaultBulan, defaultTahu
                   <TabelKomponen baris={detailData.baris} />
                 </div>
               )}
+
+              {/* ── TAB: QTY PESAN VS POTONG ── */}
+              {activeDetailTab === 'qty' && <TabelQty rows={detailData.qty} />}
 
               {/* ── TAB 2: RINCIAN AKTUAL ── */}
               {activeDetailTab === 'jurnal' && (
@@ -603,7 +646,12 @@ function TabelKomponen({ baris }: { baris: BarisKomponen[] }) {
                   <td className="p-2.5 text-right text-[#e8eaed] whitespace-nowrap">{r.perkiraan ? idrFmt(r.perkiraan) : '—'}</td>
                   <td className="p-2.5 text-right text-[#e8eaed] whitespace-nowrap">{r.aktual ? idrFmt(r.aktual) : '—'}</td>
                   <td className="p-2.5 text-right text-blue-300 whitespace-nowrap">{Math.round(r.sisa) ? idrFmt(r.sisa) : '—'}</td>
-                  <td className={`p-2.5 text-right font-semibold whitespace-nowrap ${selisihCls(r.selisih)}`}>{selisihFmt(r.selisih)}</td>
+                  <td className={`p-2.5 text-right font-semibold whitespace-nowrap ${selisihCls(r.selisih)}`}>
+                    {selisihFmt(r.selisih)}
+                    {Math.round(r.beda_tarif) !== 0 && (
+                      <span className="block text-[10px] font-normal text-[#9aa0a6]">{selisihFmt(r.beda_tarif)} beda tarif</span>
+                    )}
+                  </td>
                   <td className={`p-2.5 text-xs whitespace-nowrap ${TANDA_BARIS[r.tanda].cls}`}>{TANDA_BARIS[r.tanda].label}</td>
                 </tr>
               ))}
@@ -619,6 +667,115 @@ function TabelKomponen({ baris }: { baris: BarisKomponen[] }) {
           </tr>
         </tbody>
       </table>
+    </div>
+  );
+}
+
+// ─── Kesimpulan margin ───────────────────────────────────────────────────────
+
+function KotakKesimpulan({ k }: { k: KesimpulanPO }) {
+  const warna = k.peringatan ? 'bg-red-500/10 border-red-500/25' : 'bg-green-500/5 border-green-500/20';
+  const tanda = (n: number) => (Math.round(n) > 0 ? '+' : Math.round(n) < 0 ? '−' : '');
+  return (
+    <div className={`p-4 rounded-lg border ${warna}`}>
+      <div className="flex flex-wrap items-center gap-2 mb-2">
+        <p className="text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold">Kesimpulan</p>
+        {k.peringatan && (
+          <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-red-500/15 text-red-300 border border-red-500/30">
+            ⚠ {k.peringatan === 'rugi' ? 'Rugi' : `Margin turun ${k.turun_pct}%`}
+          </span>
+        )}
+        {k.sementara && (
+          <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-orange-500/15 text-orange-300 border border-orange-500/30">Sementara</span>
+        )}
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+        {[
+          { label: 'Nilai jual (dipotong)', value: idrFmt(k.nilai_jual), cls: 'text-[#e8eaed]' },
+          { label: 'Margin perkiraan', value: `${k.margin_perkiraan < 0 ? '−' : ''}${idrFmt(k.margin_perkiraan)} (${k.margin_perkiraan_pct}%)`, cls: 'text-[#e8eaed]' },
+          { label: 'Margin aktual', value: `${k.margin_aktual < 0 ? '−' : ''}${idrFmt(k.margin_aktual)} (${k.margin_aktual_pct}%)`,
+            cls: k.margin_aktual < 0 ? 'text-red-400' : 'text-green-400' },
+          { label: 'Selisih margin', value: tanda(k.selisih_margin) + idrFmt(k.selisih_margin),
+            cls: Math.round(k.selisih_margin) < 0 ? 'text-red-400' : Math.round(k.selisih_margin) > 0 ? 'text-green-400' : 'text-[#9aa0a6]' },
+        ].map(c => (
+          <div key={c.label}>
+            <p className="text-[10px] text-[#9aa0a6]">{c.label}</p>
+            <p className={`text-sm font-bold ${c.cls}`}>{c.value}</p>
+          </div>
+        ))}
+      </div>
+      <ul className="text-xs text-[#c0c6cc] space-y-1 list-disc pl-4">
+        {k.kalimat.map((t, i) => <li key={i}>{t}</li>)}
+      </ul>
+    </div>
+  );
+}
+
+// ─── Qty pesan vs dipotong vs dikirim ────────────────────────────────────────
+
+const TANDA_QTY: Record<BarisQty['tanda'], { label: string; cls: string }> = {
+  pas:    { label: 'Pas',                  cls: 'text-[#9aa0a6]' },
+  kurang: { label: 'Kurang potong',        cls: 'text-red-400' },
+  lebih:  { label: 'Lebih potong',         cls: 'text-amber-300' },
+  proses: { label: 'Belum semua dipotong', cls: 'text-blue-300' },
+};
+
+function TabelQty({ rows }: { rows: BarisQty[] }) {
+  if (rows.length === 0) {
+    return <div className="p-8 rounded-lg border border-[#2A2D31] text-center text-[#5f6368] text-sm">Tidak ada item PO</div>;
+  }
+  const th = 'p-2.5 text-[#9aa0a6] text-[11px] font-bold uppercase tracking-wider';
+  const jml = (k: 'pesan' | 'potong' | 'selisih' | 'kirim') => rows.reduce((s, r) => s + r[k], 0);
+  const sel = (n: number) => (n > 0 ? `+${n}` : n < 0 ? `−${Math.abs(n)}` : '0');
+  const selCls = (n: number) => (n < 0 ? 'text-red-400' : n > 0 ? 'text-amber-300' : 'text-[#9aa0a6]');
+  const kurang = rows.filter(r => r.tanda === 'kurang');
+  return (
+    <div className="space-y-3">
+      {kurang.length > 0 && (
+        <p className="text-xs text-red-300">
+          ⚠ Kurang potong {kurang.reduce((s, r) => s - r.selisih, 0).toLocaleString('id-ID')} pcs di {kurang.length} baris —
+          potensi nilai jual {idrFmt(kurang.reduce((s, r) => s - r.selisih * r.harga_jual, 0))}.
+          Perkiraan biaya tetap dihitung dari pcs yang dipotong.
+        </p>
+      )}
+      <div className="rounded-lg border border-[#2A2D31] overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-[#1A1C1E]">
+            <tr>
+              <th className={`${th} text-left`}>Artikel</th>
+              <th className={`${th} text-left`}>Warna</th>
+              <th className={`${th} text-left`}>Size</th>
+              <th className={`${th} text-right`}>Pesan</th>
+              <th className={`${th} text-right`}>Dipotong</th>
+              <th className={`${th} text-right`}>Selisih</th>
+              <th className={`${th} text-right`}>Dikirim</th>
+              <th className={`${th} text-left`}>Tanda</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(r => (
+              <tr key={r.po_item_id} className="border-t border-[#2A2D31]/60 hover:bg-[#1A1C1E]/50">
+                <td className="p-2.5 text-[#e8eaed]">{r.artikel}</td>
+                <td className="p-2.5 text-[#e8eaed]">{r.warna}</td>
+                <td className="p-2.5 text-[#e8eaed]">{r.size}</td>
+                <td className="p-2.5 text-right text-[#9aa0a6]">{r.pesan.toLocaleString('id-ID')}</td>
+                <td className="p-2.5 text-right text-[#e8eaed]">{r.potong.toLocaleString('id-ID')}</td>
+                <td className={`p-2.5 text-right font-semibold ${selCls(r.selisih)}`}>{sel(r.selisih)}</td>
+                <td className="p-2.5 text-right text-[#e8eaed]">{r.kirim.toLocaleString('id-ID')}</td>
+                <td className={`p-2.5 text-xs whitespace-nowrap ${TANDA_QTY[r.tanda].cls}`}>{TANDA_QTY[r.tanda].label}</td>
+              </tr>
+            ))}
+            <tr className="border-t-2 border-[#2A2D31] bg-[#1A1C1E] font-bold">
+              <td colSpan={3} className="p-2.5 text-[#9aa0a6] text-xs uppercase">Total</td>
+              <td className="p-2.5 text-right text-[#e8eaed]">{jml('pesan').toLocaleString('id-ID')}</td>
+              <td className="p-2.5 text-right text-[#e8eaed]">{jml('potong').toLocaleString('id-ID')}</td>
+              <td className={`p-2.5 text-right ${selCls(jml('selisih'))}`}>{sel(jml('selisih'))}</td>
+              <td className="p-2.5 text-right text-[#e8eaed]">{jml('kirim').toLocaleString('id-ID')}</td>
+              <td />
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
