@@ -36,8 +36,8 @@ const BULAN = [
 const idrFmt = (n: number) =>
   'Rp ' + Math.round(Math.abs(n)).toLocaleString('id-ID', { minimumFractionDigits: 0 });
 
-/** Selisih bertanda: + boros (merah), − hemat (hijau) */
-const selisihFmt = (n: number) => (Math.round(n) > 0 ? '+' : Math.round(n) < 0 ? '−' : '') + idrFmt(n);
+/** Selisih biaya dalam kata: Boros (merah) = biaya lebih besar dari HPP, Hemat (hijau) = lebih kecil */
+const selisihFmt = (n: number) => (Math.round(n) > 0 ? 'Boros ' : Math.round(n) < 0 ? 'Hemat ' : 'Sesuai') + (Math.round(n) ? idrFmt(n) : '');
 const selisihCls = (n: number) =>
   Math.round(n) > 0 ? 'text-red-400' : Math.round(n) < 0 ? 'text-green-400' : 'text-[#9aa0a6]';
 
@@ -161,7 +161,7 @@ export default function LaporanPOClient({ initialData, defaultBulan, defaultTahu
     { label: 'Perkiraan (HPP × dipotong)', value: idrFmt(totalPerkiraan), color: 'text-[#e8eaed]' },
     { label: 'Aktual sejauh ini',          value: idrFmt(totalAktual),    color: 'text-[#e8eaed]' },
     { label: 'Sisa perkiraan',             value: idrFmt(totalSisa),      color: 'text-blue-300' },
-    { label: 'Selisih',                    value: selisihFmt(totalSelisih), color: selisihCls(totalSelisih),
+    { label: 'Hemat / Boros biaya',        value: selisihFmt(totalSelisih), color: selisihCls(totalSelisih),
       sub: Math.round(totalBedaTarif) ? `${selisihFmt(totalBedaTarif)} beda tarif` : undefined },
     { label: 'Laba (Kinerja)',             value: (totalLaba < 0 ? '−' : '') + idrFmt(totalLaba),
       color: totalLaba > 0 ? 'text-green-400' : totalLaba < 0 ? 'text-red-400' : 'text-[#9aa0a6]' },
@@ -222,8 +222,10 @@ export default function LaporanPOClient({ initialData, defaultBulan, defaultTahu
           <b className="text-amber-300">Aktual sejauh ini</b> = kain, puring & sleting (modal FIFO) + bahan pembantu
           (Saldo Bahan Pembantu) + upah tercatat (lunas & terutang) + overhead produksi metode pcs-hari.{' '}
           <b className="text-amber-300">Sisa perkiraan</b> = bagian HPP untuk pcs yang biayanya belum tercatat
-          (tahap belum selesai, aksesori menunggu harga). <b className="text-amber-300">Selisih</b> = aktual + sisa − perkiraan
-          (<span className="text-red-400">+ boros</span>, <span className="text-green-400">− hemat</span>).{' '}
+          (tahap belum selesai, aksesori menunggu harga).{' '}
+          <b className="text-amber-300">Hemat / Boros</b> = (aktual + sisa) dibanding perkiraan:{' '}
+          <span className="text-green-400">Hemat</span> = biaya lebih kecil dari patokan HPP, untung bertambah sebesar itu;{' '}
+          <span className="text-red-400">Boros</span> = biaya lebih besar dari patokan HPP, untung berkurang sebesar itu.{' '}
           Upah yang sudah dibayar dibandingkan dengan tarif yang dibayar saat itu.
         </p>
         <p>Laba memakai angka yang sama dengan <b>Kinerja Keuangan</b>.</p>
@@ -324,7 +326,7 @@ export default function LaporanPOClient({ initialData, defaultBulan, defaultTahu
               {kolomUrut("Perkiraan", "perkiraan", "right")}
               {kolomUrut("Aktual", "aktual", "right")}
               {kolomUrut("Sisa", "sisa", "right")}
-              {kolomUrut("Selisih", "selisih", "right")}
+              {kolomUrut("Hemat / Boros", "selisih", "right")}
               {kolomUrut("Nilai Jual", "nilai_project", "right")}
               {kolomUrut("Laba", "profit_final", "right")}
               {kolomUrut("Margin", "margin_pct_final", "right")}
@@ -464,14 +466,23 @@ export default function LaporanPOClient({ initialData, defaultBulan, defaultTahu
                   {detailData.kesimpulan && <KotakKesimpulan k={detailData.kesimpulan} />}
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                     {[
-                      { label: 'Perkiraan',         value: idrFmt(detailData.totals.perkiraan), color: 'text-[#e8eaed]' },
-                      { label: 'Aktual sejauh ini', value: idrFmt(detailData.totals.aktual),    color: 'text-[#e8eaed]' },
-                      { label: 'Sisa perkiraan',    value: idrFmt(detailData.totals.sisa),      color: 'text-blue-300' },
-                      { label: 'Selisih',           value: selisihFmt(detailData.totals.selisih), color: selisihCls(detailData.totals.selisih) },
+                      { label: 'Perkiraan biaya',   value: idrFmt(detailData.totals.perkiraan), color: 'text-[#e8eaed]',
+                        ket: 'Patokan HPP di sheet × pcs yang dipotong' },
+                      { label: 'Aktual sejauh ini', value: idrFmt(detailData.totals.aktual),    color: 'text-[#e8eaed]',
+                        ket: 'Biaya yang sudah benar-benar keluar / tercatat' },
+                      { label: 'Sisa perkiraan',    value: idrFmt(detailData.totals.sisa),      color: 'text-blue-300',
+                        ket: 'Biaya yang belum keluar (tahap belum selesai), dihitung dari HPP' },
+                      { label: 'Hemat / Boros biaya', value: selisihFmt(detailData.totals.selisih), color: selisihCls(detailData.totals.selisih),
+                        ket: Math.round(detailData.totals.selisih) < 0
+                          ? 'Aktual + sisa lebih KECIL dari perkiraan → untung bertambah sebesar ini'
+                          : Math.round(detailData.totals.selisih) > 0
+                            ? 'Aktual + sisa lebih BESAR dari perkiraan → untung berkurang sebesar ini'
+                            : 'Aktual + sisa sama dengan perkiraan' },
                     ].map(c => (
                       <div key={c.label} className="p-3 rounded-lg bg-[#1A1D1F] border border-[#2A2D31]">
                         <p className="text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold mb-1">{c.label}</p>
                         <p className={`text-sm font-bold ${c.color}`}>{c.value}</p>
+                        <p className="text-[10px] text-[#9aa0a6] mt-1 leading-snug">{c.ket}</p>
                       </div>
                     ))}
                   </div>
@@ -621,7 +632,7 @@ function TabelKomponen({ baris }: { baris: BarisKomponen[] }) {
             <th className={`${th} text-right`}>Perkiraan</th>
             <th className={`${th} text-right`}>Aktual sejauh ini</th>
             <th className={`${th} text-right`}>Sisa perkiraan</th>
-            <th className={`${th} text-right`}>Selisih</th>
+            <th className={`${th} text-right`}>Hemat / Boros</th>
             <th className={`${th} text-left`}>Status</th>
           </tr>
         </thead>
@@ -674,7 +685,6 @@ function TabelKomponen({ baris }: { baris: BarisKomponen[] }) {
 
 function KotakKesimpulan({ k }: { k: KesimpulanPO }) {
   const warna = k.peringatan ? 'bg-red-500/10 border-red-500/25' : 'bg-green-500/5 border-green-500/20';
-  const tanda = (n: number) => (Math.round(n) > 0 ? '+' : Math.round(n) < 0 ? '−' : '');
   return (
     <div className={`p-4 rounded-lg border ${warna}`}>
       <div className="flex flex-wrap items-center gap-2 mb-2">
@@ -690,16 +700,22 @@ function KotakKesimpulan({ k }: { k: KesimpulanPO }) {
       </div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
         {[
-          { label: 'Nilai jual (dipotong)', value: idrFmt(k.nilai_jual), cls: 'text-[#e8eaed]' },
-          { label: 'Margin perkiraan', value: `${k.margin_perkiraan < 0 ? '−' : ''}${idrFmt(k.margin_perkiraan)} (${k.margin_perkiraan_pct}%)`, cls: 'text-[#e8eaed]' },
-          { label: 'Margin aktual', value: `${k.margin_aktual < 0 ? '−' : ''}${idrFmt(k.margin_aktual)} (${k.margin_aktual_pct}%)`,
-            cls: k.margin_aktual < 0 ? 'text-red-400' : 'text-green-400' },
-          { label: 'Selisih margin', value: tanda(k.selisih_margin) + idrFmt(k.selisih_margin),
-            cls: Math.round(k.selisih_margin) < 0 ? 'text-red-400' : Math.round(k.selisih_margin) > 0 ? 'text-green-400' : 'text-[#9aa0a6]' },
+          { label: 'Nilai jual', value: idrFmt(k.nilai_jual), cls: 'text-[#e8eaed]',
+            ket: 'Harga jual × pcs yang dipotong' },
+          { label: 'Untung menurut HPP', value: `${k.margin_perkiraan < 0 ? '−' : ''}${idrFmt(k.margin_perkiraan)} (${k.margin_perkiraan_pct}%)`, cls: 'text-[#e8eaed]',
+            ket: 'Nilai jual − perkiraan biaya (patokan sheet HPP)' },
+          { label: 'Untung sebenarnya', value: `${k.margin_aktual < 0 ? '−' : ''}${idrFmt(k.margin_aktual)} (${k.margin_aktual_pct}%)`,
+            cls: k.margin_aktual < 0 ? 'text-red-400' : 'text-green-400',
+            ket: 'Nilai jual − (biaya aktual + sisa perkiraan)' },
+          { label: 'Dibanding HPP', value: Math.round(k.selisih_margin) > 0 ? `Lebih untung ${idrFmt(k.selisih_margin)}`
+              : Math.round(k.selisih_margin) < 0 ? `Kurang untung ${idrFmt(k.selisih_margin)}` : 'Sesuai',
+            cls: Math.round(k.selisih_margin) < 0 ? 'text-red-400' : Math.round(k.selisih_margin) > 0 ? 'text-green-400' : 'text-[#9aa0a6]',
+            ket: 'Untung sebenarnya − untung menurut HPP' },
         ].map(c => (
           <div key={c.label}>
             <p className="text-[10px] text-[#9aa0a6]">{c.label}</p>
             <p className={`text-sm font-bold ${c.cls}`}>{c.value}</p>
+            <p className="text-[10px] text-[#5f6368] mt-0.5 leading-snug">{c.ket}</p>
           </div>
         ))}
       </div>

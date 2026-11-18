@@ -286,20 +286,23 @@ export function hitungKesimpulan(p: {
 
   const kalimat: string[] = [];
   if (p.nilai_jual > 0) {
-    kalimat.push(`${margin_aktual >= 0 ? 'Untung' : 'Rugi'} ${rp(margin_aktual)} (margin ${pct(margin_aktual)}%)`
-      + ` — perkiraan HPP ${rp(margin_perkiraan)} (${pct(margin_perkiraan)}%).`);
+    kalimat.push(`PO ini ${margin_aktual >= 0 ? 'untung' : 'rugi'} ${rp(margin_aktual)} (${pct(margin_aktual)}% dari nilai jual). `
+      + `Menurut patokan HPP di sheet, untungnya seharusnya ${rp(margin_perkiraan)} (${pct(margin_perkiraan)}%).`);
     const sm = margin_aktual - margin_perkiraan;
     if (Math.abs(sm) >= AMBANG_PENYEBAB) {
-      kalimat.push(`Margin ${sm > 0 ? 'lebih besar' : 'lebih kecil'} ${rp(sm)} dari perkiraan`
-        + (Math.abs(beda_tarif) >= AMBANG_PENYEBAB ? `; ${rp(beda_tarif)} di antaranya karena beda tarif upah, bukan ${beda_tarif < 0 ? 'penghematan' : 'pemborosan'}.` : '.'));
+      kalimat.push(sm > 0
+        ? `Biaya produksi ${rp(sm)} lebih hemat dari patokan HPP, jadi untung bertambah ${rp(sm)} dari perkiraan.`
+        : `Biaya produksi ${rp(sm)} lebih boros dari patokan HPP, jadi untung berkurang ${rp(sm)} dari perkiraan.`);
     } else {
-      kalimat.push('Margin sesuai perkiraan HPP.');
+      kalimat.push('Biaya produksi sesuai patokan HPP, untung sesuai perkiraan.');
     }
   } else {
-    kalimat.push('Harga jual belum diset — margin belum bisa dihitung.');
+    kalimat.push('Harga jual belum diset — untung/rugi belum bisa dihitung.');
   }
   if (top.length) {
-    kalimat.push('Penyebab terbesar: ' + top.map(x => `${x.nama} ${x.nominal > 0 ? 'boros' : x.jenis === 'beda_tarif' ? 'lebih murah' : 'hemat'} ${rp(x.nominal)}`).join(', ') + '.');
+    kalimat.push('Penyebab terbesar: ' + top.map(x => x.nominal > 0
+      ? `${x.nama} lebih mahal ${rp(x.nominal)} dari HPP`
+      : `${x.nama} lebih murah ${rp(x.nominal)} dari HPP`).join('; ') + '.');
   }
   if (peringatan === 'rugi') kalimat.push('⚠ PO ini rugi.');
   if (peringatan === 'turun') kalimat.push(`⚠ Margin turun ${Math.round(turun * 100)}% dari perkiraan (batas ${BATAS_TURUN_MARGIN * 100}%).`);
