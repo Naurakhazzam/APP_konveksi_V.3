@@ -699,6 +699,54 @@ export interface NilaiSuratJalan {
   tervalidasi: boolean;
 }
 
+/** Ambil semua baris tabel (lewati batas 1000 baris per request Supabase). */
+async function ambilSemua<T>(
+  query: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+): Promise<T[]> {
+  const hasil: T[] = [];
+  const PER = 1000;
+  for (let from = 0; ; from += PER) {
+    const { data, error } = await query(from, from + PER - 1);
+    if (error) throw new Error(error.message);
+    hasil.push(...(data ?? []));
+    if (!data || data.length < PER) break;
+  }
+  return hasil;
+}
+
+/**
+ * Nilai jual (Σ qty kirim × harga jual snapshot) untuk SEMUA surat jalan, key = surat_jalan.id.
+ * SJ kirim ulang reject memakai harga satuan reject kantor-nya.
+ * Null untuk role selain owner/admin keuangan.
+ */
+export async function getNilaiJualSuratJalanList(): Promise<Record<string, number> | null> {
+  const profile = await getCurrentUserProfile();
+  if (!profile || !ROLE_LIHAT_NILAI.includes(profile.role)) return null;
+
+  const supabase = await createClient();
+  const [items, ulang] = await Promise.all([
+    ambilSemua<{ sj_id: string; qty_kirim: number | null; harga_satuan: number | null }>((a, b) =>
+      supabase.from('surat_jalan_item').select('sj_id, qty_kirim, harga_satuan')
+        .eq('tenant_id', TENANT_ID).order('id').range(a, b)),
+    ambilSemua<{ sj_id: string; qty: number | null; reject_kantor: unknown }>((a, b) =>
+      supabase.from('kirim_ulang_item').select('sj_id, qty, reject_kantor:reject_kantor_id (harga_satuan)')
+        .eq('tenant_id', TENANT_ID).order('id').range(a, b)),
+  ]);
+
+  const nilai: Record<string, number> = {};
+  for (const it of items) {
+    nilai[it.sj_id] = (nilai[it.sj_id] ?? 0) + Number(it.qty_kirim ?? 0) * Number(it.harga_satuan ?? 0);
+  }
+  for (const it of ulang) {
+    // relasi to-one bisa datang sebagai objek atau array tergantung tipe hasil Supabase
+    const rk = (Array.isArray(it.reject_kantor) ? it.reject_kantor[0] : it.reject_kantor) as
+      { harga_satuan: number | null } | null | undefined;
+    nilai[it.sj_id] = (nilai[it.sj_id] ?? 0) + Number(it.qty ?? 0) * Number(rk?.harga_satuan ?? 0);
+  }
+  for (const k of Object.keys(nilai)) nilai[k] = Math.round(nilai[k]);
+  return nilai;
+}
+
 /**
  * Nominal uang satu surat jalan. Mengembalikan null untuk role selain owner/admin keuangan,
  * jadi harga tidak pernah dikirim ke browser role lain.
