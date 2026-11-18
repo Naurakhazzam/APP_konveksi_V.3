@@ -5,6 +5,7 @@ import { getCurrentUserProfile } from '@/lib/auth/permissions';
 import { getAllowedPathsForRole } from '@/lib/actions/master/permission.actions';
 import { redirect } from 'next/navigation';
 import { Toaster } from 'sonner';
+import { getJumlahSelisihMenunggu } from '@/lib/actions/pengiriman/selisih-kirim.actions';
 
 // Semua path yang ada di app — owner selalu dapat akses ke semua ini
 const ALL_APP_PATHS = [
@@ -28,6 +29,7 @@ const ALL_APP_PATHS = [
   '/app/pengiriman/buat-surat-jalan',
   '/app/pengiriman/riwayat',
   '/app/pengiriman/validasi',
+  '/app/pengiriman/selisih-kirim',
   '/app/pengiriman/reject-kantor',
   '/app/penggajian/overview-pekerja',
   '/app/penggajian/rekap-gaji',
@@ -99,10 +101,16 @@ export async function DashboardLayout({ children }: { children: React.ReactNode 
     .filter(([, prefix]) => allowedPaths.some(p => p.startsWith(prefix)))
     .map(([id]) => id);
 
+  // Tanda angka menu: selisih kirim yang belum dijelaskan owner.
+  const badges: Record<string, number> = {};
+  if (allowedPaths.includes('/app/pengiriman/selisih-kirim')) {
+    badges['/app/pengiriman/selisih-kirim'] = await getJumlahSelisihMenunggu();
+  }
+
   return (
     <div className="flex h-screen w-full font-sans antialiased overflow-hidden bg-background">
       <Toaster position="top-right" richColors />
-      <Sidebar profile={profile} allowedNavIds={allowedNavIds} allowedPaths={allowedPaths} />
+      <Sidebar profile={profile} allowedNavIds={allowedNavIds} allowedPaths={allowedPaths} badges={badges} />
       <div className="flex-1 flex flex-col min-w-0">
         <TopBar profile={profile} />
         <main className="flex-1 overflow-y-auto p-4 lg:p-8 bg-[#F5F3EF] dark:bg-[#16181A]">

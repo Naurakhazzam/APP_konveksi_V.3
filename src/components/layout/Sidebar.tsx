@@ -68,6 +68,7 @@ const NAV_MENU = [
       { label: 'Buat Surat Jalan', path: '/app/pengiriman/buat-surat-jalan' },
       { label: 'Riwayat Kirim',    path: '/app/pengiriman/riwayat' },
       { label: 'Validasi Kirim',   path: '/app/pengiriman/validasi' },
+      { label: 'Selisih Kirim',    path: '/app/pengiriman/selisih-kirim' },
       { label: 'Reject Kantor',    path: '/app/pengiriman/reject-kantor' },
     ]
   },
@@ -155,9 +156,20 @@ interface SidebarProps {
   profile: UserProfile;
   allowedNavIds: string[];
   allowedPaths: string[];
+  /** Tanda angka per path submenu (mis. selisih kirim yang menunggu penjelasan). */
+  badges?: Record<string, number>;
 }
 
-export function Sidebar({ profile, allowedNavIds, allowedPaths }: SidebarProps) {
+function Tanda({ n }: { n: number }) {
+  if (!n) return null;
+  return (
+    <span className="ml-auto min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[10px] font-bold leading-[18px] text-center">
+      {n > 99 ? '99+' : n}
+    </span>
+  );
+}
+
+export function Sidebar({ profile, allowedNavIds, allowedPaths, badges = {} }: SidebarProps) {
   const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
 
@@ -223,6 +235,7 @@ export function Sidebar({ profile, allowedNavIds, allowedPaths }: SidebarProps) 
               >
                 <Icon size={18} />
                 {item.label}
+                <Tanda n={(item.children ?? []).reduce((s, c) => s + (badges[c.path] ?? 0), 0)} />
               </Link>
               {item.children && item.children.length > 0 && isActive && (
                 <div className="ml-9 mt-1 flex flex-col space-y-1 border-l border-[#2A2D31] pl-2 mb-1">
@@ -240,6 +253,7 @@ export function Sidebar({ profile, allowedNavIds, allowedPaths }: SidebarProps) 
                       >
                         {ChildIcon && <ChildIcon size={12} className="shrink-0" />}
                         {child.label}
+                        <Tanda n={badges[child.path] ?? 0} />
                       </Link>
                     )
                   })}

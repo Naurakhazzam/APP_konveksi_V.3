@@ -51,7 +51,6 @@ export interface SuratJalanSiapValidasi {
 export interface ValidasiItemInput {
   surat_jalan_item_id: string;
   qty_diterima: number;
-  alasan_reject_id?: string | null;  // diperlukan jika qty kurang
   /** Pcs yang sampai tapi cacat → diretur ke konveksi (memotong tagihan). */
   qty_reject?: number;
   reject_alasan_id?: string | null;
@@ -68,7 +67,9 @@ export interface ValidasiResult {
 // ─── 1. getSuratJalanSiapValidasi ─────────────────────────────────────────────
 
 /**
- * Fetch semua SJ yang belum tervalidasi (status: dikirim / selisih_kurang / selisih_lebih).
+ * Fetch semua SJ yang belum tervalidasi (status: dikirim / selisih_lebih / final belum divalidasi).
+ * SJ selisih_kurang tidak lagi di sini — kekurangannya menunggu penjelasan owner
+ * di menu Selisih Kirim (jawaban "salah hitung" mengembalikan SJ ke status dikirim).
  * Join ke surat_jalan_item → bundle → po_item untuk ambil harga_satuan.
  */
 export async function getSuratJalanSiapValidasi(): Promise<SuratJalanSiapValidasi[]> {
@@ -117,7 +118,7 @@ export async function getSuratJalanSiapValidasi(): Promise<SuratJalanSiapValidas
       )
     `)
     .eq('tenant_id', TENANT_ID)
-    .or('status.in.(dikirim,selisih_kurang,selisih_lebih),and(status.eq.final,tanggal_validasi.is.null)')
+    .or('status.in.(dikirim,selisih_lebih),and(status.eq.final,tanggal_validasi.is.null)')
     .order('tanggal', { ascending: false });
 
   if (error) throw new Error(`Gagal memuat SJ siap validasi: ${error.message}`);
@@ -209,6 +210,7 @@ export async function submitValidasiPengiriman(
   revalidatePath(REVALIDATE_PATH);
   revalidatePath('/app/pengiriman/riwayat');
   revalidatePath('/app/pengiriman/reject-kantor');
+  revalidatePath('/app/pengiriman/selisih-kirim');
   revalidatePath('/app/keuangan/invoice');
 
   return data as ValidasiResult;

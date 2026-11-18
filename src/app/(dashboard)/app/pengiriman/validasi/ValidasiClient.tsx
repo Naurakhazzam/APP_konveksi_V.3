@@ -182,8 +182,6 @@ function ValidasiForm({
     sj.items.forEach(it => { init[it.surat_jalan_item_id] = it.qty_kirim; });
     return init;
   });
-  // alasan per item (untuk yang kurang)
-  const [alasans, setAlasans] = useState<Record<string, string>>({});
   // reject saat terima: barang sampai tapi cacat → diretur ke konveksi
   const [rejectQty, setRejectQty] = useState<Record<string, number>>({});
   const [rejectAlasan, setRejectAlasan] = useState<Record<string, string>>({});
@@ -246,22 +244,11 @@ function ValidasiForm({
       }
     }
 
-    // Validasi: item kurang wajib pilih alasan
-    const missingAlasan = sj.items.filter(it => {
-      const s = selisih(it.surat_jalan_item_id, it.qty_kirim);
-      return s < 0 && !alasans[it.surat_jalan_item_id];
-    });
-    if (missingAlasan.length > 0) {
-      toast.error(`Pilih alasan reject untuk ${missingAlasan.length} item yang kurang`);
-      return;
-    }
-
     setSubmitting(true);
     try {
       const items: ValidasiItemInput[] = sj.items.map(it => ({
         surat_jalan_item_id: it.surat_jalan_item_id,
         qty_diterima: qtys[it.surat_jalan_item_id] ?? it.qty_kirim,
-        alasan_reject_id: alasans[it.surat_jalan_item_id] ?? null,
         qty_reject: rejectQty[it.surat_jalan_item_id] ?? 0,
         reject_alasan_id: rejectAlasan[it.surat_jalan_item_id] ?? null,
       }));
@@ -345,7 +332,6 @@ function ValidasiForm({
                 <th className="px-3 py-2.5 text-right">Qty Kirim</th>
                 <th className="px-3 py-2.5 text-center w-28">Qty Diterima</th>
                 <th className="px-3 py-2.5 text-center">Selisih</th>
-                {!isKirimUlang && <th className="px-3 py-2.5">Alasan (jika kurang)</th>}
                 {!isKirimUlang && (
                   <th className="px-3 py-2.5 min-w-[180px]">
                     Reject / Cacat
@@ -403,29 +389,6 @@ function ValidasiForm({
                     <td className="px-3 py-2 text-center">
                       <SelisihCell kirim={it.qty_kirim} diterima={qtys[it.surat_jalan_item_id] ?? it.qty_kirim} />
                     </td>
-                    {!isKirimUlang && (
-                    <td className="px-3 py-2">
-                      {s < 0 ? (
-                        <select
-                          value={alasans[it.surat_jalan_item_id] ?? ''}
-                          onChange={e => setAlasans(prev => ({
-                            ...prev,
-                            [it.surat_jalan_item_id]: e.target.value,
-                          }))}
-                          className="w-full bg-[#0D0E10] border border-red-800/40 text-[#e8eaed] rounded-lg px-2 py-1.5 text-[10px] focus:outline-none focus:border-red-500 transition-colors"
-                        >
-                          <option value="">— Pilih Alasan —</option>
-                          {alasanList.map(a => (
-                            <option key={a.id} value={a.id}>
-                              {a.jenis_nama} — {a.nama}
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        <span className="text-[10px] text-[#9aa0a6]">—</span>
-                      )}
-                    </td>
-                    )}
                     {!isKirimUlang && (
                       <td className="px-3 py-2">
                         <div className="flex items-center gap-1.5">
@@ -498,7 +461,8 @@ function ValidasiForm({
               <div className="flex items-start gap-2 bg-red-950/20 border border-red-800/30 rounded-xl p-3">
                 <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
                 <p className="text-xs text-red-300">
-                  Item dengan qty kurang akan dicatat sebagai <strong>reject pengiriman</strong> dengan alasan yang dipilih.
+                  Pcs yang kurang <strong>tidak ditagih</strong> dan masuk ke menu <strong>Selisih Kirim</strong> untuk
+                  dijelaskan owner (ketinggalan, hilang/rusak, atau salah hitung). Tidak perlu isi alasan di sini.
                 </p>
               </div>
             )}

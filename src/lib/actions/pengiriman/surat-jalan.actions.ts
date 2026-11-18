@@ -139,6 +139,20 @@ export async function getBundlesReadyToShip(): Promise<BundleReadyToShip[]> {
     throw new Error('Gagal memuat daftar bundle siap kirim');
   }
 
+  // Pcs yang dinyatakan owner "ketinggalan" di menu Selisih Kirim dianggap
+  // belum terkirim → kembali ke daftar ini (rumus sama dengan RPC
+  // _qty_ketinggalan_bundle di DB).
+  const { data: tinggal, error: errTinggal } = await supabase
+    .from('selisih_kirim')
+    .select('bundle_id, qty')
+    .eq('tenant_id', TENANT_ID)
+    .eq('status', 'ketinggalan');
+  if (errTinggal) throw new Error(`Gagal memuat selisih kirim: ${errTinggal.message}`);
+  const qtyKetinggalan: Record<string, number> = {};
+  (tinggal ?? []).forEach((r: { bundle_id: string; qty: number }) => {
+    qtyKetinggalan[r.bundle_id] = (qtyKetinggalan[r.bundle_id] ?? 0) + Number(r.qty || 0);
+  });
+
   // Bundle disaring dari sisa yang belum terkirim, bukan dari surat_jalan_id.
   // Satu bundle boleh dikirim bertahap lewat beberapa surat jalan — kalau
   // patokannya surat_jalan_id, bundle yang baru terkirim sebagian akan lenyap
@@ -154,7 +168,7 @@ export async function getBundlesReadyToShip(): Promise<BundleReadyToShip[]> {
 
       const qtySudahKirim = (b.surat_jalan_item || []).reduce(
         (sum: number, it: any) => sum + (it.qty_kirim || 0), 0
-      );
+      ) - (qtyKetinggalan[b.id] ?? 0);
       const sisa = qtyJadi - qtySudahKirim;
 
       return { raw: b, qtyJadi, qtySudahKirim, sisa };

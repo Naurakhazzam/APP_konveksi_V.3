@@ -26,6 +26,7 @@ const ALL_MENUS = [
   { group: 'Pengiriman',    path: '/app/pengiriman/buat-surat-jalan',  label: '└ Buat Surat Jalan' },
   { group: 'Pengiriman',    path: '/app/pengiriman/riwayat',           label: '└ Riwayat Kirim' },
   { group: 'Pengiriman',    path: '/app/pengiriman/validasi',          label: '└ Validasi Kirim' },
+  { group: 'Pengiriman',    path: '/app/pengiriman/selisih-kirim',     label: '└ Selisih Kirim' },
   { group: 'Pengiriman',    path: '/app/pengiriman/reject-kantor',     label: '└ Reject Kantor' },
   { group: 'Penggajian',    path: '/app/penggajian/rekap-gaji',        label: '└ Rekap Gaji' },
   { group: 'Penggajian',    path: '/app/penggajian/kasbon',            label: '└ Kasbon' },
