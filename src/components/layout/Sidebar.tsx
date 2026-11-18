@@ -141,6 +141,7 @@ const NAV_MENU = [
       { label: 'Kinerja Keuangan',    path: '/app/keuangan/proyeksi-surplus' },
       { label: 'Laporan Per PO',      path: '/app/keuangan/laporan-po' },
       { label: 'Laporan Gaji',        path: '/app/keuangan/laporan-gaji' },
+      { label: 'Laporan Reject Kantor', path: '/app/keuangan/laporan-reject-kantor' },
       { label: 'Laporan Koreksi QTY', path: '/app/keuangan/laporan-reject' },
     ]
   },

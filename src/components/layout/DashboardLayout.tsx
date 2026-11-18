@@ -68,6 +68,7 @@ const ALL_APP_PATHS = [
   '/app/keuangan/laporan-bulan',
   '/app/keuangan/laporan-gaji',
   '/app/keuangan/laporan-reject',
+  '/app/keuangan/laporan-reject-kantor',
   '/app/settings',
   '/app/lacak-barcode',
 ];

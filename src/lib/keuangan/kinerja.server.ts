@@ -4,6 +4,8 @@
  *
  * Basis akrual (SAK EMKM):
  *  - Pendapatan diakui saat barang dikirim (Surat Jalan, dicocokkan validasi kantor).
+ *  - Retur & Reject kantor jadi pengurang pendapatan di tanggal reject dilaporkan; pemulihannya (kirim ulang
+ *    diterima / dibeli kantor) di tanggal kejadiannya. Reject barang lama (di luar sistem) = kerugian reject.
  *  - HPP = biaya per pcs tiap PO × pcs yang dikirim. Biaya per pcs = bahan terpakai + upah
  *    (dibayar + terutang + perkiraan tahap tersisa) + overhead produksi.
  *  - Overhead produksi (Biaya Overhead, Peralatan, Bahan Pembantu tanpa jenis, sewa per hari) memakai
@@ -24,7 +26,7 @@
  *    tercatat (komponen-po.ts). Angka ini sama persis dengan margin di Laporan Per PO.
  */
 import { PO_AWAL_PERIODE, TANGGAL_AWAL_PERIODE, poPeriodeBaru } from './periode-po';
-import { pendapatanSjPerBulan } from './pendapatan.server';
+import { pendapatanSjPerBulan, returRejectKejadian, type KejadianReject } from './pendapatan.server';
 import { KATEGORI_BAYAR_KLIEN } from './pendapatan.server';
 import { KATEGORI_SETORAN_MODAL } from '@/lib/actions/keuangan/buku-kas.types';
 import { bulanBerjalan } from '@/lib/bulan-berjalan';
@@ -39,6 +41,11 @@ export const KATEGORI_BEBAN_OPERASIONAL = ['Biaya Operasional', 'Lainnya'];
 export type StatusPO = 'produksi' | 'kirim_sebagian' | 'terkirim';
 
 export interface KolomLR {
+  /** Nilai Surat Jalan + pendapatan lain (sebelum retur & reject) */
+  penjualan: number;
+  /** Retur & reject kantor bersih (reject dilaporkan − pemulihan); positif = mengurangi pendapatan */
+  returReject: number;
+  /** Pendapatan bersih = penjualan − returReject */
   pendapatan: number;
   bahan: number;
   upah: number;
@@ -143,6 +150,7 @@ export interface KinerjaData {
     pendapatanLain: Transaksi[];
     overheadBulan: OverheadBulan[];
     bebanOperasional: Transaksi[];
+    returReject: KejadianReject[];
   };
 
   posisi: {
@@ -198,14 +206,15 @@ const daftarBulan = (dari: string, sampai: string) => {
   return hasil;
 };
 
-const kolom = (p: Omit<KolomLR, 'hpp' | 'labaKotor' | 'bebanUsaha' | 'labaBersih'>): KolomLR => {
+const kolom = (p: Omit<KolomLR, 'pendapatan' | 'hpp' | 'labaKotor' | 'bebanUsaha' | 'labaBersih'>): KolomLR => {
+  const pendapatan = p.penjualan - p.returReject;
   const hpp = p.bahan + p.upah + p.overheadProduksi;
   const bebanUsaha = p.overheadTanpaProduksi + p.bebanOperasional;
-  return { ...p, hpp, labaKotor: p.pendapatan - hpp, bebanUsaha, labaBersih: p.pendapatan - hpp - bebanUsaha };
+  return { ...p, pendapatan, hpp, labaKotor: pendapatan - hpp, bebanUsaha, labaBersih: pendapatan - hpp - bebanUsaha };
 };
-const nol = (): KolomLR => kolom({ pendapatan: 0, bahan: 0, upah: 0, overheadProduksi: 0, overheadTanpaProduksi: 0, bebanOperasional: 0 });
+const nol = (): KolomLR => kolom({ penjualan: 0, returReject: 0, bahan: 0, upah: 0, overheadProduksi: 0, overheadTanpaProduksi: 0, bebanOperasional: 0 });
 const jumlah = (a: KolomLR, b: KolomLR) => kolom({
-  pendapatan: a.pendapatan + b.pendapatan, bahan: a.bahan + b.bahan, upah: a.upah + b.upah,
+  penjualan: a.penjualan + b.penjualan, returReject: a.returReject + b.returReject, bahan: a.bahan + b.bahan, upah: a.upah + b.upah,
   overheadProduksi: a.overheadProduksi + b.overheadProduksi,
   overheadTanpaProduksi: a.overheadTanpaProduksi + b.overheadTanpaProduksi,
   bebanOperasional: a.bebanOperasional + b.bebanOperasional,
@@ -231,7 +240,7 @@ export async function hitungKinerja(supabase: Supa, periode = 'semua'): Promise<
   const dalamPeriode = (ym: string) => periodeValid === 'semua' || ym === periodeValid;
   const perTanggal = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Jakarta' });
 
-  const [poRes, poBulanRes, kasRes, lotRes, btRes, sjMap, pembRes, jenisRes, ohBundleRes, pembPoRes, perkRes, aktRes, bedaRes] = await Promise.all([
+  const [poRes, poBulanRes, kasRes, lotRes, btRes, sjMap, pembRes, jenisRes, ohBundleRes, pembPoRes, perkRes, aktRes, bedaRes, rejectKejadian] = await Promise.all([
     supabase.rpc('get_proyeksi_surplus_po', { p_tenant_id: TENANT_ID, p_po_mulai: PO_AWAL_PERIODE }),
     supabase.rpc('get_kinerja_po_bulan', { p_tenant_id: TENANT_ID, p_po_mulai: PO_AWAL_PERIODE }),
     supabase.from('buku_kas')
@@ -250,6 +259,7 @@ export async function hitungKinerja(supabase: Supa, periode = 'semua'): Promise<
     supabase.rpc('get_laporan_po_perkiraan', { p_tenant_id: TENANT_ID, p_po_mulai: PO_AWAL_PERIODE }),
     supabase.rpc('get_laporan_po_aktual', { p_tenant_id: TENANT_ID, p_po_mulai: PO_AWAL_PERIODE }),
     supabase.rpc('get_laporan_po_beda_tarif', { p_tenant_id: TENANT_ID, p_po_mulai: PO_AWAL_PERIODE }),
+    returRejectKejadian(supabase, true),
   ]);
   for (const r of [poRes, poBulanRes, kasRes, lotRes, btRes, pembRes, jenisRes, ohBundleRes, pembPoRes, perkRes, aktRes, bedaRes]) if (r.error) throw new Error(r.error.message);
 
@@ -484,7 +494,8 @@ export async function hitungKinerja(supabase: Supa, periode = 'semua'): Promise<
     return {
       bulan: m,
       ...kolom({
-        pendapatan: (sjMap.get(m)?.nilai ?? 0) + pendLainRows.filter(k => ym(k) === m).reduce((s, k) => s + Number(k.nominal), 0),
+        penjualan: (sjMap.get(m)?.nilai ?? 0) + pendLainRows.filter(k => ym(k) === m).reduce((s, k) => s + Number(k.nominal), 0),
+        returReject: rejectKejadian.filter(e => e.tanggal.slice(0, 7) === m).reduce((s, e) => s + e.nilai, 0),
         bahan, upah, overheadProduksi,
         overheadTanpaProduksi: ob.tanpaProduksi,
         bebanOperasional: kasBiaya.filter(k => ym(k) === m && KATEGORI_BEBAN_OPERASIONAL.includes(k.kategori))
@@ -504,7 +515,7 @@ export async function hitungKinerja(supabase: Supa, periode = 'semua'): Promise<
     const sisaPembKirim = [...(sisaPembantuKirim.get(p.po_id)?.values() ?? [])].reduce((s, n) => s + n, 0);
     bjOverhead += Math.max(0, p.overhead - p.overhead_kirim) + Math.max(0, p.sisa_pembantu - sisaPembKirim);
   });
-  const orderBerjalan = kolom({ pendapatan: bjPendapatan, bahan: bjBahan, upah: bjUpah,
+  const orderBerjalan = kolom({ penjualan: bjPendapatan, returReject: 0, bahan: bjBahan, upah: bjUpah,
     overheadProduksi: bjOverhead, overheadTanpaProduksi: 0, bebanOperasional: 0 });
   const berjalan = periodeValid === 'semua' ? orderBerjalan : null;
   const total = berjalan ? jumlah(aktual, berjalan) : aktual;
@@ -529,7 +540,9 @@ export async function hitungKinerja(supabase: Supa, periode = 'semua'): Promise<
     const r = p.pcs > 0 ? Math.min(1, p.pcs_kirim / p.pcs) : 0;
     return s + (p.kain + p.aksesori + p.upah_lunas + p.upah_belum_lunas) * (1 - r) + Math.max(0, p.overhead - p.overhead_kirim);
   }, 0);
-  const sjTotal = [...sjMap.values()].reduce((s, v) => s + v.nilai, 0);
+  // Piutang memakai tagihan bersih: nilai SJ − potongan reject yang memotong invoice (barang lama tidak).
+  const sjTotal = [...sjMap.values()].reduce((s, v) => s + v.nilai, 0)
+    - rejectKejadian.filter(e => e.sumber === 'sj').reduce((s, e) => s + e.nilai, 0);
   const masukKlienTotal = masuk.filter(isKlien).reduce((s, k) => s + Number(k.nominal), 0);
   const piutang = Math.max(0, sjTotal - masukKlienTotal);
   const uangMukaPelanggan = Math.max(0, masukKlienTotal - sjTotal);
@@ -575,6 +588,7 @@ export async function hitungKinerja(supabase: Supa, periode = 'semua'): Promise<
       pendapatanLain: pendLainRows.filter(diRentang).map(keTransaksi),
       overheadBulan: overheadBulan.filter(o => dalamPeriode(o.bulan)),
       bebanOperasional: kasBiaya.filter(k => diRentang(k) && KATEGORI_BEBAN_OPERASIONAL.includes(k.kategori)).map(keTransaksi),
+      returReject: rejectKejadian.filter(e => dalamPeriode(e.tanggal.slice(0, 7))),
     },
     posisi: {
       persediaanBahan, persediaanPembantu, persediaanPembantuLama, barangDalamProses, piutang, totalAset,

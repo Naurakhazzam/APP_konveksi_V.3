@@ -121,6 +121,7 @@ export default function ProyeksiSurplusClient({ data: awal }: { data: KinerjaDat
   const { lr, posisi, arusKas } = data;
   const semua = data.periode === 'semua';
   const t = lr.total;
+  const adaRetur = t.returReject !== 0 || data.rincian.returReject.length > 0;
   const kolom: KolomTampil[] = lr.berjalan
     ? [
         { judul: 'Sudah dikirim', sub: 'aktual', k: lr.aktual },
@@ -182,7 +183,10 @@ export default function ProyeksiSurplusClient({ data: awal }: { data: KinerjaDat
               </TableRow>
             </TableHeader>
             <TableBody>
-              <Baris kolom={kolom} onRinci={setRincian} label="Pendapatan" ambil={k => k.pendapatan} rinci="pendapatan" />
+              <Baris kolom={kolom} onRinci={setRincian} label={adaRetur ? 'Penjualan' : 'Pendapatan'} ambil={k => k.penjualan} rinci="pendapatan" />
+              <Baris kolom={kolom} onRinci={setRincian} jenis="rinci" negatif label="Retur & Reject" ambil={k => k.returReject}
+                rinci="returReject" tampil={adaRetur} />
+              <Baris kolom={kolom} onRinci={setRincian} jenis="subtotal" label="Pendapatan bersih" ambil={k => k.pendapatan} tampil={adaRetur} />
               <Baris kolom={kolom} onRinci={setRincian} jenis="rinci" negatif label="Bahan baku" ambil={k => k.bahan} rinci="bahan" />
               <Baris kolom={kolom} onRinci={setRincian} jenis="rinci" negatif label="Upah produksi" ambil={k => k.upah} rinci="upah" />
               <Baris kolom={kolom} onRinci={setRincian} jenis="rinci" negatif label="Overhead produksi" ambil={k => k.overheadProduksi} rinci="overhead" />

@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import type { KinerjaData, KinerjaPO, Transaksi } from '@/lib/keuangan/kinerja.server';
 
 export type JenisRincian =
-  | 'pendapatan' | 'bahan' | 'upah' | 'overhead' | 'hpp' | 'labaKotor'
+  | 'pendapatan' | 'returReject' | 'bahan' | 'upah' | 'overhead' | 'hpp' | 'labaKotor'
   | 'overheadTanpaProduksi' | 'bebanOperasional' | 'labaBersih';
 
 const idr = (n: number) => 'Rp ' + Math.round(n).toLocaleString('id-ID');
@@ -14,7 +14,8 @@ const tgl = (d: string) => new Date(`${d}T00:00:00`).toLocaleDateString('id-ID',
 const bln = (ym: string) => new Date(`${ym}-01T00:00:00`).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
 
 const JUDUL: Record<JenisRincian, string> = {
-  pendapatan: 'Pendapatan',
+  pendapatan: 'Penjualan (pendapatan)',
+  returReject: 'Retur & Reject',
   bahan: 'Bahan baku',
   upah: 'Upah produksi',
   overhead: 'Overhead produksi',
@@ -28,7 +29,12 @@ const JUDUL: Record<JenisRincian, string> = {
 const APA_INI: Record<JenisRincian, string> = {
   pendapatan:
     'Nilai barang yang sudah dikirim ke pelanggan, dicatat saat Surat Jalan dibuat dan dicocokkan dengan validasi kantor ' +
-    '(dikurangi reject). DP dari pelanggan belum dihitung sebagai pendapatan — DP baru menjadi pendapatan saat barangnya dikirim.',
+    '(qty diterima). Reject dari kantor dicatat terpisah di baris Retur & Reject. DP dari pelanggan belum dihitung sebagai pendapatan — DP baru menjadi pendapatan saat barangnya dikirim.',
+  returReject:
+    'Barang yang diretur kantor karena reject, dicatat di tanggal reject dilaporkan dengan harga Surat Jalan asal. ' +
+    'Bila nanti barang diperbaiki dan diterima kantor lagi (SJ kirim ulang), nilainya pulih di tanggal diterima. ' +
+    'Bila kantor membeli barang reject dengan harga lebih murah, harga belinya pulih di tanggal keputusan — yang tersisa hanya selisih harganya. ' +
+    'Reject barang lama (kiriman sebelum sistem) tidak memotong tagihan tapi tetap kerugian reject.',
   bahan:
     'Kain, puring, sleting dan aksesori yang benar-benar terpakai saat dipotong, dihitung dengan harga beli (FIFO). ' +
     'Bahan yang dibeli tapi belum dipakai tidak masuk sini — itu masih persediaan (aset).',
@@ -159,7 +165,7 @@ export default function RincianDialog({ jenis, data, onClose }: {
               ...(semua ? [idr(poAda.reduce((s, p) => s + Math.max(0, p.nilai_jual - p.nilai_kirim), 0))] : [])]} />
           {Math.round(selisih) !== 0 && (
             <p className="text-xs text-[#9aa0a6] mt-2">
-              Penyesuaian validasi kantor & potongan reject: <span className="font-mono">{idr(selisih)}</span>
+              Penyesuaian validasi kantor: <span className="font-mono">{idr(selisih)}</span>
               {' '}→ pendapatan dari Surat Jalan {idr(data.pendapatanSj)}.
             </p>
           )}
@@ -170,6 +176,27 @@ export default function RincianDialog({ jenis, data, onClose }: {
             <SubJudul>Pendapatan lain (Buku Kas)</SubJudul>
             <DaftarTransaksi rows={data.rincian.pendapatanLain} />
           </>)}
+        </>);
+      }
+      case 'returReject': {
+        const rows = data.rincian.returReject;
+        const LBL = { reject: 'Reject dilaporkan', kirim_ulang: 'Dikirim ulang diterima', dibeli_kantor: 'Dibeli kantor' } as const;
+        const total = rows.reduce((s, e) => s + e.nilai, 0);
+        return (<>
+          <SubJudul>Kejadian</SubJudul>
+          {rows.length === 0 ? <p className="text-xs text-[#9aa0a6]">Tidak ada kejadian di periode ini.</p> : (
+            <Tabel kepala={['Tanggal · kejadian', 'Qty', 'Harga', 'Pengaruh ke pendapatan']}
+              baris={rows.map(e => [
+                <span key="k"><span className="text-[#9aa0a6]">{tgl(e.tanggal)}</span> · {LBL[e.jenis]}
+                  <span className="block text-[10px] text-[#9aa0a6]">
+                    {e.nomor_reject} · {e.produk} · {e.sumber === 'barang_lama' ? 'barang lama (di luar sistem)' : e.nomor_sj}
+                    {e.nomor_sj_kirim_ulang ? ` → ${e.nomor_sj_kirim_ulang}` : ''}
+                  </span></span>,
+                angka(e.qty), idr(e.harga), e.nilai > 0 ? `(${idr(e.nilai)})` : `+${idr(-e.nilai)}`,
+              ])}
+              kaki={['Total', '', '', total > 0 ? `(${idr(total)})` : `+${idr(-total)}`]} />
+          )}
+          <p className="text-[11px] text-[#9aa0a6] mt-2">Rincian lengkap per tingkat & penyelesaian ada di menu Keuangan › Laporan Reject Kantor.</p>
         </>);
       }
       case 'bahan':
@@ -244,7 +271,8 @@ export default function RincianDialog({ jenis, data, onClose }: {
         const baris: [string, number][] = jenis === 'hpp'
           ? [['Bahan baku', k.bahan], ['Upah produksi', k.upah], ['Overhead produksi', k.overheadProduksi], ['HPP', k.hpp]]
           : jenis === 'labaKotor'
-          ? [['Pendapatan', k.pendapatan], ['HPP', -k.hpp], ['Laba kotor', k.labaKotor]]
+          ? [['Penjualan', k.penjualan], ...(k.returReject ? [['Retur & Reject', -k.returReject] as [string, number]] : []),
+             ['Pendapatan bersih', k.pendapatan], ['HPP', -k.hpp], ['Laba kotor', k.labaKotor]]
           : [['Laba kotor', k.labaKotor], ['Beban usaha', -k.bebanUsaha], ['Laba bersih', k.labaBersih]];
         return (<>
           <SubJudul>Perhitungan ({semua ? 'total termasuk order berjalan' : bln(data.periode)})</SubJudul>

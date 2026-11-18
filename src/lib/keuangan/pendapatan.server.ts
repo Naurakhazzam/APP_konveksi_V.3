@@ -13,7 +13,8 @@ const TENANT_ID = 'STX-001';
 export const KATEGORI_BAYAR_KLIEN = ['DP Klien', 'Pelunasan Klien'];
 
 export interface PendapatanBulan {
-  /** Invoice netto (setelah validasi kirim & potongan reject kantor) */
+  /** Nilai invoice SEBELUM potongan reject kantor (setelah validasi kirim). Reject dicatat
+   *  terpisah sebagai "Retur & Reject" per tanggal kejadian — lihat returRejectKejadian. */
   nilai: number;
   /** Bagian nilai dari SJ yang belum divalidasi kantor (masih pakai qty kirim) */
   belumValidasi: number;
@@ -21,8 +22,9 @@ export interface PendapatanBulan {
 
 /**
  * Pendapatan per bulan ('YYYY-MM') dari Surat Jalan: invoice otomatis (qty kirim × harga jual saat
- * SJ dibuat), dikoreksi saat Validasi Kirim (qty diterima, qty lebih disetujui) dan dipotong reject
- * kantor. Dicatat di bulan tanggal invoice (= tanggal SJ). Dipakai mesin Kinerja Keuangan
+ * SJ dibuat), dikoreksi saat Validasi Kirim (qty diterima, qty lebih disetujui). Potongan reject kantor
+ * TIDAK dikurangkan di sini (diakui di tanggal reject dilaporkan, lihat returRejectKejadian).
+ * Dicatat di bulan tanggal invoice (= tanggal SJ). Dipakai mesin Kinerja Keuangan
  * (lib/keuangan/kinerja.server.ts) untuk Kinerja Keuangan, Ringkasan & Laporan Per PO.
  * Periode baru: hanya porsi barang bundle PO periode baru, dan invoice mulai TANGGAL_AWAL_PERIODE.
  */
@@ -68,7 +70,7 @@ export async function pendapatanSjPerBulan(
   }
 
   invData.forEach(i => {
-    const netto = Math.max(0, Number(i.total_nilai ?? 0) - Number(i.potongan_reject ?? 0));
+    const netto = Math.max(0, Number(i.total_nilai ?? 0));
     const porsi = hanyaPeriodeBaru ? (porsiSj.get(i.surat_jalan_id) ?? 0) : 1;
     const v = Math.round(netto * porsi);
     if (!v) return;
@@ -80,4 +82,88 @@ export async function pendapatanSjPerBulan(
     hasil.set(bulan, cur);
   });
   return hasil;
+}
+
+export type JenisKejadianReject = 'reject' | 'kirim_ulang' | 'dibeli_kantor';
+
+/** Satu kejadian yang mengubah "Retur & Reject" di L/R. nilai > 0 = mengurangi pendapatan, < 0 = pemulihan. */
+export interface KejadianReject {
+  tanggal: string;
+  jenis: JenisKejadianReject;
+  reject_id: string;
+  nomor_reject: string;
+  produk: string;
+  sumber: 'sj' | 'barang_lama';
+  nomor_sj: string;
+  /** SJ kirim ulang (untuk jenis kirim_ulang) */
+  nomor_sj_kirim_ulang?: string;
+  qty: number;
+  harga: number;
+  nilai: number;
+}
+
+/**
+ * Kejadian Retur & Reject kantor (keputusan user 18 Nov 2026):
+ *  - reject dilaporkan → mengurangi pendapatan di tanggal lapor (qty × harga SJ asal);
+ *  - dikirim ulang     → pemulihan di tanggal diterima kantor (tanggal validasi SJ kirim ulang,
+ *                        sebelum divalidasi: tanggal SJ kirim ulang & qty kirim — sama dengan potongan invoice);
+ *  - dibeli kantor     → pemulihan harga beli × sisa pcs di tanggal keputusan.
+ * Jumlah seluruhnya = potongan tagihan yang masih aktif/permanen (invoice.potongan_reject) + kerugian barang lama.
+ * Barang lama (di luar sistem) tidak memotong invoice tapi tetap masuk sebagai kerugian reject.
+ * Periode baru: reject dari SJ hanya dihitung bila bundle-nya PO periode baru (sejalan dengan porsi pendapatan).
+ */
+export async function returRejectKejadian(
+  supabase: Supa, hanyaPeriodeBaru: boolean,
+): Promise<KejadianReject[]> {
+  const { data, error } = await supabase
+    .from('reject_kantor')
+    .select(`
+      id, nomor_reject, tanggal, tanggal_dibeli, qty, harga_satuan, harga_beli_kantor, status, sumber, bundle_id,
+      produk:produk_id ( nama ),
+      surat_jalan:surat_jalan_id ( nomor_sj ),
+      kirim_ulang_item ( qty, qty_diterima, sj:sj_id ( nomor_sj, tanggal, tanggal_validasi ) )
+    `)
+    .eq('tenant_id', TENANT_ID);
+  if (error) throw new Error(error.message);
+  const rows = (data ?? []) as any[];
+  if (!rows.length) return [];
+
+  const bundleBaru = hanyaPeriodeBaru && rows.some(r => r.sumber !== 'barang_lama')
+    ? await getBundleIdsPeriodeBaru(supabase) : null;
+  const one = (v: any) => (Array.isArray(v) ? v[0] : v) ?? null;
+  const tgl = (d: string) => batasAwalPeriode(String(d).slice(0, 10));
+
+  const hasil: KejadianReject[] = [];
+  rows.forEach(r => {
+    const sumber: 'sj' | 'barang_lama' = r.sumber === 'barang_lama' ? 'barang_lama' : 'sj';
+    if (bundleBaru && sumber === 'sj' && r.bundle_id && !bundleBaru.has(String(r.bundle_id))) return;
+    const harga = Number(r.harga_satuan ?? 0);
+    const qty = Number(r.qty ?? 0);
+    const dasar = {
+      reject_id: r.id, nomor_reject: r.nomor_reject, produk: one(r.produk)?.nama ?? '-', sumber,
+      nomor_sj: one(r.surat_jalan)?.nomor_sj ?? 'Barang lama',
+    };
+    hasil.push({ ...dasar, tanggal: tgl(r.tanggal), jenis: 'reject', qty, harga, nilai: qty * harga });
+
+    let terkirim = 0;
+    ((r.kirim_ulang_item ?? []) as any[]).forEach(k => {
+      const sj = one(k.sj);
+      const q = Number(k.qty_diterima ?? k.qty ?? 0);
+      terkirim += q;
+      if (!q) return;
+      hasil.push({
+        ...dasar, tanggal: tgl(sj?.tanggal_validasi ?? sj?.tanggal ?? r.tanggal), jenis: 'kirim_ulang',
+        nomor_sj_kirim_ulang: sj?.nomor_sj ?? '-', qty: q, harga, nilai: -q * harga,
+      });
+    });
+
+    if (r.status === 'dibeli_kantor') {
+      const sisa = Math.max(qty - terkirim, 0);
+      const hb = Math.min(Number(r.harga_beli_kantor ?? 0), harga);
+      if (sisa > 0 && hb > 0) {
+        hasil.push({ ...dasar, tanggal: tgl(r.tanggal_dibeli ?? r.tanggal), jenis: 'dibeli_kantor', qty: sisa, harga: hb, nilai: -sisa * hb });
+      }
+    }
+  });
+  return hasil.sort((a, b) => a.tanggal.localeCompare(b.tanggal) || a.nomor_reject.localeCompare(b.nomor_reject));
 }
