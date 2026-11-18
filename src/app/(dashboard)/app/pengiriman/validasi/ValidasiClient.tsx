@@ -185,6 +185,7 @@ function ValidasiForm({
   // reject saat terima: barang sampai tapi cacat → diretur ke konveksi
   const [rejectQty, setRejectQty] = useState<Record<string, number>>({});
   const [rejectAlasan, setRejectAlasan] = useState<Record<string, string>>({});
+  const [rejectTingkat, setRejectTingkat] = useState<Record<string, 'minor' | 'mayor' | 'parah'>>({});
   const [catatan, setCatatan] = useState('');
   const isKirimUlang = sj.jenis === 'kirim_ulang';
   const [submitting, setSubmitting] = useState(false);
@@ -251,6 +252,7 @@ function ValidasiForm({
         qty_diterima: qtys[it.surat_jalan_item_id] ?? it.qty_kirim,
         qty_reject: rejectQty[it.surat_jalan_item_id] ?? 0,
         reject_alasan_id: rejectAlasan[it.surat_jalan_item_id] ?? null,
+        reject_tingkat: rejectTingkat[it.surat_jalan_item_id] ?? 'mayor',
       }));
 
       const result = await submitValidasiPengiriman(sj.id, items, catatan);
@@ -422,6 +424,21 @@ function ValidasiForm({
                                 {a.jenis_nama} — {a.nama}
                               </option>
                             ))}
+                          </select>
+                        )}
+                        {(rejectQty[it.surat_jalan_item_id] ?? 0) > 0 && (
+                          <select
+                            value={rejectTingkat[it.surat_jalan_item_id] ?? 'mayor'}
+                            onChange={e => setRejectTingkat(prev => ({
+                              ...prev,
+                              [it.surat_jalan_item_id]: e.target.value as 'minor' | 'mayor' | 'parah',
+                            }))}
+                            className="mt-1 w-full bg-[#0D0E10] border border-orange-800/40 text-[#e8eaed] rounded-lg px-2 py-1.5 text-[10px] focus:outline-none focus:border-orange-500 transition-colors"
+                            title="Tingkat reject"
+                          >
+                            <option value="minor">Tingkat: Minor (cacat kecil)</option>
+                            <option value="mayor">Tingkat: Mayor (perlu perbaikan)</option>
+                            <option value="parah">Tingkat: Rusak parah</option>
                           </select>
                         )}
                       </td>

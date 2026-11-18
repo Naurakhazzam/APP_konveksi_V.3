@@ -2,14 +2,16 @@
 
 import { createClient } from '@/lib/supabase/server';
 import { revalidatePath } from 'next/cache';
+import { TANGGAL_AWAL_PERIODE } from '@/lib/keuangan/periode-po';
 
 const TENANT_ID = 'STX-001';
 
 // Reject yang ditemukan KANTOR pada barang kiriman (retur ke konveksi).
 // Selama belum dikirim ulang, nilainya memotong tagihan SJ asal.
-// Semua tulis lewat RPC (lihat migrasi 20261115_reject_kantor.sql).
+// Semua tulis lewat RPC (migrasi 20261115_reject_kantor.sql & 20261118_reject_kantor_v2.sql).
 
-export type RejectKantorStatus = 'retur' | 'diperbaiki' | 'tidak_bisa' | 'selesai';
+export type RejectKantorStatus = 'retur' | 'diperbaiki' | 'tidak_bisa' | 'dibeli_kantor' | 'selesai';
+export type RejectTingkat = 'minor' | 'mayor' | 'parah';
 
 export interface KirimUlangRingkas {
   nomor_sj: string;
@@ -23,19 +25,24 @@ export interface RejectKantorRow {
   id: string;
   nomor_reject: string;
   tanggal: string;
-  surat_jalan_id: string;
+  /** 'sj' = barang dari surat jalan di sistem; 'barang_lama' = kiriman lama di luar sistem (tanpa SJ). */
+  sumber: 'sj' | 'barang_lama';
+  surat_jalan_id: string | null;
   nomor_sj: string;
   klien_nama: string;
   produk_nama: string;
   model_nama: string;
   alasan_nama: string;
   jenis_nama: string;
+  tingkat: RejectTingkat;
   qty: number;
   /** Pcs yang sudah dikirim ulang (pakai qty diterima bila SJ kirim ulang sudah divalidasi). */
   terkirim: number;
   sisa: number;
   harga_satuan: number;
-  /** sisa × harga — yang sedang memotong tagihan. */
+  /** Diisi bila status 'dibeli_kantor'. */
+  harga_beli_kantor: number | null;
+  /** Nilai yang hilang: sisa × harga, atau sisa × (harga − harga beli) bila dibeli kantor. */
   potongan: number;
   status: RejectKantorStatus;
   waktu_temuan: 'saat_terima' | 'belakangan';
@@ -43,20 +50,24 @@ export interface RejectKantorRow {
   kirim_ulang: KirimUlangRingkas[];
 }
 
-export interface SjProdukLapor {
+export interface ProdukLaporFifo {
   produk_id: string;
   produk_nama: string;
-  qty: number;          // qty diterima (atau qty kirim bila belum divalidasi)
-  sudah_reject: number;
+  /** Pcs yang sudah diterima kantor & belum dicatat reject (SJ periode baru, tervalidasi). */
+  sisa: number;
+  jumlah_sj: number;
 }
 
-export interface SjUntukLapor {
+export interface ProdukMaster {
   id: string;
-  nomor_sj: string;
-  tanggal: string;
-  klien_nama: string;
-  sudah_validasi: boolean;
-  produk: SjProdukLapor[];
+  nama: string;
+  harga_jual: number;
+}
+
+export interface DataLaporReject {
+  fifo: ProdukLaporFifo[];
+  produkSemua: ProdukMaster[];
+  klien: { id: string; nama: string }[];
 }
 
 function revalidateSemua() {
@@ -79,7 +90,8 @@ export async function getRejectKantorList(): Promise<RejectKantorRow[]> {
   const { data, error } = await supabase
     .from('reject_kantor')
     .select(`
-      id, nomor_reject, tanggal, qty, harga_satuan, status, waktu_temuan, keterangan,
+      id, nomor_reject, tanggal, qty, harga_satuan, harga_beli_kantor, status, waktu_temuan, keterangan, tingkat, sumber,
+      klien:klien_id ( nama ),
       surat_jalan:surat_jalan_id ( id, nomor_sj, klien:klien_id ( nama ) ),
       produk:produk_id ( nama, model_produk:model_id ( nama ) ),
       alasan:alasan_reject_id ( nama, jenis_reject:jenis_reject_id ( nama ) ),
@@ -109,23 +121,28 @@ export async function getRejectKantorList(): Promise<RejectKantorRow[]> {
     const qty = Number(r.qty ?? 0);
     const sisa = Math.max(qty - terkirim, 0);
     const harga = Number(r.harga_satuan ?? 0);
+    const hargaBeli = r.harga_beli_kantor == null ? null : Number(r.harga_beli_kantor);
+    const perPcs = r.status === 'dibeli_kantor' ? Math.max(harga - (hargaBeli ?? 0), 0) : harga;
 
     return {
       id: r.id,
       nomor_reject: r.nomor_reject,
       tanggal: r.tanggal,
-      surat_jalan_id: sj?.id ?? '',
-      nomor_sj: sj?.nomor_sj ?? '-',
-      klien_nama: (one(sj?.klien) as any)?.nama ?? '-',
+      sumber: r.sumber === 'barang_lama' ? 'barang_lama' : 'sj',
+      surat_jalan_id: sj?.id ?? null,
+      nomor_sj: sj?.nomor_sj ?? 'Barang lama',
+      klien_nama: (one(r.klien) as any)?.nama ?? (one(sj?.klien) as any)?.nama ?? '-',
       produk_nama: produk?.nama ?? '-',
       model_nama: (one(produk?.model_produk) as any)?.nama ?? produk?.nama ?? '-',
       alasan_nama: alasan?.nama ?? '-',
       jenis_nama: (one(alasan?.jenis_reject) as any)?.nama ?? '-',
+      tingkat: (r.tingkat ?? 'mayor') as RejectTingkat,
       qty,
       terkirim,
       sisa,
       harga_satuan: harga,
-      potongan: sisa * harga,
+      harga_beli_kantor: hargaBeli,
+      potongan: sisa * perPcs,
       status: r.status,
       waktu_temuan: r.waktu_temuan,
       keterangan: r.keterangan ?? null,
@@ -134,79 +151,125 @@ export async function getRejectKantorList(): Promise<RejectKantorRow[]> {
   });
 }
 
-/** Daftar SJ biasa (bukan kirim ulang) + isi per produk, untuk form "Lapor Reject". */
-export async function getSjUntukLaporReject(): Promise<SjUntukLapor[]> {
+/**
+ * Data form "Lapor Reject":
+ * - fifo: produk yang sudah diterima kantor (SJ biasa periode baru, sudah divalidasi)
+ *   beserta sisa pcs yang masih bisa dilapor reject — sama dengan hitungan RPC.
+ * - produkSemua + klien: untuk pilihan "Barang lama (di luar sistem)".
+ */
+export async function getDataLaporReject(): Promise<DataLaporReject> {
   const supabase = await createClient();
 
-  const [sjRes, rkRes] = await Promise.all([
+  const [sjiRes, rkRes, produkRes, klienRes] = await Promise.all([
     supabase
-      .from('surat_jalan')
+      .from('surat_jalan_item')
       .select(`
-        id, nomor_sj, tanggal, tanggal_validasi,
-        klien:klien_id ( nama ),
-        surat_jalan_item ( qty_kirim, qty_diterima, bundle:bundle_id ( po_item:po_item_id ( produk_id, produk:produk_id ( nama ) ) ) )
+        id, qty_kirim, qty_diterima,
+        sj:sj_id!inner ( id, jenis, tanggal, tanggal_validasi ),
+        bundle:bundle_id ( po_item:po_item_id ( produk_id, produk:produk_id ( nama ) ) )
       `)
       .eq('tenant_id', TENANT_ID)
-      .eq('jenis', 'normal')
-      .order('tanggal', { ascending: false })
-      .order('nomor_sj', { ascending: false })
-      .limit(200),
+      .eq('sj.jenis', 'normal')
+      .gte('sj.tanggal', TANGGAL_AWAL_PERIODE)
+      .not('sj.tanggal_validasi', 'is', null)
+      .limit(5000),
     supabase
       .from('reject_kantor')
-      .select('surat_jalan_id, produk_id, qty')
-      .eq('tenant_id', TENANT_ID),
+      .select('surat_jalan_item_id, qty')
+      .eq('tenant_id', TENANT_ID)
+      .not('surat_jalan_item_id', 'is', null),
+    supabase
+      .from('produk')
+      .select('id, nama, harga_jual')
+      .eq('tenant_id', TENANT_ID)
+      .order('nama')
+      .limit(5000),
+    supabase.from('klien').select('id, nama').eq('tenant_id', TENANT_ID).order('nama'),
   ]);
 
-  if (sjRes.error) throw new Error(`Gagal memuat surat jalan: ${sjRes.error.message}`);
+  if (sjiRes.error) throw new Error(`Gagal memuat surat jalan: ${sjiRes.error.message}`);
+  if (produkRes.error) throw new Error(`Gagal memuat produk: ${produkRes.error.message}`);
 
   const sudah = new Map<string, number>();
   (rkRes.data ?? []).forEach((r: any) => {
-    const key = `${r.surat_jalan_id}|${r.produk_id}`;
-    sudah.set(key, (sudah.get(key) ?? 0) + Number(r.qty ?? 0));
+    sudah.set(r.surat_jalan_item_id, (sudah.get(r.surat_jalan_item_id) ?? 0) + Number(r.qty ?? 0));
   });
 
-  return (sjRes.data ?? []).map((sj: any) => {
-    const perProduk = new Map<string, SjProdukLapor>();
-    (sj.surat_jalan_item ?? []).forEach((it: any) => {
-      const pi = one(one(it.bundle as any)?.po_item) as any;
-      if (!pi?.produk_id) return;
-      const qty = Number(it.qty_diterima ?? it.qty_kirim ?? 0);
-      const cur = perProduk.get(pi.produk_id);
-      if (cur) cur.qty += qty;
-      else perProduk.set(pi.produk_id, {
-        produk_id: pi.produk_id,
-        produk_nama: (one(pi.produk) as any)?.nama ?? '-',
-        qty,
-        sudah_reject: sudah.get(`${sj.id}|${pi.produk_id}`) ?? 0,
-      });
-    });
-
-    return {
-      id: sj.id,
-      nomor_sj: sj.nomor_sj,
-      tanggal: sj.tanggal,
-      klien_nama: (one(sj.klien) as any)?.nama ?? '-',
-      sudah_validasi: !!sj.tanggal_validasi,
-      produk: [...perProduk.values()].sort((a, b) => a.produk_nama.localeCompare(b.produk_nama)),
+  const perProduk = new Map<string, ProdukLaporFifo & { sjSet: Set<string> }>();
+  (sjiRes.data ?? []).forEach((it: any) => {
+    const sj = one(it.sj) as any;
+    const pi = one(one(it.bundle as any)?.po_item) as any;
+    if (!sj || !pi?.produk_id) return;
+    const kirim = Number(it.qty_kirim ?? 0);
+    const basis = Math.min(Number(it.qty_diterima ?? kirim), kirim);
+    const sisa = basis - (sudah.get(it.id) ?? 0);
+    if (sisa <= 0) return;
+    const cur = perProduk.get(pi.produk_id) ?? {
+      produk_id: pi.produk_id,
+      produk_nama: (one(pi.produk) as any)?.nama ?? '-',
+      sisa: 0,
+      jumlah_sj: 0,
+      sjSet: new Set<string>(),
     };
-  }).filter(sj => sj.produk.length > 0);
+    cur.sisa += sisa;
+    cur.sjSet.add(sj.id);
+    cur.jumlah_sj = cur.sjSet.size;
+    perProduk.set(pi.produk_id, cur);
+  });
+
+  return {
+    fifo: [...perProduk.values()]
+      .map(({ sjSet: _s, ...p }) => p)
+      .sort((a, b) => a.produk_nama.localeCompare(b.produk_nama)),
+    produkSemua: (produkRes.data ?? []).map((p: any) => ({ id: p.id, nama: p.nama, harga_jual: Number(p.harga_jual ?? 0) })),
+    klien: (klienRes.data ?? []).map((k: any) => ({ id: k.id, nama: k.nama })),
+  };
 }
 
 // ─── Tulis ────────────────────────────────────────────────────────────────────
 
+export interface AlokasiReject { nomor_reject: string; nomor_sj: string; qty: number }
+
+/** Lapor reject belakangan — sistem membagi ke SJ secara FIFO (SJ terlama dulu). */
 export async function laporRejectKantor(input: {
-  surat_jalan_id: string;
   produk_id: string;
   qty: number;
   alasan_reject_id: string;
+  tingkat: RejectTingkat;
   keterangan?: string;
-}): Promise<{ error?: string; nomor_reject?: string }> {
+}): Promise<{ error?: string; alokasi?: AlokasiReject[] }> {
   const supabase = await createClient();
   const { data, error } = await supabase.rpc('lapor_reject_kantor', {
-    p_surat_jalan_id: input.surat_jalan_id,
     p_produk_id: input.produk_id,
     p_qty: input.qty,
     p_alasan_reject_id: input.alasan_reject_id,
+    p_tingkat: input.tingkat,
+    p_keterangan: input.keterangan ?? null,
+    p_tenant_id: TENANT_ID,
+  });
+  if (error) return { error: error.message };
+  revalidateSemua();
+  return { alokasi: ((data as any)?.alokasi ?? []) as AlokasiReject[] };
+}
+
+/** Reject barang lama (kiriman di luar sistem): tanpa SJ, tidak memotong invoice. */
+export async function laporRejectBarangLama(input: {
+  produk_id: string;
+  klien_id: string | null;
+  qty: number;
+  alasan_reject_id: string;
+  tingkat: RejectTingkat;
+  harga_satuan: number | null;
+  keterangan?: string;
+}): Promise<{ error?: string; nomor_reject?: string }> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc('lapor_reject_barang_lama', {
+    p_produk_id: input.produk_id,
+    p_klien_id: input.klien_id,
+    p_qty: input.qty,
+    p_alasan_reject_id: input.alasan_reject_id,
+    p_tingkat: input.tingkat,
+    p_harga_satuan: input.harga_satuan,
     p_keterangan: input.keterangan ?? null,
     p_tenant_id: TENANT_ID,
   });
@@ -223,6 +286,31 @@ export async function ubahStatusRejectKantor(
   const { error } = await supabase.rpc('ubah_status_reject_kantor', {
     p_id: id,
     p_status: status,
+    p_tenant_id: TENANT_ID,
+  });
+  if (error) return { error: error.message };
+  revalidateSemua();
+  return {};
+}
+
+/** Kantor membeli barang reject (harga lebih murah) — potongan permanen = selisih harga × sisa. */
+export async function rejectDibeliKantor(id: string, hargaBeli: number): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const { error } = await supabase.rpc('selesaikan_reject_dibeli_kantor', {
+    p_id: id,
+    p_harga_beli: hargaBeli,
+    p_tenant_id: TENANT_ID,
+  });
+  if (error) return { error: error.message };
+  revalidateSemua();
+  return {};
+}
+
+export async function ubahTingkatRejectKantor(id: string, tingkat: RejectTingkat): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const { error } = await supabase.rpc('ubah_tingkat_reject_kantor', {
+    p_id: id,
+    p_tingkat: tingkat,
     p_tenant_id: TENANT_ID,
   });
   if (error) return { error: error.message };

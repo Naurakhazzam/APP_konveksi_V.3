@@ -55,6 +55,8 @@ export interface ValidasiItemInput {
   qty_reject?: number;
   reject_alasan_id?: string | null;
   reject_keterangan?: string | null;
+  /** Tingkat reject saat terima (default mayor). */
+  reject_tingkat?: 'minor' | 'mayor' | 'parah';
 }
 
 export interface ValidasiResult {
@@ -145,7 +147,7 @@ export async function getSuratJalanSiapValidasi(): Promise<SuratJalanSiapValidas
               qty_diterima: it.qty_diterima ?? null,
               harga_satuan: 0,
               nomor_reject: rk?.nomor_reject ?? '-',
-              nomor_sj_asal: rk?.surat_jalan?.nomor_sj ?? '-',
+              nomor_sj_asal: rk?.surat_jalan?.nomor_sj ?? 'Barang lama',
             };
           })
       : [...(sj.surat_jalan_item ?? [])]

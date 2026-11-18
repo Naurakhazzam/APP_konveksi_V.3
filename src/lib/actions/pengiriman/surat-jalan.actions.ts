@@ -340,14 +340,14 @@ export async function getSuratJalanDetail(id: string): Promise<SuratJalanDetail 
         surat_jalan_item_id: it.id,
         bundle_id: bundle?.id ?? '',
         barcode: bundle?.barcode ?? rk?.nomor_reject ?? '-',
-        no_po: one(bundle?.po)?.no_po ?? one(rk?.surat_jalan)?.nomor_sj ?? '-',
+        no_po: one(bundle?.po)?.no_po ?? one(rk?.surat_jalan)?.nomor_sj ?? 'Barang lama',
         model_nama: one(produk?.model_produk)?.nama ?? produk?.nama ?? null,
         warna: one(bundle?.po_item)?.warna ?? produk?.nama ?? '-',
         size: one(bundle?.po_item)?.size ?? '',
         qty_kirim: it.qty,
         qty_jadi: it.qty,
         nomor_reject: rk?.nomor_reject ?? '-',
-        nomor_sj_asal: one(rk?.surat_jalan)?.nomor_sj ?? '-',
+        nomor_sj_asal: one(rk?.surat_jalan)?.nomor_sj ?? 'Barang lama',
       };
     });
 

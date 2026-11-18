@@ -1,7 +1,7 @@
 import { PageWrapper } from '@/components/ui/PageWrapper';
 import { getCurrentUserProfile } from '@/lib/auth/permissions';
 import { getAlasanRejectList } from '@/lib/actions/produksi/reject.actions';
-import { getRejectKantorList, getSjUntukLaporReject } from '@/lib/actions/pengiriman/reject-kantor.actions';
+import { getRejectKantorList, getDataLaporReject } from '@/lib/actions/pengiriman/reject-kantor.actions';
 import RejectKantorClient from './RejectKantorClient';
 
 export const metadata = {
@@ -10,10 +10,10 @@ export const metadata = {
 };
 
 export default async function RejectKantorPage() {
-  const [profile, rows, sjList, alasanList] = await Promise.all([
+  const [profile, rows, dataLapor, alasanList] = await Promise.all([
     getCurrentUserProfile(),
     getRejectKantorList(),
-    getSjUntukLaporReject(),
+    getDataLaporReject(),
     getAlasanRejectList(),
   ]);
 
@@ -24,7 +24,7 @@ export default async function RejectKantorPage() {
     >
       <RejectKantorClient
         rows={rows}
-        sjList={sjList}
+        dataLapor={dataLapor}
         alasanList={alasanList}
         role={profile?.role ?? null}
       />
