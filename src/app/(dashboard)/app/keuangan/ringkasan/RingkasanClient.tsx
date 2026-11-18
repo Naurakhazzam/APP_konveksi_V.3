@@ -68,7 +68,7 @@ export default function RingkasanClient({ initialData }: { initialData: Ringkasa
         <p className="text-xs font-bold text-[#9aa0a6] uppercase tracking-widest mb-2">Kinerja bulan ini — barang yang sudah dikirim</p>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <Kartu judul="Pendapatan" nilai={idr(a.pendapatan)} kelas="text-green-400" ket="Nilai Surat Jalan + pendapatan lain" />
-          <Kartu judul="HPP" nilai={idr(a.hpp)} ket="Bahan + upah + overhead barang terkirim" />
+          <Kartu judul="HPP" nilai={idr(a.hpp)} ket={k.overheadSementara ? 'Bahan + upah + overhead (sementara) barang terkirim' : 'Bahan + upah + overhead barang terkirim'} />
           <Kartu judul="Laba kotor" nilai={akt(a.labaKotor)} kelas={warna(a.labaKotor)} ket={`Margin ${pct(a.labaKotor, a.pendapatan)}`} />
           <Kartu judul="Laba bersih" nilai={akt(a.labaBersih)} kelas={warna(a.labaBersih)} ket={`Margin ${pct(a.labaBersih, a.pendapatan)}`} />
         </div>

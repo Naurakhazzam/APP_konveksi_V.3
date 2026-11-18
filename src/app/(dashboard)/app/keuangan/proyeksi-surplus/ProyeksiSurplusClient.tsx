@@ -198,6 +198,7 @@ export default function ProyeksiSurplusClient({ data: awal }: { data: KinerjaDat
         </div>
         <p className="text-[11px] text-[#5f6368] mt-2">
           Persentase di bawah laba = margin terhadap pendapatan.
+          {data.overheadSementara && <span className="text-amber-300/80"> Overhead bulan berjalan masih sementara (dihitung s/d hari ini, final setelah bulan tutup).</span>}
           {semua && ' Order berjalan = barang yang sudah dipotong tapi belum dikirim, dihitung dengan harga jual dan biaya per pcs PO-nya.'}
           {data.pendapatanBelumValidasi > 0 && <> {idr(data.pendapatanBelumValidasi)} pendapatan berasal dari Surat Jalan yang belum divalidasi kantor.</>}
         </p>

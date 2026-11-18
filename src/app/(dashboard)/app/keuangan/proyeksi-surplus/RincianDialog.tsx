@@ -37,9 +37,11 @@ const APA_INI: Record<JenisRincian, string> = {
     'Termasuk upah yang sudah dibayar, yang sudah dikerjakan tapi belum dibayar, dan perkiraan upah tahap yang belum dikerjakan (tarif HPP).',
   overhead:
     'Biaya pendukung produksi yang tidak bisa ditempelkan langsung ke satu potong baju: sewa rumah produksi, listrik, ' +
-    'makan, bahan pembantu (benang, kancing, karet, plastik, label) dan peralatan. ' +
-    'Bahan pembantu dihitung dari pemakaian (jatah HPP × pcs selesai jahit), bukan dari belanja — yang belum terpakai masih persediaan. ' +
-    'Totalnya tiap bulan dibagi rata ke semua pcs yang dipotong di bulan itu, lalu ikut menjadi biaya barang tersebut.',
+    'makan, gaji staff, bensin, gas dan peralatan. Tiap bulan diratakan per hari, lalu biaya tiap hari dibagi ke barang ' +
+    'yang sedang diproses hari itu (sejak selesai cutting sampai selesai packing), sebanding jumlah pcs × overhead HPP per pcs produknya. ' +
+    'Barang yang lama di produksi ikut menanggung lebih banyak. ' +
+    'Bahan pembantu (benang, kancing, karet, plastik, label) dan overhead bertanda PO (mis. sampel) langsung masuk ke PO-nya. ' +
+    'Angka bulan berjalan masih sementara — final setelah bulan tutup.',
   hpp:
     'Total biaya untuk membuat barang yang dijual: bahan baku + upah produksi + overhead produksi. ' +
     'Biaya barang yang belum dikirim belum menjadi HPP — masih tercatat sebagai barang dalam proses (aset).',
@@ -47,8 +49,8 @@ const APA_INI: Record<JenisRincian, string> = {
     'Pendapatan dikurangi HPP. Menunjukkan berapa yang tersisa dari penjualan setelah menutup biaya produksi. ' +
     'Persentasenya (margin kotor) adalah ukuran efisiensi produksi.',
   overheadTanpaProduksi:
-    'Overhead di bulan yang tidak ada pemotongan sama sekali. Karena tidak ada barang yang bisa menanggungnya, ' +
-    'biaya ini langsung menjadi beban bulan itu.',
+    'Overhead pada hari-hari tanpa barang dalam proses (belum ada yang selesai cutting atau semua sudah selesai packing). ' +
+    'Karena tidak ada barang yang bisa menanggungnya, biaya hari itu langsung menjadi beban bulan itu.',
   bebanOperasional:
     'Biaya di luar produksi (kategori Biaya Operasional dan Lainnya di Buku Kas), dibebankan di bulan terjadinya.',
   labaBersih:
@@ -187,9 +189,12 @@ export default function RincianDialog({ jenis, data, onClose }: {
         return (<>
           {data.rincian.overheadBulan.map(o => (
             <div key={o.bulan}>
-              <SubJudul>{bln(o.bulan)} — {idr(o.total)}{o.pcsPotong > 0
-                ? ` ÷ ${angka(o.pcsPotong)} pcs dipotong = ${idr(o.tarif)}/pcs`
-                : ' (tidak ada pemotongan)'}</SubJudul>
+              <SubJudul>{bln(o.bulan)} — {idr(o.total)} untuk {o.hari} hari{o.sementara ? ' (sementara, s/d hari ini)' : ''}</SubJudul>
+              <p className="text-[11px] text-[#9aa0a6] mb-1.5">
+                {idr(o.teralokasi)} melekat ke barang dalam proses ({angka(o.pcsHari)} pcs-hari
+                {o.pcsHari > 0 ? ` ≈ ${idr(o.teralokasi / o.pcsHari)}/pcs/hari` : ''})
+                {o.tanpaProduksi > 0 ? ` · ${idr(o.tanpaProduksi)} beban bulan (${o.hariTanpaProduksi} hari tanpa produksi)` : ''}
+              </p>
               <KelompokOverhead rows={o.transaksi} sewa={o.sewa.reduce((s, x) => s + x.nominal, 0)} />
               {o.sewa.map(s => (
                 <p key={s.nama} className="text-[11px] text-[#9aa0a6] mt-1">
@@ -200,10 +205,33 @@ export default function RincianDialog({ jenis, data, onClose }: {
                 <summary className="text-[11px] text-sky-300 cursor-pointer">Lihat {o.transaksi.length} transaksi Buku Kas</summary>
                 <div className="mt-2"><DaftarTransaksi rows={o.transaksi} /></div>
               </details>
+              {o.langsung.length > 0 && (
+                <details className="mt-1">
+                  <summary className="text-[11px] text-sky-300 cursor-pointer">
+                    Langsung ke PO: {idr(o.langsung.reduce((s, t) => s + t.nominal, 0))} (bahan pembantu & overhead bertanda PO)
+                  </summary>
+                  <div className="mt-2"><DaftarTransaksi rows={o.langsung} /></div>
+                </details>
+              )}
             </div>
           ))}
           <SubJudul>Overhead yang melekat ke tiap PO</SubJudul>
-          {tabelBiayaPo(['Overhead'], p => [p.overhead], p => p.overhead)}
+          <Tabel kepala={['PO', 'Pcs-hari', 'Pembantu', 'Langsung', 'Total', 'Per pcs', 'Terkirim (HPP)', ...(semua ? ['Belum dikirim'] : [])]}
+            baris={poAda.map(p => [
+              <span key="po" className="font-mono">{p.no_po}<span className="block text-[10px] text-[#9aa0a6] font-sans">{angka(p.pcs)} pcs dipotong</span></span>,
+              idr(p.overhead_alokasi), idr(p.overhead_pembantu), idr(p.overhead_langsung_kas), idr(p.overhead),
+              idr(perPcs(p.overhead, p)), idr(p.overhead_kirim_periode),
+              ...(semua ? [idr(Math.max(0, p.overhead - p.overhead_kirim))] : []),
+            ])}
+            kaki={['Total', ...([
+              (p: KinerjaPO) => p.overhead_alokasi, (p: KinerjaPO) => p.overhead_pembantu, (p: KinerjaPO) => p.overhead_langsung_kas,
+              (p: KinerjaPO) => p.overhead,
+            ].map(f => idr(poAda.reduce((s, p) => s + f(p), 0)))), '',
+              idr(poAda.reduce((s, p) => s + p.overhead_kirim_periode, 0)),
+              ...(semua ? [idr(poAda.reduce((s, p) => s + Math.max(0, p.overhead - p.overhead_kirim), 0))] : [])]} />
+          {data.overheadSementara && (
+            <p className="text-[11px] text-amber-300 mt-2">Sementara: overhead bulan berjalan dihitung s/d hari ini dan bisa berubah sampai bulan tutup.</p>
+          )}
         </>);
       case 'hpp':
       case 'labaKotor':
@@ -221,9 +249,9 @@ export default function RincianDialog({ jenis, data, onClose }: {
       }
       case 'overheadTanpaProduksi':
         return (<>
-          {data.rincian.overheadBulan.filter(o => o.pcsPotong === 0 && o.total > 0).map(o => (
+          {data.rincian.overheadBulan.filter(o => o.tanpaProduksi > 0).map(o => (
             <div key={o.bulan}>
-              <SubJudul>{bln(o.bulan)} — {idr(o.total)}</SubJudul>
+              <SubJudul>{bln(o.bulan)} — {idr(o.tanpaProduksi)} ({o.hariTanpaProduksi} hari tanpa barang dalam proses, dari total {idr(o.total)})</SubJudul>
               <KelompokOverhead rows={o.transaksi} sewa={o.sewa.reduce((s, x) => s + x.nominal, 0)} />
             </div>
           ))}

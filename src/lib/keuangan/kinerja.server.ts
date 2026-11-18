@@ -6,9 +6,13 @@
  *  - Pendapatan diakui saat barang dikirim (Surat Jalan, dicocokkan validasi kantor).
  *  - HPP = biaya per pcs tiap PO × pcs yang dikirim. Biaya per pcs = bahan terpakai + upah
  *    (dibayar + terutang + perkiraan tahap tersisa) + overhead produksi.
- *  - Overhead produksi (Biaya Overhead, Bahan Pembantu, Peralatan, sewa per hari) dibebankan ke pcs
- *    yang dipotong di bulan yang sama → angka bulan yang sudah lewat tidak berubah lagi.
- *    Bulan tanpa pemotongan: overhead langsung jadi beban ("overhead tanpa produksi").
+ *  - Overhead produksi (Biaya Overhead, Peralatan, Bahan Pembantu tanpa jenis, sewa per hari) memakai
+ *    metode pcs-hari: overhead tiap bulan diratakan per hari kalender (bulan berjalan: s/d hari ini),
+ *    lalu tiap hari dibagi ke barang dalam proses (selesai cutting s/d selesai packing) sebanding
+ *    pcs × overhead HPP per pcs produknya. Hari tanpa barang dalam proses = beban bulan itu
+ *    ("overhead tanpa produksi"). Angka bulan berjalan masih SEMENTARA (final setelah bulan tutup).
+ *  - Overhead bertanda PO (mis. pembuatan sampel) langsung ke PO itu; bahan pembantu bertanda jenis
+ *    tidak masuk overhead umum — pemakaiannya langsung ke PO (get_pembantu_per_po).
  *  - Beban operasional (Biaya Operasional, Lainnya) dibebankan di bulan terjadinya.
  *  - Pembelian bahan = persediaan (aset), baru jadi biaya saat dipakai.
  *  - Bahan pembantu (barang lama = setoran modal barang, dan belanja Buku Kas yang bertanda jenis):
@@ -58,12 +62,23 @@ export interface SewaAlokasi { nama: string; dari: string; sampai: string; hari:
 
 export interface OverheadBulan {
   bulan: string;
+  /** Overhead umum (Buku Kas) yang diratakan per hari */
   transaksi: Transaksi[];
   sewa: SewaAlokasi[];
+  /** Overhead umum + sewa bulan ini (yang dibagi pcs-hari) */
   total: number;
-  pcsPotong: number;
-  /** Rp per pcs yang dipotong bulan ini (0 bila tidak ada pemotongan) */
-  tarif: number;
+  /** Hari yang dihitung (bulan berjalan: s/d hari ini) & hari tanpa barang dalam proses */
+  hari: number;
+  hariTanpaProduksi: number;
+  /** Σ pcs × hari barang dalam proses */
+  pcsHari: number;
+  /** Bagian total yang melekat ke barang & yang jadi beban bulan (hari tanpa produksi) */
+  teralokasi: number;
+  tanpaProduksi: number;
+  /** Biaya langsung ke PO bulan ini: bahan pembantu terpakai & overhead bertanda PO */
+  langsung: Transaksi[];
+  /** true = bulan berjalan, angka masih bisa berubah sampai bulan tutup */
+  sementara: boolean;
 }
 
 export interface KinerjaPO {
@@ -81,7 +96,14 @@ export interface KinerjaPO {
   upah_lunas: number;
   upah_belum_lunas: number;
   upah_sisa: number;
+  /** Overhead produksi total = alokasi pcs-hari + langsung (pembantu & overhead bertanda PO) */
   overhead: number;
+  overhead_alokasi: number;
+  overhead_pembantu: number;
+  overhead_langsung_kas: number;
+  /** Bagian overhead yang sudah ikut barang terkirim (semua bulan / periode terpilih) */
+  overhead_kirim: number;
+  overhead_kirim_periode: number;
   /** Nilai jual − bahan − upah − overhead produksi */
   laba: number;
   /** Pcs & nilai terkirim dalam periode yang dipilih */
@@ -97,6 +119,8 @@ export interface KinerjaData {
   sejak: string;
   perTanggal: string;
   bulanTersedia: string[];
+  /** true bila periode memuat bulan berjalan → overhead masih sementara */
+  overheadSementara: boolean;
 
   lr: { aktual: KolomLR; berjalan: KolomLR | null; total: KolomLR };
   /** Barang sudah dipotong yang belum dikirim per hari ini (perkiraan), tidak ikut pilihan periode */
@@ -197,7 +221,7 @@ export async function hitungKinerja(supabase: Supa, periode = 'semua'): Promise<
   const dalamPeriode = (ym: string) => periodeValid === 'semua' || ym === periodeValid;
   const perTanggal = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Jakarta' });
 
-  const [poRes, poBulanRes, kasRes, lotRes, btRes, sjMap, pembRes, jenisRes] = await Promise.all([
+  const [poRes, poBulanRes, kasRes, lotRes, btRes, sjMap, pembRes, jenisRes, ohBundleRes, pembPoRes] = await Promise.all([
     supabase.rpc('get_proyeksi_surplus_po', { p_tenant_id: TENANT_ID, p_po_mulai: PO_AWAL_PERIODE }),
     supabase.rpc('get_kinerja_po_bulan', { p_tenant_id: TENANT_ID, p_po_mulai: PO_AWAL_PERIODE }),
     supabase.from('buku_kas')
@@ -211,8 +235,10 @@ export async function hitungKinerja(supabase: Supa, periode = 'semua'): Promise<
     pendapatanSjPerBulan(supabase, TANGGAL_AWAL_PERIODE, akhirSekarang, true),
     supabase.rpc('get_mutasi_saldo_pembantu', { p_tenant_id: TENANT_ID, p_mulai: PO_AWAL_PERIODE }),
     supabase.from('pembantu_jenis').select('id, nama').eq('tenant_id', TENANT_ID),
+    supabase.rpc('get_overhead_bundle', { p_tenant_id: TENANT_ID, p_po_mulai: PO_AWAL_PERIODE }),
+    supabase.rpc('get_pembantu_per_po', { p_tenant_id: TENANT_ID, p_mulai: PO_AWAL_PERIODE }),
   ]);
-  for (const r of [poRes, poBulanRes, kasRes, lotRes, btRes, pembRes, jenisRes]) if (r.error) throw new Error(r.error.message);
+  for (const r of [poRes, poBulanRes, kasRes, lotRes, btRes, pembRes, jenisRes, ohBundleRes, pembPoRes]) if (r.error) throw new Error(r.error.message);
 
   // ── Bahan pembantu lama (saldo awal = setoran modal barang) ──
   const namaJenis = new Map(((jenisRes.data ?? []) as any[]).map(j => [String(j.id), String(j.nama)]));
@@ -271,11 +297,15 @@ export async function hitungKinerja(supabase: Supa, periode = 'semua'): Promise<
   const isModal = (k: any) => k.kategori === KATEGORI_SETORAN_MODAL;
   const pendLainRows = masuk.filter(k => !isKlien(k) && !isModal(k));
 
-  // ── Sewa per hari, per bulan (sejak tanggal awal periode) ──
+  // ── Hari yang dihitung per bulan: sejak awal periode, bulan berjalan s/d hari ini ──
+  const awalHitung = (m: string) => maks(`${m}-01`, TANGGAL_AWAL_PERIODE);
+  const akhirHitung = (m: string) => min(akhirBulan(m), perTanggal);
+
+  // ── Sewa per hari, per bulan ──
   const perHariOf = (b: any) => Number(b.nominal) / hariInklusif(b.tanggal_mulai, b.tanggal_selesai);
   const sewaBulan = (m: string): SewaAlokasi[] => btData.map(b => {
-    const d = maks(maks(`${m}-01`, TANGGAL_AWAL_PERIODE), b.tanggal_mulai);
-    const s = min(akhirBulan(m), b.tanggal_selesai);
+    const d = maks(awalHitung(m), b.tanggal_mulai);
+    const s = min(akhirHitung(m), b.tanggal_selesai);
     const hari = s >= d ? hariInklusif(d, s) : 0;
     return { nama: b.nama as string, dari: d, sampai: s, hari, perHari: perHariOf(b), nominal: perHariOf(b) * hari };
   }).filter(x => x.hari > 0);
@@ -289,38 +319,110 @@ export async function hitungKinerja(supabase: Supa, periode = 'semua'): Promise<
     potong: Number(r.pcs_potong), kirim: Number(r.pcs_kirim), nilai: Number(r.nilai_kirim),
   }));
 
-  // ── Overhead produksi per bulan → tarif per pcs potong bulan itu ──
+  // ── Overhead produksi: metode pcs-hari ──
+  const noPoOf = (k: any) => (Array.isArray(k.po) ? k.po[0]?.no_po : k.po?.no_po) as string | undefined;
+  const kasOverhead = kasBiaya.filter(k => KATEGORI_OVERHEAD_PRODUKSI.includes(k.kategori));
+  const kasUmum = kasOverhead.filter(k => !k.po_id);
+  const kasLangsung = kasOverhead.filter(k => k.po_id);
+
+  type BundleOH = { po: string; pcs: number; mulai: string; selesai: string | null; bobot: number; kirim: { bulan: string; pcs: number }[]; oh: number };
+  const bundles: BundleOH[] = ((ohBundleRes.data ?? []) as any[]).map(r => ({
+    po: String(r.po_id), pcs: Number(r.pcs),
+    mulai: String(r.tgl_mulai).slice(0, 10), selesai: r.tgl_selesai ? String(r.tgl_selesai).slice(0, 10) : null,
+    bobot: Number(r.bobot ?? 0),
+    kirim: ((r.kirim ?? []) as any[]).map(x => ({ bulan: String(x.bulan), pcs: Number(x.pcs) })),
+    oh: 0,
+  })).filter(b => b.pcs > 0 && !(b.selesai && b.selesai < TANGGAL_AWAL_PERIODE)); // selesai sebelum periode: tidak ikut
+  // Produk tanpa overhead HPP → bobot rata-rata produk lain (atau 1 bila semua kosong)
+  const bobotAda = bundles.filter(b => b.bobot > 0);
+  const bobotRata = bobotAda.length ? bobotAda.reduce((s, b) => s + b.bobot, 0) / bobotAda.length : 1;
+  bundles.forEach(b => { if (!(b.bobot > 0)) b.bobot = bobotRata; });
+
   const overheadBulan: OverheadBulan[] = bulanList.map(m => {
-    const transaksi = kasBiaya.filter(k => ym(k) === m && KATEGORI_OVERHEAD_PRODUKSI.includes(k.kategori)).map(keTransaksi);
-    const perSumber = pakaiPembantu.get(m);
-    (perSumber?.get('lama') ?? new Map<string, number>()).forEach((nominal, j) => transaksi.push({
-      tanggal: akhirBulan(m), kategori: 'Bahan Pembantu', sub: 'Barang lama terpakai',
-      keterangan: `Pemakaian ${namaJenis.get(j) ?? 'bahan pembantu'} lama (saldo awal, tanpa uang keluar)`, nominal,
-    }));
-    (perSumber?.get('belanja') ?? new Map<string, number>()).forEach((nominal, j) => transaksi.push({
-      tanggal: akhirBulan(m), kategori: 'Bahan Pembantu', sub: 'Belanja terpakai',
-      keterangan: `Pemakaian ${namaJenis.get(j) ?? 'bahan pembantu'} hasil belanja (jatah HPP; sisanya masih persediaan)`, nominal,
-    }));
+    const transaksi = kasUmum.filter(k => ym(k) === m).map(keTransaksi);
     const sewa = sewaBulan(m);
-    const total = transaksi.reduce((s, t) => s + t.nominal, 0) + sewa.reduce((s, x) => s + x.nominal, 0);
-    const pcsPotong = poBulan.filter(r => r.bulan === m).reduce((s, r) => s + r.potong, 0);
-    return { bulan: m, transaksi, sewa, total, pcsPotong, tarif: pcsPotong > 0 ? total / pcsPotong : 0 };
+    const kasTotal = transaksi.reduce((s, t) => s + t.nominal, 0);
+    const d0 = awalHitung(m), d1 = akhirHitung(m);
+    const hari = d1 >= d0 ? hariInklusif(d0, d1) : 0;
+    const kasHarian = hari > 0 ? kasTotal / hari : 0;
+    let teralokasi = 0, tanpaProduksi = hari > 0 ? 0 : kasTotal, pcsHari = 0, hariTanpaProduksi = 0;
+    for (let d = d0; hari > 0 && d <= d1; d = besok(d)) {
+      const pool = kasHarian + sewa.reduce((s, x) => s + (d >= x.dari && d <= x.sampai ? x.perHari : 0), 0);
+      const aktif = bundles.filter(b => b.mulai <= d && (b.selesai === null || d <= maks(b.selesai, b.mulai)));
+      const w = aktif.reduce((s, b) => s + b.pcs * b.bobot, 0);
+      if (w > 0) {
+        aktif.forEach(b => { b.oh += pool * (b.pcs * b.bobot) / w; });
+        teralokasi += pool;
+        pcsHari += aktif.reduce((s, b) => s + b.pcs, 0);
+      } else {
+        tanpaProduksi += pool;
+        hariTanpaProduksi++;
+      }
+    }
+    const langsung: Transaksi[] = kasLangsung.filter(k => ym(k) === m).map(k => {
+      const t = keTransaksi(k);
+      return { ...t, keterangan: `${noPoOf(k) ?? 'PO'} · ${t.keterangan ?? t.sub ?? t.kategori}` };
+    });
+    const perSumber = pakaiPembantu.get(m);
+    (['lama', 'belanja'] as const).forEach(sumber => (perSumber?.get(sumber) ?? new Map<string, number>()).forEach((nominal, j) => langsung.push({
+      tanggal: akhirBulan(m), kategori: 'Bahan Pembantu', sub: sumber === 'lama' ? 'Barang lama terpakai' : 'Belanja terpakai',
+      keterangan: `Pemakaian ${namaJenis.get(j) ?? 'bahan pembantu'} (jatah HPP, langsung ke PO)`, nominal,
+    })));
+    const total = kasTotal + sewa.reduce((s, x) => s + x.nominal, 0);
+    return { bulan: m, transaksi, sewa, total, hari, hariTanpaProduksi, pcsHari, teralokasi, tanpaProduksi, langsung, sementara: m === blnSekarang };
   });
-  const tarifBulan = new Map(overheadBulan.map(o => [o.bulan, o.tarif]));
+
+  // Per PO: alokasi pcs-hari & bagian yang sudah terkirim per bulan (per bundle)
+  const ohPo = new Map<string, { alokasi: number; kirimBulan: Map<string, number> }>();
+  bundles.forEach(b => {
+    const cur = ohPo.get(b.po) ?? { alokasi: 0, kirimBulan: new Map<string, number>() };
+    cur.alokasi += b.oh;
+    let sisaPcs = b.pcs;
+    b.kirim.forEach(k => {
+      const q = Math.min(k.pcs, sisaPcs);
+      if (q <= 0) return;
+      sisaPcs -= q;
+      cur.kirimBulan.set(k.bulan, (cur.kirimBulan.get(k.bulan) ?? 0) + b.oh * q / b.pcs);
+    });
+    ohPo.set(b.po, cur);
+  });
+  const pembantuPo = new Map<string, number>();
+  ((pembPoRes.data ?? []) as any[]).forEach(r =>
+    pembantuPo.set(String(r.po_id), (pembantuPo.get(String(r.po_id)) ?? 0) + Number(r.pakai ?? 0)));
+  const kasLangsungPo = new Map<string, number>();
+  kasLangsung.forEach(k => kasLangsungPo.set(String(k.po_id), (kasLangsungPo.get(String(k.po_id)) ?? 0) + Number(k.nominal)));
+  /** po → bulan → overhead yang ikut barang terkirim bulan itu */
+  const ohKirim = new Map<string, Map<string, number>>();
 
   const po: KinerjaPO[] = ((poRes.data ?? []) as any[]).map(r => {
     const id = String(r.po_id);
     const baris = poBulan.filter(x => x.po_id === id);
     const pcs = Number(r.pcs_potong), pcs_kirim = Number(r.pcs_kirim ?? 0);
     const upah_sisa = Number(r.upah_sisa);
-    const overhead = baris.reduce((s, x) => s + x.potong * (tarifBulan.get(x.bulan) ?? 0), 0);
+    const oh = ohPo.get(id);
+    const overhead_alokasi = oh?.alokasi ?? 0;
+    const overhead_pembantu = pembantuPo.get(id) ?? 0;
+    const overhead_langsung_kas = kasLangsungPo.get(id) ?? 0;
+    const langsungTotal = overhead_pembantu + overhead_langsung_kas;
+    const overhead = overhead_alokasi + langsungTotal;
+    // Alokasi pcs-hari ikut bundle yang dikirim; biaya langsung PO ikut barang terkirim sebanding pcs
+    const perBulan = new Map<string, number>();
+    bulanList.forEach(m => {
+      const kirimM = baris.filter(x => x.bulan === m).reduce((s, x) => s + x.kirim, 0);
+      const n = (oh?.kirimBulan.get(m) ?? 0) + (pcs > 0 ? langsungTotal * Math.min(1, kirimM / pcs) : 0);
+      if (n > 0) perBulan.set(m, n);
+    });
+    ohKirim.set(id, perBulan);
+    const kirimSemua = [...perBulan.values()].reduce((s, n) => s + n, 0);
     const p = {
       po_id: id, no_po: r.no_po, klien: r.klien ?? '-', pcs, pcs_kirim,
       nilai_jual: Number(r.nilai_jual), nilai_kirim: Number(r.nilai_kirim ?? 0),
       diterima: diterimaPerPo.get(id) ?? 0,
       kain: Number(r.biaya_kain), aksesori: Number(r.biaya_aksesori),
       upah_lunas: Number(r.upah_lunas), upah_belum_lunas: Number(r.upah_belum_lunas), upah_sisa,
-      overhead,
+      overhead, overhead_alokasi, overhead_pembantu, overhead_langsung_kas,
+      overhead_kirim: Math.min(overhead, kirimSemua),
+      overhead_kirim_periode: [...perBulan.entries()].filter(([m]) => dalamPeriode(m)).reduce((s, [, n]) => s + n, 0),
       pcs_kirim_periode: baris.filter(x => dalamPeriode(x.bulan)).reduce((s, x) => s + x.kirim, 0),
       nilai_kirim_periode: baris.filter(x => dalamPeriode(x.bulan)).reduce((s, x) => s + x.nilai, 0),
       status: (pcs > 0 && pcs_kirim >= pcs && upah_sisa === 0 ? 'terkirim'
@@ -333,8 +435,7 @@ export async function hitungKinerja(supabase: Supa, periode = 'semua'): Promise<
   const perPcs = (p: KinerjaPO) => p.pcs > 0 ? {
     bahan: (p.kain + p.aksesori) / p.pcs,
     upah: (p.upah_lunas + p.upah_belum_lunas + p.upah_sisa) / p.pcs,
-    overhead: p.overhead / p.pcs,
-  } : { bahan: 0, upah: 0, overhead: 0 };
+  } : { bahan: 0, upah: 0 };
 
   // ── Laba rugi per bulan (aktual: barang yang dikirim di bulan itu) ──
   const lrPerBulan: LRBulan[] = bulanList.map(m => {
@@ -343,7 +444,8 @@ export async function hitungKinerja(supabase: Supa, periode = 'semua'): Promise<
       const p = poMap.get(r.po_id);
       if (!p) return;
       const pp = perPcs(p);
-      bahan += pp.bahan * r.kirim; upah += pp.upah * r.kirim; overheadProduksi += pp.overhead * r.kirim;
+      bahan += pp.bahan * r.kirim; upah += pp.upah * r.kirim;
+      overheadProduksi += ohKirim.get(r.po_id)?.get(m) ?? 0;
     });
     const ob = overheadBulan.find(o => o.bulan === m)!;
     return {
@@ -351,7 +453,7 @@ export async function hitungKinerja(supabase: Supa, periode = 'semua'): Promise<
       ...kolom({
         pendapatan: (sjMap.get(m)?.nilai ?? 0) + pendLainRows.filter(k => ym(k) === m).reduce((s, k) => s + Number(k.nominal), 0),
         bahan, upah, overheadProduksi,
-        overheadTanpaProduksi: ob.pcsPotong > 0 ? 0 : ob.total,
+        overheadTanpaProduksi: ob.tanpaProduksi,
         bebanOperasional: kasBiaya.filter(k => ym(k) === m && KATEGORI_BEBAN_OPERASIONAL.includes(k.kategori))
           .reduce((s, k) => s + Number(k.nominal), 0),
       }),
@@ -365,7 +467,7 @@ export async function hitungKinerja(supabase: Supa, periode = 'semua'): Promise<
     const sisa = Math.max(0, p.pcs - p.pcs_kirim);
     const pp = perPcs(p);
     bjPendapatan += Math.max(0, p.nilai_jual - p.nilai_kirim);
-    bjBahan += pp.bahan * sisa; bjUpah += pp.upah * sisa; bjOverhead += pp.overhead * sisa;
+    bjBahan += pp.bahan * sisa; bjUpah += pp.upah * sisa; bjOverhead += Math.max(0, p.overhead - p.overhead_kirim);
   });
   const orderBerjalan = kolom({ pendapatan: bjPendapatan, bahan: bjBahan, upah: bjUpah,
     overheadProduksi: bjOverhead, overheadTanpaProduksi: 0, bebanOperasional: 0 });
@@ -390,7 +492,7 @@ export async function hitungKinerja(supabase: Supa, periode = 'semua'): Promise<
   // Barang dalam proses: biaya yang SUDAH terjadi untuk barang belum dikirim (tanpa upah tahap yang belum dikerjakan)
   const barangDalamProses = po.reduce((s, p) => {
     const r = p.pcs > 0 ? Math.min(1, p.pcs_kirim / p.pcs) : 0;
-    return s + (p.kain + p.aksesori + p.upah_lunas + p.upah_belum_lunas + p.overhead) * (1 - r);
+    return s + (p.kain + p.aksesori + p.upah_lunas + p.upah_belum_lunas) * (1 - r) + Math.max(0, p.overhead - p.overhead_kirim);
   }, 0);
   const sjTotal = [...sjMap.values()].reduce((s, v) => s + v.nilai, 0);
   const masukKlienTotal = masuk.filter(isKlien).reduce((s, k) => s + Number(k.nominal), 0);
@@ -429,6 +531,7 @@ export async function hitungKinerja(supabase: Supa, periode = 'semua'): Promise<
 
   return {
     periode: periodeValid, dari, sampai, sejak: TANGGAL_AWAL_PERIODE, perTanggal, bulanTersedia: bulanList,
+    overheadSementara: dalamPeriode(blnSekarang),
     lr: { aktual, berjalan, total },
     orderBerjalan,
     lrPerBulan,
