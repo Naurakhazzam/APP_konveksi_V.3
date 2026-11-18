@@ -60,7 +60,28 @@ const PER_HALAMAN = 20;
 
 type Baris =
   | { jenis: 'entri'; entry: BukuKasEntry }
-  | { jenis: 'gaji'; key: string; tanggal: string; items: BukuKasEntry[]; total: number; poNo: string[] };
+  | { jenis: 'gaji'; key: string; tanggal: string; items: BukuKasEntry[]; total: number; poNo: string[] }
+  /** Setoran modal barang (MODAL-SISA): masuk "Setoran Modal" + keluar "Pembelian Bahan" senilai → netral kas */
+  | { jenis: 'modal'; key: string; tanggal: string; masuk: BukuKasEntry[]; keluar: BukuKasEntry[]; total: number };
+
+const REF_MODAL = 'MODAL-SISA';
+
+const angkaFmt = (n: number) => n.toLocaleString('id-ID', { maximumFractionDigits: 2 });
+
+/** "7,45 kg" — kosong ("–") bila qty tidak dicatat */
+const qtyFmt = (e: Pick<BukuKasEntry, 'qty' | 'satuan'>) =>
+  e.qty && e.qty > 0 ? `${angkaFmt(e.qty)} ${e.satuan ?? ''}`.trim() : '–';
+
+/** Harga per satuan = total ÷ qty, dibulatkan ke rupiah */
+const hargaSatuanFmt = (e: Pick<BukuKasEntry, 'qty' | 'nominal'>) =>
+  e.qty && e.qty > 0 ? idrFmt(Math.round(e.nominal / e.qty)) : '–';
+
+/** Keterangan "Nama — catatan — catatan" → [nama, "catatan · catatan"] */
+const pecahKet = (ket: string | null): [string, string] => {
+  const t = (ket ?? '').trim();
+  const bagian = t.split(' — ');
+  return [bagian[0] || '-', bagian.slice(1).join(' · ')];
+};
 
 /** "Bayar upah Ade (PO-0099)" → "Ade" */
 const namaGaji = (ket: string | null) =>
@@ -194,11 +215,44 @@ export default function BukuKasClient({ initialEntries, poList, overheadSubList,
     return [...m.entries()].sort((a, b) => b[1] - a[1]);
   })();
 
-  /** Baris tabel: pembayaran gaji otomatis pada tanggal yang sama disatukan jadi satu baris */
+  /**
+   * Setoran modal barang per tanggal: semua baris MODAL-SISA (masuk Setoran Modal + keluar Pembelian Bahan).
+   * Disatukan hanya bila jumlah masuk = jumlah keluar (netral kas); bila tidak seimbang dibiarkan terpisah
+   * supaya selisihnya kelihatan.
+   */
+  const grupModal = (() => {
+    const perTgl = new Map<string, { masuk: BukuKasEntry[]; keluar: BukuKasEntry[] }>();
+    tampil.forEach(e => {
+      if (e.no_referensi !== REF_MODAL) return;
+      if (!((e.tipe === 'masuk' && e.kategori === 'Setoran Modal') || (e.tipe === 'keluar' && e.kategori === 'Pembelian Bahan'))) return;
+      const tgl = e.tanggal.slice(0, 10);
+      const g = perTgl.get(tgl) ?? { masuk: [], keluar: [] };
+      g[e.tipe].push(e);
+      perTgl.set(tgl, g);
+    });
+    const hasil = new Map<string, Extract<Baris, { jenis: 'modal' }>>(); // id entri → grup
+    perTgl.forEach((g, tgl) => {
+      const m = g.masuk.reduce((s, e) => s + e.nominal, 0);
+      const k = g.keluar.reduce((s, e) => s + e.nominal, 0);
+      if (!g.masuk.length || !g.keluar.length || Math.round(m) !== Math.round(k)) return;
+      const grup = { jenis: 'modal' as const, key: `modal-${tgl}`, tanggal: g.keluar[0].tanggal, masuk: g.masuk, keluar: g.keluar, total: k };
+      [...g.masuk, ...g.keluar].forEach(e => hasil.set(e.id, grup));
+    });
+    return hasil;
+  })();
+  const totalModal = [...new Set(grupModal.values())].reduce((s, g) => s + g.total, 0);
+
+  /** Baris tabel: gaji otomatis per tanggal & setoran modal barang per tanggal disatukan jadi satu baris */
   const barisTabel = (() => {
     const hasil: Baris[] = [];
     const grupGaji = new Map<string, Extract<Baris, { jenis: 'gaji' }>>();
+    const modalDipasang = new Set<string>();
     tampil.forEach(entry => {
+      const gm = grupModal.get(entry.id);
+      if (gm) {
+        if (!modalDipasang.has(gm.key)) { modalDipasang.add(gm.key); hasil.push(gm); }
+        return;
+      }
       if (!entry.karyawan_id_gaji) { hasil.push({ jenis: 'entri', entry }); return; }
       const tgl = entry.tanggal.slice(0, 10);
       let g = grupGaji.get(tgl);
@@ -273,6 +327,9 @@ export default function BukuKasClient({ initialEntries, poList, overheadSubList,
           Kategori: e.kategori,
           'Sub-kelompok': e.overhead_sub_nama ?? '',
           Keterangan: e.keterangan ?? '',
+          Qty: e.qty && e.qty > 0 ? e.qty : null,
+          Satuan: e.qty && e.qty > 0 ? e.satuan ?? '' : '',
+          'Harga Satuan': e.qty && e.qty > 0 ? Math.round(e.nominal / e.qty) : null,
           'No. Referensi': e.no_referensi ?? '',
           'Tag PO': e.po_no ?? '',
           Masuk: masuk || null,
@@ -287,10 +344,11 @@ export default function BukuKasClient({ initialEntries, poList, overheadSubList,
       const ws = XLSX.utils.json_to_sheet(isi);
       XLSX.utils.sheet_add_aoa(ws, [
         [],
-        ['', '', '', '', '', 'TOTAL', '', '', totMasuk, totKeluar, totMasuk - totKeluar],
+        ['', '', '', '', '', 'TOTAL', '', '', '', '', '', totMasuk, totKeluar, totMasuk - totKeluar],
       ], { origin: -1 });
       ws['!cols'] = [
         { wch: 11 }, { wch: 9 }, { wch: 8 }, { wch: 18 }, { wch: 18 }, { wch: 42 },
+        { wch: 9 }, { wch: 8 }, { wch: 13 },
         { wch: 14 }, { wch: 9 }, { wch: 13 }, { wch: 13 }, { wch: 14 },
       ];
       const wb = XLSX.utils.book_new();
@@ -304,6 +362,88 @@ export default function BukuKasClient({ initialEntries, poList, overheadSubList,
     }
   };
 
+  /** Sel Keterangan: nama (tebal) + catatan (abu-abu) + label No. Referensi / PO bila ada */
+  const selKet = (e: BukuKasEntry) => {
+    const [nama, catatan] = pecahKet(e.keterangan);
+    return (
+      <TableCell className="text-sm min-w-[220px] max-w-[360px] whitespace-normal break-words align-top py-2.5">
+        <div className="font-semibold text-[#e8eaed] leading-snug">{nama}</div>
+        {catatan && <div className="text-[11px] text-[#9aa0a6] leading-snug mt-0.5">{catatan}</div>}
+        {(e.no_referensi || e.po_no) && (
+          <div className="flex flex-wrap gap-1 mt-1">
+            {e.no_referensi && (
+              <span className="bg-[#1E2124] text-[#9aa0a6] text-[10px] px-1.5 py-0.5 rounded border border-[#2A2D31] font-mono" title="No. Referensi">
+                {e.no_referensi}
+              </span>
+            )}
+            {e.po_no && (
+              <span className="bg-[#2A2D31] text-[#e5c17b] text-[10px] px-1.5 py-0.5 rounded border border-[#3A3D41] font-mono" title="Tag PO">
+                {e.po_no}
+              </span>
+            )}
+          </div>
+        )}
+      </TableCell>
+    );
+  };
+
+  /** Sel Qty, Harga Satuan, Total */
+  const selAngka = (e: BukuKasEntry, redup = false) => (
+    <>
+      <TableCell className={`text-sm text-right whitespace-nowrap align-top py-2.5 ${redup ? 'text-[#9aa0a6]' : 'text-[#e8eaed]'}`}>
+        {qtyFmt(e)}
+      </TableCell>
+      <TableCell className="text-sm text-right whitespace-nowrap align-top py-2.5 text-[#9aa0a6]">
+        {hargaSatuanFmt(e)}
+      </TableCell>
+      <TableCell className={`text-sm font-bold text-right whitespace-nowrap align-top py-2.5 ${
+        e.tipe === 'masuk' ? 'text-green-400' : 'text-red-400'
+      } ${redup ? 'opacity-80 font-semibold' : ''}`}>
+        {e.tipe === 'keluar' ? '-' : '+'}{idrFmt(e.nominal)}
+      </TableCell>
+    </>
+  );
+
+  /** Sel Aksi: ubah tanggal / kunci / edit + hapus */
+  const selAksi = (entry: BukuKasEntry) => (
+    <TableCell className="text-center whitespace-nowrap align-top py-1.5">
+      {entry.dikunci && entry.bisa_ubah_tanggal ? (
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => openUbahTanggal(entry)}
+          className="h-8 w-8 text-[#9aa0a6] hover:text-[#e5c17b] hover:bg-[#e5c17b]/10"
+          title="Ubah tanggal (nominal dari Stok Masuk tetap terkunci)"
+        >
+          <CalendarDays className="h-4 w-4" />
+        </Button>
+      ) : entry.dikunci ? (
+        <span title={entry.dikunci} className="inline-flex h-8 w-8 items-center justify-center text-[#5f6368]">
+          <Lock className="h-4 w-4" />
+        </span>
+      ) : (
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => openEdit(entry)}
+          className="h-8 w-8 text-[#9aa0a6] hover:text-[#e5c17b] hover:bg-[#e5c17b]/10"
+          title="Edit"
+        >
+          <Pencil className="h-4 w-4" />
+        </Button>
+      )}
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={() => setDeleteTarget(entry)}
+        className="h-8 w-8 text-[#9aa0a6] hover:text-red-400 hover:bg-red-400/10"
+        title="Hapus"
+      >
+        <Trash2 className="h-4 w-4" />
+      </Button>
+    </TableCell>
+  );
+
   const [gajiTerbuka, setGajiTerbuka] = useState<Set<string>>(new Set());
   const toggleGaji = (key: string) => setGajiTerbuka(prev => {
     const s = new Set(prev);
@@ -311,8 +451,9 @@ export default function BukuKasClient({ initialEntries, poList, overheadSubList,
     return s;
   });
 
-  const totalMasuk  = tampil.filter(e => e.tipe === 'masuk').reduce((s, e) => s + e.nominal, 0);
-  const totalKeluar = tampil.filter(e => e.tipe === 'keluar').reduce((s, e) => s + e.nominal, 0);
+  // Setoran modal barang (netral kas) tidak ikut total Masuk/Keluar; saldo tidak berubah karena saling menghapus
+  const totalMasuk  = tampil.filter(e => e.tipe === 'masuk' && !grupModal.has(e.id)).reduce((s, e) => s + e.nominal, 0);
+  const totalKeluar = tampil.filter(e => e.tipe === 'keluar' && !grupModal.has(e.id)).reduce((s, e) => s + e.nominal, 0);
   const saldo       = totalMasuk - totalKeluar;
 
   // ─── FILTER ───────────────────────────────────────────────────────────────
@@ -498,6 +639,11 @@ export default function BukuKasClient({ initialEntries, poList, overheadSubList,
           </p>
         </div>
       </div>
+      {totalModal > 0 && (
+        <p className="-mt-3 text-[11px] text-[#9aa0a6]">
+          Setoran modal barang (sisa bahan lama) {idrFmt(totalModal)} tidak dihitung di Total Masuk/Keluar: barangnya bukan uang, jadi netral kas.
+        </p>
+      )}
 
       {/* ─── REKAP OVERHEAD PER SUB-KELOMPOK ─────────────────────────────── */}
       {rekapOverhead.length > 0 && (
@@ -625,9 +771,9 @@ export default function BukuKasClient({ initialEntries, poList, overheadSubList,
               <TableHead className="text-[#9aa0a6]">Tipe</TableHead>
               <TableHead className="text-[#9aa0a6]">Kategori</TableHead>
               <TableHead className="text-[#9aa0a6]">Keterangan</TableHead>
-              <TableHead className="text-[#9aa0a6]">No. Referensi</TableHead>
-              <TableHead className="text-[#9aa0a6]">Tag PO</TableHead>
-              <TableHead className="text-[#9aa0a6] text-right">Nominal</TableHead>
+              <TableHead className="text-[#9aa0a6] text-right">Qty</TableHead>
+              <TableHead className="text-[#9aa0a6] text-right">Harga Satuan</TableHead>
+              <TableHead className="text-[#9aa0a6] text-right">Total</TableHead>
               <TableHead className="text-[#9aa0a6] w-24 text-center">Aksi</TableHead>
             </TableRow>
           </TableHeader>
@@ -658,29 +804,26 @@ export default function BukuKasClient({ initialEntries, poList, overheadSubList,
                         </span>
                       </TableCell>
                       <TableCell className="text-sm text-[#9aa0a6]">Pembayaran Gaji</TableCell>
-                      <TableCell className="text-sm text-[#e8eaed]">
-                        <span className="inline-flex items-center gap-1.5">
+                      <TableCell className="text-sm text-[#e8eaed] whitespace-normal">
+                        <span className="inline-flex items-center gap-1.5 font-semibold">
                           {buka
                             ? <ChevronDown className="h-4 w-4 text-[#e5c17b]" />
                             : <ChevronRight className="h-4 w-4 text-[#9aa0a6]" />}
                           Bayar upah {baris.items.length} karyawan
                         </span>
-                      </TableCell>
-                      <TableCell className="text-sm text-[#9aa0a6] font-mono">-</TableCell>
-                      <TableCell>
-                        {baris.poNo.length ? (
-                          <div className="flex flex-wrap gap-1">
+                        {baris.poNo.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1 pl-5">
                             {baris.poNo.map(p => (
-                              <span key={p} className="bg-[#2A2D31] text-[#9aa0a6] text-[10px] px-1.5 py-0.5 rounded border border-[#3A3D41] font-mono">
+                              <span key={p} className="bg-[#2A2D31] text-[#e5c17b] text-[10px] px-1.5 py-0.5 rounded border border-[#3A3D41] font-mono">
                                 {p}
                               </span>
                             ))}
                           </div>
-                        ) : (
-                          <span className="text-[#5f6368] text-xs">-</span>
                         )}
                       </TableCell>
-                      <TableCell className="text-sm font-bold text-right text-red-400">
+                      <TableCell className="text-sm text-right text-[#9aa0a6]">{baris.items.length} orang</TableCell>
+                      <TableCell className="text-sm text-right text-[#5f6368]">–</TableCell>
+                      <TableCell className="text-sm font-bold text-right text-red-400 whitespace-nowrap">
                         -{idrFmt(baris.total)}
                       </TableCell>
                       <TableCell className="text-center">
@@ -710,14 +853,87 @@ export default function BukuKasClient({ initialEntries, poList, overheadSubList,
                   </React.Fragment>
                 );
               }
+              if (baris.jenis === 'modal') {
+                const buka = gajiTerbuka.has(baris.key);
+                const satu = baris.keluar.length === 1 ? baris.keluar[0] : null;
+                const [nama, catatan] = satu ? pecahKet(satu.keterangan) : [`Sisa bahan lama — ${baris.keluar.length} bahan`, ''];
+                const anggota = [...baris.masuk, ...baris.keluar];
+                return (
+                  <React.Fragment key={baris.key}>
+                    <TableRow
+                      onClick={() => toggleGaji(baris.key)}
+                      className="border-[#2A2D31] hover:bg-[#1A1C1E] cursor-pointer"
+                      title={buka ? 'Tutup rincian' : `Lihat ${anggota.length} jurnal (masuk & keluar)`}
+                    >
+                      <TableCell className="text-sm text-[#e8eaed] whitespace-nowrap align-top py-2.5">
+                        <div>{dateFmt(baris.tanggal)}</div>
+                        <div className="text-[11px] text-[#9aa0a6]">{hariFmt(baris.tanggal)}</div>
+                      </TableCell>
+                      <TableCell className="align-top py-2.5">
+                        <span className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-bold bg-[#e5c17b]/10 text-[#e5c17b] border-[#e5c17b]/20">
+                          ⇄ Modal
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-sm text-[#9aa0a6] align-top py-2.5">
+                        <div>Modal Barang</div>
+                        <div className="text-[11px] text-[#5f6368]">bukan uang kas</div>
+                      </TableCell>
+                      <TableCell className="text-sm min-w-[220px] max-w-[360px] whitespace-normal break-words align-top py-2.5">
+                        <div className="font-semibold text-[#e8eaed] leading-snug inline-flex items-start gap-1.5">
+                          {buka
+                            ? <ChevronDown className="h-4 w-4 mt-0.5 shrink-0 text-[#e5c17b]" />
+                            : <ChevronRight className="h-4 w-4 mt-0.5 shrink-0 text-[#9aa0a6]" />}
+                          <span>{nama}</span>
+                        </div>
+                        {catatan && <div className="text-[11px] text-[#9aa0a6] leading-snug mt-0.5 pl-5">{catatan}</div>}
+                        <div className="flex flex-wrap gap-1 mt-1 pl-5">
+                          <span className="bg-[#1E2124] text-[#9aa0a6] text-[10px] px-1.5 py-0.5 rounded border border-[#2A2D31] font-mono">{REF_MODAL}</span>
+                          <span className="text-[10px] text-[#5f6368]">{anggota.length} jurnal</span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-sm text-right whitespace-nowrap align-top py-2.5 text-[#e8eaed]">
+                        {satu ? qtyFmt(satu) : '–'}
+                      </TableCell>
+                      <TableCell className="text-sm text-right whitespace-nowrap align-top py-2.5 text-[#9aa0a6]">
+                        {satu ? hargaSatuanFmt(satu) : '–'}
+                      </TableCell>
+                      <TableCell className="text-right whitespace-nowrap align-top py-2.5">
+                        <div className="text-sm font-bold text-[#e5c17b]">{idrFmt(baris.total)}</div>
+                        <div className="text-[10px] text-[#9aa0a6]">netral kas</div>
+                      </TableCell>
+                      <TableCell className="text-center align-top py-1.5 text-[11px] text-[#5f6368]">
+                        {buka ? 'tutup' : 'rincian'}
+                      </TableCell>
+                    </TableRow>
+                    {buka && anggota.map(item => (
+                      <TableRow key={item.id} className="border-[#2A2D31] bg-[#131517] hover:bg-[#1A1C1E]">
+                        <TableCell />
+                        <TableCell className="align-top py-2.5">
+                          <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold ${
+                            item.tipe === 'masuk'
+                              ? 'bg-green-500/10 text-green-400 border-green-500/20'
+                              : 'bg-red-500/10 text-red-400 border-red-500/20'
+                          }`}>
+                            {item.tipe === 'masuk' ? 'Masuk' : 'Keluar'}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-xs text-[#9aa0a6] align-top py-2.5">{item.kategori}</TableCell>
+                        {selKet(item)}
+                        {selAngka(item, true)}
+                        {selAksi(item)}
+                      </TableRow>
+                    ))}
+                  </React.Fragment>
+                );
+              }
               const entry = baris.entry;
               return (
               <TableRow key={entry.id} className="border-[#2A2D31] hover:bg-[#1A1C1E]">
-                <TableCell className="text-sm text-[#e8eaed] whitespace-nowrap">
+                <TableCell className="text-sm text-[#e8eaed] whitespace-nowrap align-top py-2.5">
                   <div>{dateFmt(entry.tanggal)}</div>
                   <div className="text-[11px] text-[#9aa0a6]">{hariFmt(entry.tanggal)}</div>
                 </TableCell>
-                <TableCell>
+                <TableCell className="align-top py-2.5">
                   <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-bold ${
                     entry.tipe === 'masuk'
                       ? 'bg-green-500/10 text-green-400 border-green-500/20'
@@ -726,68 +942,15 @@ export default function BukuKasClient({ initialEntries, poList, overheadSubList,
                     {entry.tipe === 'masuk' ? 'Masuk' : 'Keluar'}
                   </span>
                 </TableCell>
-                <TableCell className="text-sm text-[#9aa0a6]">
+                <TableCell className="text-sm text-[#9aa0a6] align-top py-2.5">
                   <div>{entry.kategori}</div>
                   {entry.overhead_sub_nama && (
                     <div className="text-[11px] text-[#e5c17b]">{entry.overhead_sub_nama}</div>
                   )}
                 </TableCell>
-                <TableCell className="text-sm text-[#e8eaed] max-w-[200px] truncate">
-                  {entry.keterangan}
-                </TableCell>
-                <TableCell className="text-sm text-[#9aa0a6] font-mono">
-                  {entry.no_referensi ?? '-'}
-                </TableCell>
-                <TableCell>
-                  {entry.po_no ? (
-                    <span className="bg-[#2A2D31] text-[#9aa0a6] text-[10px] px-1.5 py-0.5 rounded border border-[#3A3D41] font-mono">
-                      {entry.po_no}
-                    </span>
-                  ) : (
-                    <span className="text-[#5f6368] text-xs">-</span>
-                  )}
-                </TableCell>
-                <TableCell className={`text-sm font-bold text-right ${
-                  entry.tipe === 'masuk' ? 'text-green-400' : 'text-red-400'
-                }`}>
-                  {entry.tipe === 'keluar' ? '-' : '+'}{idrFmt(entry.nominal)}
-                </TableCell>
-                <TableCell className="text-center whitespace-nowrap">
-                  {entry.dikunci && entry.bisa_ubah_tanggal ? (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => openUbahTanggal(entry)}
-                      className="h-8 w-8 text-[#9aa0a6] hover:text-[#e5c17b] hover:bg-[#e5c17b]/10"
-                      title="Ubah tanggal (nominal dari Stok Masuk tetap terkunci)"
-                    >
-                      <CalendarDays className="h-4 w-4" />
-                    </Button>
-                  ) : entry.dikunci ? (
-                    <span title={entry.dikunci} className="inline-flex h-8 w-8 items-center justify-center text-[#5f6368]">
-                      <Lock className="h-4 w-4" />
-                    </span>
-                  ) : (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => openEdit(entry)}
-                      className="h-8 w-8 text-[#9aa0a6] hover:text-[#e5c17b] hover:bg-[#e5c17b]/10"
-                      title="Edit"
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                  )}
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => setDeleteTarget(entry)}
-                    className="h-8 w-8 text-[#9aa0a6] hover:text-red-400 hover:bg-red-400/10"
-                    title="Hapus"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </TableCell>
+                {selKet(entry)}
+                {selAngka(entry)}
+                {selAksi(entry)}
               </TableRow>
               );
             })}
@@ -1074,6 +1237,11 @@ export default function BukuKasClient({ initialEntries, poList, overheadSubList,
                 value={form.keterangan}
                 onChange={e => setForm(f => ({ ...f, keterangan: e.target.value }))}
               />
+              {form.tipe === 'keluar' && (
+                <p className="text-[11px] text-[#5f6368] mt-1">
+                  Cukup nama barang/biaya. Qty &amp; harga tidak perlu ditulis (sudah ada kolomnya). Catatan tambahan pisahkan dengan &quot; — &quot;, contoh: <i>Benang jahit — untuk PO-0102</i>
+                </p>
+              )}
             </div>
 
             <div>
