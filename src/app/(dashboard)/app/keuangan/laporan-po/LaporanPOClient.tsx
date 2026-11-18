@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Loader2, Filter, TrendingUp, TrendingDown, Minus, Eye, X } from 'lucide-react';
+import { Loader2, Filter, Eye } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import {
@@ -17,8 +17,12 @@ import {
   type POLaporanItem,
   type POHPPDetail,
   type HPPPerSizeResult,
+  type BarisKomponen,
+  type GrupKomponen,
+  type TandaBaris,
+  type TandaPO,
 } from '@/lib/actions/keuangan/laporan-po.actions';
-import { PO_AWAL_PERIODE, poPeriodeBaru } from '@/lib/keuangan/periode-po';
+import { poPeriodeBaru } from '@/lib/keuangan/periode-po';
 
 // ─── CONSTANTS ──────────────────────────────────────────────────────────────
 
@@ -28,36 +32,47 @@ const BULAN = [
 ];
 
 const idrFmt = (n: number) =>
-  'Rp ' + Math.abs(n).toLocaleString('id-ID', { minimumFractionDigits: 0 });
+  'Rp ' + Math.round(Math.abs(n)).toLocaleString('id-ID', { minimumFractionDigits: 0 });
+
+/** Selisih bertanda: + boros (merah), − hemat (hijau) */
+const selisihFmt = (n: number) => (Math.round(n) > 0 ? '+' : Math.round(n) < 0 ? '−' : '') + idrFmt(n);
+const selisihCls = (n: number) =>
+  Math.round(n) > 0 ? 'text-red-400' : Math.round(n) < 0 ? 'text-green-400' : 'text-[#9aa0a6]';
 
 const dateFmt = (d: string) =>
-  new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+  d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
 
 const labelCls = 'block text-[10px] font-bold text-[#9aa0a6] uppercase tracking-widest mb-1';
 
-const STATUS_BADGE: Record<string, string> = {
-  hemat:     'bg-green-500/15 text-green-400 border border-green-500/30',
-  boncos:    'bg-red-500/15 text-red-400 border border-red-500/30',
-  on_budget: 'bg-[#2A2D31] text-[#9aa0a6] border border-[#3A3D41]',
+const TANDA_PO: Record<TandaPO, { label: string; cls: string }> = {
+  final:          { label: 'Final',          cls: 'bg-green-500/15 text-green-400 border border-green-500/30' },
+  berjalan:       { label: 'Berjalan',       cls: 'bg-blue-500/15 text-blue-300 border border-blue-500/30' },
+  menunggu_harga: { label: 'Menunggu harga', cls: 'bg-amber-500/15 text-amber-300 border border-amber-500/30' },
+  belum_dipotong: { label: 'Belum dipotong', cls: 'bg-[#2A2D31] text-[#9aa0a6] border border-[#3A3D41]' },
 };
 
-const STATUS_LABEL: Record<string, string> = {
-  hemat:     'HEMAT',
-  boncos:    'BONCOS',
-  on_budget: 'ON BUDGET',
+const TANDA_BARIS: Record<TandaBaris, { label: string; cls: string }> = {
+  final:          { label: 'Final',          cls: 'text-green-400' },
+  berjalan:       { label: 'Berjalan',       cls: 'text-blue-300' },
+  menunggu_harga: { label: 'Menunggu harga', cls: 'text-amber-300' },
+  belum_tercatat: { label: 'Belum tercatat', cls: 'text-[#9aa0a6]' },
+  sementara:      { label: 'Sementara',      cls: 'text-orange-300' },
 };
 
-const ROW_BG: Record<string, string> = {
-  hemat:     'bg-green-500/10 hover:bg-green-500/15',
-  boncos:    'bg-red-500/10 hover:bg-red-500/15',
-  on_budget: 'bg-[#16181A] hover:bg-[#1A1C1E]',
+const GRUP_LABEL: Record<GrupKomponen, string> = {
+  bahan:    'Kain (modal FIFO)',
+  aksesori: 'Aksesori (puring, sleting — modal FIFO)',
+  pembantu: 'Bahan pembantu (Saldo Bahan Pembantu)',
+  upah:     'Upah',
+  lain:     'Biaya lain',
+  overhead: 'Overhead produksi (pcs-hari)',
 };
 
 const JENIS_LABEL: Record<string, string> = {
-  direct_bahan: 'Pembelian Bahan',
-  direct_upah:  'Upah Produksi',
+  direct_bahan: 'Bahan',
+  direct_upah:  'Upah',
+  pembantu:     'Bahan pembantu',
   overhead:     'Overhead',
-  masuk:        'Pemasukan',
 };
 
 // ─── PROPS ──────────────────────────────────────────────────────────────────
@@ -75,49 +90,34 @@ export default function LaporanPOClient({ initialData, defaultBulan, defaultTahu
   const [filterBulan, setFilterBulan] = useState(defaultBulan);
   const [filterTahun, setFilterTahun] = useState(defaultTahun);
   const [filtering, setFiltering] = useState(false);
-  /** PO sebelum PO-0100 disembunyikan kecuali dicentang */
-  const tampilkanLama = false;
-  const jumlahLama = React.useMemo(() => data.filter(p => !poPeriodeBaru(p.no_po)).length, [data]);
-  const visible = React.useMemo(
-    () => (tampilkanLama ? data : data.filter(p => poPeriodeBaru(p.no_po))),
-    [data, tampilkanLama],
-  );
+  // PO sebelum periode baru disembunyikan permanen (permintaan user 16 Nov 2026)
+  const visible = React.useMemo(() => data.filter(p => poPeriodeBaru(p.no_po)), [data]);
 
   // ─── SORT STATE ────────────────────────────────────────────────────────
   const [sortConfig, setSortConfig] = useState<{ key: keyof POLaporanItem; direction: 'asc' | 'desc' } | null>(null);
 
   const sortedData = React.useMemo(() => {
-    let sortableItems = [...visible];
-    if (sortConfig !== null) {
-      sortableItems.sort((a, b) => {
-        if (a[sortConfig.key] < b[sortConfig.key]) {
-          return sortConfig.direction === 'asc' ? -1 : 1;
-        }
-        if (a[sortConfig.key] > b[sortConfig.key]) {
-          return sortConfig.direction === 'asc' ? 1 : -1;
-        }
+    const items = [...visible];
+    if (sortConfig) {
+      items.sort((a, b) => {
+        if (a[sortConfig.key] < b[sortConfig.key]) return sortConfig.direction === 'asc' ? -1 : 1;
+        if (a[sortConfig.key] > b[sortConfig.key]) return sortConfig.direction === 'asc' ? 1 : -1;
         return 0;
       });
     }
-    return sortableItems;
+    return items;
   }, [visible, sortConfig]);
 
   const requestSort = (key: keyof POLaporanItem) => {
-    let direction: 'asc' | 'desc' = 'asc';
-    if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
-      direction = 'desc';
-    } else if (sortConfig && sortConfig.key === key && sortConfig.direction === 'desc') {
-      setSortConfig(null);
-      return;
-    }
-    setSortConfig({ key, direction });
+    if (sortConfig?.key === key && sortConfig.direction === 'desc') { setSortConfig(null); return; }
+    setSortConfig({ key, direction: sortConfig?.key === key && sortConfig.direction === 'asc' ? 'desc' : 'asc' });
   };
 
-  const SortableHeader = ({ label, sortKey, align = 'left' }: { label: string, sortKey: keyof POLaporanItem, align?: 'left' | 'right' | 'center' }) => {
+  const kolomUrut = (label: string, sortKey: keyof POLaporanItem, align: "left" | "right" | "center" = "left") => {
     const isActive = sortConfig?.key === sortKey;
     return (
-      <TableHead 
-        className={`cursor-pointer select-none group transition-colors ${
+      <TableHead key={sortKey}
+        className={`cursor-pointer select-none group transition-colors whitespace-nowrap ${
           isActive ? 'text-[#e8eaed]' : 'text-[#9aa0a6] hover:text-[#c0c6cc]'
         }`}
         onClick={() => requestSort(sortKey)}
@@ -137,83 +137,36 @@ export default function LaporanPOClient({ initialData, defaultBulan, defaultTahu
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailData, setDetailData] = useState<POHPPDetail | null>(null);
   const [detailPO, setDetailPO] = useState<POLaporanItem | null>(null);
-  const [activeDetailTab, setActiveDetailTab] = useState<'ringkasan' | 'jurnal' | 'hpp-size'>('ringkasan');
+  const [activeDetailTab, setActiveDetailTab] = useState<'komponen' | 'jurnal' | 'hpp-size'>('komponen');
   const [hppPerSizeData, setHppPerSizeData] = useState<HPPPerSizeResult | null>(null);
   const [isLoadingHpp, setIsLoadingHpp] = useState(false);
 
   // ─── SUMMARY ───────────────────────────────────────────────────────────
-  const totalEstimasi = visible.reduce((s, p) => s + p.hpp_estimasi, 0);
-  const totalAktual   = visible.reduce((s, p) => s + p.hpp_aktual_final, 0);
-  const totalGap      = visible.reduce((s, p) => s + p.gap, 0);
-  const totalProfit   = visible.reduce((s, p) => s + p.profit_final, 0);
-  const countBoncos   = visible.filter(p => p.status === 'boncos').length;
-  const countHemat    = visible.filter(p => p.status === 'hemat').length;
-  const countOnBudget = visible.filter(p => p.status === 'on_budget').length;
+  const jml = (f: (p: POLaporanItem) => number) => visible.reduce((s, p) => s + f(p), 0);
+  const totalPerkiraan = jml(p => p.perkiraan);
+  const totalAktual    = jml(p => p.aktual);
+  const totalSisa      = jml(p => p.sisa);
+  const totalSelisih   = jml(p => p.selisih);
+  const totalLaba      = jml(p => p.profit_final);
+  const adaSementara   = visible.some(p => p.overhead_sementara);
+  const hitungTanda = (t: TandaPO) => visible.filter(p => p.tanda === t).length;
 
   const summaryCards = [
-    {
-      label: 'Total HPP Estimasi',
-      value: idrFmt(totalEstimasi),
-      color: 'text-[#e8eaed]',
-      icon: <Minus className="h-4 w-4 text-[#9aa0a6]" />
-    },
-    {
-      label: 'Total HPP Aktual',
-      value: idrFmt(totalAktual),
-      color: totalAktual > totalEstimasi ? 'text-red-400' : 'text-green-400',
-      icon: totalAktual > totalEstimasi
-        ? <TrendingUp className="h-4 w-4 text-red-400" />
-        : <TrendingDown className="h-4 w-4 text-green-400" />
-    },
-    {
-      label: 'Total Gap',
-      value: (totalGap > 0 ? '+' : '') + idrFmt(totalGap),
-      color: totalGap > 0 ? 'text-red-400' : totalGap < 0 ? 'text-green-400' : 'text-[#9aa0a6]',
-      icon: null
-    },
-    {
-      label: 'Total Profit (incl. Overhead)',
-      value: (totalProfit >= 0 ? '' : '-') + idrFmt(totalProfit),
-      color: totalProfit > 0 ? 'text-green-400' : totalProfit < 0 ? 'text-red-400' : 'text-[#9aa0a6]',
-      icon: totalProfit > 0
-        ? <TrendingUp className="h-4 w-4 text-green-400" />
-        : totalProfit < 0
-          ? <TrendingDown className="h-4 w-4 text-red-400" />
-          : null
-    },
-    {
-      label: 'Distribusi Status',
-      value: null,
-      color: '',
-      icon: null,
-      custom: (
-        <div className="flex gap-2 mt-1 flex-wrap">
-          <span className="text-xs bg-red-500/15 text-red-400 border border-red-500/30 px-2 py-0.5 rounded-full font-bold">
-            {countBoncos} Boncos
-          </span>
-          <span className="text-xs bg-[#2A2D31] text-[#9aa0a6] border border-[#3A3D41] px-2 py-0.5 rounded-full font-bold">
-            {countOnBudget} On Budget
-          </span>
-          <span className="text-xs bg-green-500/15 text-green-400 border border-green-500/30 px-2 py-0.5 rounded-full font-bold">
-            {countHemat} Hemat
-          </span>
-        </div>
-      )
-    },
+    { label: 'Perkiraan (HPP × dipotong)', value: idrFmt(totalPerkiraan), color: 'text-[#e8eaed]' },
+    { label: 'Aktual sejauh ini',          value: idrFmt(totalAktual),    color: 'text-[#e8eaed]' },
+    { label: 'Sisa perkiraan',             value: idrFmt(totalSisa),      color: 'text-blue-300' },
+    { label: 'Selisih',                    value: selisihFmt(totalSelisih), color: selisihCls(totalSelisih) },
+    { label: 'Laba (Kinerja)',             value: (totalLaba < 0 ? '−' : '') + idrFmt(totalLaba),
+      color: totalLaba > 0 ? 'text-green-400' : totalLaba < 0 ? 'text-red-400' : 'text-[#9aa0a6]' },
   ];
 
   // ─── FILTER ────────────────────────────────────────────────────────────
-  // bulan/tahun boleh diberikan langsung (mis. dari Reset) agar tidak memakai state lama
   const handleFilter = async (bulan = filterBulan, tahun = filterTahun) => {
     setFiltering(true);
     try {
-      const result = await getLaporanPOList({
-        bulan: bulan || undefined,
-        tahun: tahun || undefined,
-      });
-      setData(result);
-    } catch (e: any) {
-      toast.error(e.message || 'Gagal memuat data');
+      setData(await getLaporanPOList({ bulan: bulan || undefined, tahun: tahun || undefined }));
+    } catch (e) {
+      toast.error((e as Error).message || "Gagal memuat data");
     } finally {
       setFiltering(false);
     }
@@ -224,14 +177,13 @@ export default function LaporanPOClient({ initialData, defaultBulan, defaultTahu
     setDetailPO(po);
     setDetailData(null);
     setHppPerSizeData(null);
-    setActiveDetailTab('ringkasan');
+    setActiveDetailTab('komponen');
     setDetailOpen(true);
     setDetailLoading(true);
     try {
-      const result = await getPOHPPDetail(po.po_id);
-      setDetailData(result);
-    } catch (e: any) {
-      toast.error('Gagal memuat detail: ' + e.message);
+      setDetailData(await getPOHPPDetail(po.po_id));
+    } catch (e) {
+      toast.error("Gagal memuat detail: " + (e as Error).message);
       setDetailOpen(false);
     } finally {
       setDetailLoading(false);
@@ -243,8 +195,7 @@ export default function LaporanPOClient({ initialData, defaultBulan, defaultTahu
     if (!hppPerSizeData && detailPO) {
       setIsLoadingHpp(true);
       try {
-        const data = await getPOHPPPerSizeResult(detailPO.po_id);
-        setHppPerSizeData(data);
+        setHppPerSizeData(await getPOHPPPerSizeResult(detailPO.po_id));
       } catch {
         toast.error('Gagal memuat HPP per size');
       } finally {
@@ -257,33 +208,48 @@ export default function LaporanPOClient({ initialData, defaultBulan, defaultTahu
   return (
     <div className="space-y-6">
 
-      {/* Info: cara hitung biaya tidak langsung */}
-      <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300/90 leading-relaxed">
-        <b className="text-amber-300">Menu ini untuk kontrol biaya: patokan HPP vs biaya aktual.</b>{' '}
-        Patokan = HPP di sheet × qty order. Aktual = kain, puring, sleting & aksesori yang terpakai (FIFO) + upah yang sudah dikerjakan.
-        Status hemat/boros membandingkan keduanya. Overhead & laba per PO memakai angka yang sama dengan <b>Kinerja Keuangan</b>
-        (overhead aktual dibagi ke pcs yang dipotong; laba sudah termasuk perkiraan upah tahap yang belum dikerjakan).
+      {/* Info cara hitung */}
+      <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300/90 leading-relaxed space-y-1">
+        <p>
+          <b className="text-amber-300">Perkiraan</b> = HPP di sheet × pcs yang <b>dipotong</b>.{' '}
+          <b className="text-amber-300">Aktual sejauh ini</b> = kain, puring & sleting (modal FIFO) + bahan pembantu
+          (Saldo Bahan Pembantu) + upah tercatat (lunas & terutang) + overhead produksi metode pcs-hari.{' '}
+          <b className="text-amber-300">Sisa perkiraan</b> = bagian HPP untuk pcs yang biayanya belum tercatat
+          (tahap belum selesai, aksesori menunggu harga). <b className="text-amber-300">Selisih</b> = aktual + sisa − perkiraan
+          (<span className="text-red-400">+ boros</span>, <span className="text-green-400">− hemat</span>).
+        </p>
+        <p>Laba memakai angka yang sama dengan <b>Kinerja Keuangan</b>.</p>
+        {adaSementara && (
+          <p className="text-orange-300">
+            ⚠ Overhead bulan berjalan masih <b>sementara</b>; angkanya final setelah bulan tutup.
+          </p>
+        )}
       </div>
 
       {/* Summary Bar */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
         {summaryCards.map(card => (
           <div key={card.label} className="p-4 rounded-xl bg-[#1A1D1F] border border-[#2A2D31]">
-            <div className="flex items-center justify-between mb-1">
-              <p className="text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold">{card.label}</p>
-              {card.icon}
-            </div>
-            {card.custom ? card.custom : (
-              <p className={`text-sm font-bold ${card.color}`}>{card.value}</p>
-            )}
+            <p className="text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold mb-1">{card.label}</p>
+            <p className={`text-sm font-bold ${card.color}`}>{card.value}</p>
           </div>
         ))}
+        <div className="p-4 rounded-xl bg-[#1A1D1F] border border-[#2A2D31]">
+          <p className="text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold mb-1">Status PO</p>
+          <div className="flex gap-1.5 flex-wrap">
+            {(['final', 'berjalan', 'menunggu_harga'] as TandaPO[]).map(t => (
+              <span key={t} className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${TANDA_PO[t].cls}`}>
+                {hitungTanda(t)} {TANDA_PO[t].label}
+              </span>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* Filter Bar */}
       <div className="flex flex-wrap gap-3 items-end p-4 rounded-xl bg-[#1A1D1F] border border-[#2A2D31]">
         <div>
-          <p className={labelCls}>Bulan</p>
+          <p className={labelCls}>Bulan order</p>
           <select
             className="h-9 px-3 rounded-lg bg-[#1E2124] border border-[#2A2D31] text-sm text-[#e8eaed] outline-none focus:ring-1 focus:ring-[#e5c17b]"
             value={filterBulan}
@@ -309,9 +275,7 @@ export default function LaporanPOClient({ initialData, defaultBulan, defaultTahu
           disabled={filtering}
           className="h-9 bg-[#2A2D31] text-[#e8eaed] hover:bg-[#3A3D41] text-xs"
         >
-          {filtering
-            ? <Loader2 className="h-4 w-4 animate-spin mr-1" />
-            : <Filter className="h-4 w-4 mr-1" />}
+          {filtering ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Filter className="h-4 w-4 mr-1" />}
           Terapkan Filter
         </Button>
         <Button
@@ -321,26 +285,26 @@ export default function LaporanPOClient({ initialData, defaultBulan, defaultTahu
         >
           Reset
         </Button>
-        {/* PO sebelum periode baru disembunyikan permanen (permintaan user 16 Nov 2026) */}
       </div>
 
       {/* Tabel */}
-      <div className="rounded-xl border border-[#2A2D31] overflow-hidden bg-[#16181A]">
+      <div className="rounded-xl border border-[#2A2D31] overflow-x-auto bg-[#16181A]">
         <Table>
           <TableHeader className="bg-[#1A1C1E]">
             <TableRow className="border-[#2A2D31] hover:bg-transparent">
-              <SortableHeader label="No. PO" sortKey="no_po" />
+              {kolomUrut("No. PO", "no_po")}
               <TableHead className="text-[#9aa0a6]">Klien</TableHead>
-              <SortableHeader label="Tanggal" sortKey="tanggal" />
-              <SortableHeader label="QTY" sortKey="total_qty" align="right" />
-              <SortableHeader label="Qty Shipped" sortKey="qty_shipped" align="right" />
-              <SortableHeader label="HPP Estimasi" sortKey="hpp_estimasi" align="right" />
-              <SortableHeader label="HPP Aktual" sortKey="hpp_aktual" align="right" />
-              <SortableHeader label="Overhead" sortKey="alokasi_overhead" align="right" />
-              <SortableHeader label="Gap" sortKey="gap" align="right" />
-              <SortableHeader label="Nilai Project" sortKey="nilai_project" align="right" />
-              <SortableHeader label="Profit" sortKey="profit_final" align="right" />
-              <SortableHeader label="Margin" sortKey="margin_pct_final" align="right" />
+              {kolomUrut("Tanggal", "tanggal")}
+              {kolomUrut("Order", "total_qty", "right")}
+              {kolomUrut("Dipotong", "pcs_potong", "right")}
+              {kolomUrut("Dikirim", "qty_shipped", "right")}
+              {kolomUrut("Perkiraan", "perkiraan", "right")}
+              {kolomUrut("Aktual", "aktual", "right")}
+              {kolomUrut("Sisa", "sisa", "right")}
+              {kolomUrut("Selisih", "selisih", "right")}
+              {kolomUrut("Nilai Jual", "nilai_project", "right")}
+              {kolomUrut("Laba", "profit_final", "right")}
+              {kolomUrut("Margin", "margin_pct_final", "right")}
               <TableHead className="text-[#9aa0a6] text-center">Status</TableHead>
               <TableHead className="text-[#9aa0a6] w-20 text-center">Aksi</TableHead>
             </TableRow>
@@ -348,147 +312,89 @@ export default function LaporanPOClient({ initialData, defaultBulan, defaultTahu
           <TableBody>
             {sortedData.length === 0 ? (
               <TableRow className="hover:bg-transparent border-[#2A2D31]">
-                <TableCell colSpan={14} className="h-32 text-center text-[#5f6368]">
-                  Belum ada data PO
-                </TableCell>
+                <TableCell colSpan={15} className="h-32 text-center text-[#5f6368]">Belum ada data PO</TableCell>
               </TableRow>
-            ) : sortedData.map(po => (
-              <TableRow
-                key={po.po_id}
-                className={`border-[#2A2D31] ${ROW_BG[po.status]}`}
-              >
-                {/* No. PO */}
-                <TableCell className="font-mono text-sm text-[#e5c17b] font-bold">
-                  {po.no_po}
-                </TableCell>
-
-                {/* Klien */}
-                <TableCell className="text-sm text-[#e8eaed]">
-                  {po.klien_nama}
-                </TableCell>
-
-                {/* Tanggal */}
-                <TableCell className="text-sm text-[#9aa0a6] whitespace-nowrap">
-                  {dateFmt(po.tanggal)}
-                </TableCell>
-
-                {/* QTY */}
-                <TableCell className="text-sm text-[#e8eaed] text-right">
-                  {po.total_qty.toLocaleString('id-ID')} pcs
-                </TableCell>
-
-                {/* QTY Shipped */}
-                <TableCell className="text-sm text-[#e8eaed] text-right">
-                  {po.qty_shipped > 0 ? (
-                    <span>{po.qty_shipped.toLocaleString('id-ID')} pcs</span>
-                  ) : (
-                    <span className="text-[#5f6368]">-</span>
-                  )}
-                </TableCell>
-
-                <TableCell className="text-sm text-right">
-                  <span className="text-[#e8eaed]">{idrFmt(po.hpp_estimasi)}</span>
-                </TableCell>
-
-                {/* HPP Aktual */}
-                <TableCell className="text-sm text-right">
-                  {po.hpp_aktual === 0 ? (
-                    <span className="text-[#5f6368] text-xs">Belum ada biaya tercatat</span>
-                  ) : (
-                    <span className="text-[#e8eaed]">{idrFmt(po.hpp_aktual)}</span>
-                  )}
-                </TableCell>
-
-                {/* Alokasi OH */}
-                <TableCell className="text-sm text-right">
-                  {po.alokasi_overhead > 0 ? (
-                    <span className="text-orange-400">{idrFmt(po.alokasi_overhead)}</span>
-                  ) : (
-                    <span className="text-[#5f6368]">-</span>
-                  )}
-                </TableCell>
-
-                {/* Gap */}
-                <TableCell className="text-sm font-semibold text-right">
-                  {po.hpp_aktual === 0 ? (
-                    <span className="text-[#5f6368]">-</span>
-                  ) : (
-                    <span className={po.gap > 0 ? 'text-red-400' : po.gap < 0 ? 'text-green-400' : 'text-[#9aa0a6]'}>
-                      {po.gap > 0 ? '+' : ''}{idrFmt(po.gap)}
+            ) : sortedData.map(po => {
+              const kosong = po.tanda === 'belum_dipotong';
+              return (
+                <TableRow key={po.po_id} className="border-[#2A2D31] bg-[#16181A] hover:bg-[#1A1C1E]">
+                  <TableCell className="font-mono text-sm text-[#e5c17b] font-bold">{po.no_po}</TableCell>
+                  <TableCell className="text-sm text-[#e8eaed]">{po.klien_nama}</TableCell>
+                  <TableCell className="text-sm text-[#9aa0a6] whitespace-nowrap">{dateFmt(po.tanggal)}</TableCell>
+                  <TableCell className="text-sm text-[#9aa0a6] text-right">{po.total_qty.toLocaleString('id-ID')}</TableCell>
+                  <TableCell className="text-sm text-[#e8eaed] text-right">{po.pcs_potong > 0 ? po.pcs_potong.toLocaleString('id-ID') : '—'}</TableCell>
+                  <TableCell className="text-sm text-[#e8eaed] text-right">{po.qty_shipped > 0 ? po.qty_shipped.toLocaleString('id-ID') : '—'}</TableCell>
+                  <TableCell className="text-sm text-right text-[#e8eaed] whitespace-nowrap">{kosong ? '—' : idrFmt(po.perkiraan)}</TableCell>
+                  <TableCell className="text-sm text-right text-[#e8eaed] whitespace-nowrap">
+                    {kosong ? '—' : idrFmt(po.aktual)}
+                    {po.overhead_sementara && <span className="block text-[10px] text-orange-300">overhead sementara</span>}
+                  </TableCell>
+                  <TableCell className="text-sm text-right text-blue-300 whitespace-nowrap">{kosong || Math.round(po.sisa) === 0 ? '—' : idrFmt(po.sisa)}</TableCell>
+                  <TableCell className={`text-sm font-semibold text-right whitespace-nowrap ${selisihCls(po.selisih)}`}>
+                    {kosong ? '—' : selisihFmt(po.selisih)}
+                  </TableCell>
+                  <TableCell className="text-sm text-right whitespace-nowrap">
+                    {po.nilai_project === 0
+                      ? <span className="text-orange-400 text-xs">Harga jual belum diset</span>
+                      : <span className="text-[#e8eaed]">{idrFmt(po.nilai_project)}</span>}
+                  </TableCell>
+                  <TableCell className="text-sm font-semibold text-right whitespace-nowrap">
+                    {po.nilai_project === 0 || kosong ? <span className="text-[#5f6368]">—</span> : (
+                      <span className={po.profit_final > 0 ? 'text-green-400' : po.profit_final < 0 ? 'text-red-400' : 'text-[#9aa0a6]'}>
+                        {po.profit_final < 0 ? '−' : ''}{idrFmt(po.profit_final)}
+                      </span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-sm font-bold text-right">
+                    {po.nilai_project === 0 || kosong ? <span className="text-[#5f6368]">—</span> : (
+                      <span className={po.margin_pct_final > 0 ? 'text-green-400' : po.margin_pct_final < 0 ? 'text-red-400' : 'text-[#9aa0a6]'}>
+                        {po.margin_pct_final}%
+                      </span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-center">
+                    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider whitespace-nowrap ${TANDA_PO[po.tanda].cls}`}>
+                      {TANDA_PO[po.tanda].label}
                     </span>
-                  )}
-                </TableCell>
-
-                {/* Nilai Project */}
-                <TableCell className="text-sm text-right">
-                  {po.nilai_project === 0 ? (
-                    <span className="text-orange-400 text-xs">Harga jual belum diset</span>
-                  ) : (
-                    <span className="text-[#e8eaed]">{idrFmt(po.nilai_project)}</span>
-                  )}
-                </TableCell>
-
-                {/* Profit */}
-                <TableCell className="text-sm font-semibold text-right">
-                  {po.nilai_project === 0 ? (
-                    <span className="text-[#5f6368]">-</span>
-                  ) : (
-                    <span className={po.profit_final > 0 ? 'text-green-400' : po.profit_final < 0 ? 'text-red-400' : 'text-[#9aa0a6]'}>
-                      {po.profit_final > 0 ? '+' : po.profit_final < 0 ? '-' : ''}{idrFmt(po.profit_final)}
-                    </span>
-                  )}
-                </TableCell>
-
-                {/* Margin */}
-                <TableCell className="text-sm font-bold text-right">
-                  {po.nilai_project === 0 ? (
-                    <span className="text-[#5f6368]">-</span>
-                  ) : (
-                    <span className={po.margin_pct_final > 0 ? 'text-green-400' : po.margin_pct_final < 0 ? 'text-red-400' : 'text-[#9aa0a6]'}>
-                      {po.margin_pct_final}%
-                    </span>
-                  )}
-                </TableCell>
-
-                {/* Status Badge */}
-                <TableCell className="text-center">
-                  <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${STATUS_BADGE[po.status]}`}>
-                    {STATUS_LABEL[po.status]}
-                  </span>
-                </TableCell>
-
-                {/* Aksi */}
-                <TableCell className="text-center">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleOpenDetail(po)}
-                    className="h-7 px-2 text-xs text-[#9aa0a6] hover:text-[#e8eaed] hover:bg-[#2A2D31]"
-                  >
-                    <Eye className="h-3.5 w-3.5 mr-1" />
-                    Detail
-                  </Button>
-                </TableCell>
-              </TableRow>
-            ))}
+                  </TableCell>
+                  <TableCell className="text-center">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={kosong}
+                      onClick={() => handleOpenDetail(po)}
+                      className="h-7 px-2 text-xs text-[#9aa0a6] hover:text-[#e8eaed] hover:bg-[#2A2D31]"
+                    >
+                      <Eye className="h-3.5 w-3.5 mr-1" />
+                      Detail
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
           </TableBody>
         </Table>
       </div>
 
       {/* ─── MODAL DETAIL ──────────────────────────────────────────────────── */}
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
-        <DialogContent className="bg-[#16181A] border-[#2A2D31] text-[#e8eaed] sm:max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="bg-[#16181A] border-[#2A2D31] text-[#e8eaed] sm:max-w-5xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
+            <DialogTitle className="flex items-center gap-2 flex-wrap">
               <span className="font-mono text-[#e5c17b]">{detailPO?.no_po}</span>
               <span className="text-[#9aa0a6] font-normal text-sm">— {detailPO?.klien_nama}</span>
+              {detailData && (
+                <span className={`ml-2 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${TANDA_PO[detailData.totals.tanda].cls}`}>
+                  {TANDA_PO[detailData.totals.tanda].label}
+                </span>
+              )}
             </DialogTitle>
           </DialogHeader>
 
           {detailLoading ? (
             <div className="flex items-center justify-center h-40">
               <Loader2 className="h-6 w-6 animate-spin text-[#e5c17b]" />
-              <span className="ml-2 text-sm text-[#9aa0a6]">Memuat detail HPP...</span>
+              <span className="ml-2 text-sm text-[#9aa0a6]">Memuat detail...</span>
             </div>
           ) : detailData ? (
             <div className="space-y-4 py-2">
@@ -496,17 +402,13 @@ export default function LaporanPOClient({ initialData, defaultBulan, defaultTahu
               {/* ── Tab Bar ── */}
               <div className="flex border-b border-[#3a3d41] mb-1">
                 {[
-                  { key: 'ringkasan', label: 'Ringkasan' },
-                  { key: 'jurnal',    label: 'Jurnal Aktual' },
-                  { key: 'hpp-size',  label: 'HPP per Size' },
+                  { key: 'komponen', label: 'Per Komponen' },
+                  { key: 'jurnal',   label: 'Rincian Aktual' },
+                  { key: 'hpp-size', label: 'HPP per Size' },
                 ].map(tab => (
                   <button
                     key={tab.key}
-                    onClick={() =>
-                      tab.key === 'hpp-size'
-                        ? handleHppTabClick()
-                        : setActiveDetailTab(tab.key as 'ringkasan' | 'jurnal')
-                    }
+                    onClick={() => tab.key === 'hpp-size' ? handleHppTabClick() : setActiveDetailTab(tab.key as 'komponen' | 'jurnal')}
                     className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${
                       activeDetailTab === tab.key
                         ? 'border-[#e5c17b] text-[#e5c17b]'
@@ -518,23 +420,15 @@ export default function LaporanPOClient({ initialData, defaultBulan, defaultTahu
                 ))}
               </div>
 
-              {/* ── TAB 1: RINGKASAN ── */}
-              {activeDetailTab === 'ringkasan' && (
+              {/* ── TAB 1: PER KOMPONEN ── */}
+              {activeDetailTab === 'komponen' && (
                 <div className="space-y-4">
-                  {/* Totals cards */}
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                     {[
-                      { label: 'HPP Estimasi',       value: idrFmt(detailData.totals.hpp_estimasi),    color: 'text-[#e8eaed]' },
-                      { label: 'Biaya Bahan',         value: idrFmt(detailData.totals.biaya_bahan),     color: 'text-blue-400' },
-                      { label: 'Biaya Upah',           value: idrFmt(detailData.totals.biaya_upah),      color: 'text-purple-400' },
-                      { label: 'Alokasi Overhead',    value: idrFmt(detailData.totals.alokasi_overhead),color: 'text-amber-400' },
-                      { label: 'HPP Aktual (Direct)', value: idrFmt(detailData.totals.hpp_aktual),      color: 'text-[#e8eaed]' },
-                      { label: 'HPP Aktual Final',    value: idrFmt(detailData.totals.hpp_aktual_final),color: 'text-[#e5c17b]' },
-                      {
-                        label: 'Gap',
-                        value: (detailData.totals.gap > 0 ? '+' : '') + idrFmt(detailData.totals.gap),
-                        color: detailData.totals.gap > 0 ? 'text-red-400' : detailData.totals.gap < 0 ? 'text-green-400' : 'text-[#9aa0a6]'
-                      },
+                      { label: 'Perkiraan',         value: idrFmt(detailData.totals.perkiraan), color: 'text-[#e8eaed]' },
+                      { label: 'Aktual sejauh ini', value: idrFmt(detailData.totals.aktual),    color: 'text-[#e8eaed]' },
+                      { label: 'Sisa perkiraan',    value: idrFmt(detailData.totals.sisa),      color: 'text-blue-300' },
+                      { label: 'Selisih',           value: selisihFmt(detailData.totals.selisih), color: selisihCls(detailData.totals.selisih) },
                     ].map(c => (
                       <div key={c.label} className="p-3 rounded-lg bg-[#1A1D1F] border border-[#2A2D31]">
                         <p className="text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold mb-1">{c.label}</p>
@@ -542,45 +436,14 @@ export default function LaporanPOClient({ initialData, defaultBulan, defaultTahu
                       </div>
                     ))}
                   </div>
-
-                  {/* BOM Estimasi Breakdown */}
-                  {detailData.estimasi_breakdown.length > 0 && (
-                    <div>
-                      <h3 className="text-xs font-bold text-[#9aa0a6] uppercase tracking-widest mb-2">Breakdown Estimasi (BOM)</h3>
-                      <div className="rounded-lg border border-[#2A2D31] overflow-hidden">
-                        <table className="w-full text-sm">
-                          <thead className="bg-[#1A1C1E]">
-                            <tr>
-                              <th className="text-left p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider">Komponen</th>
-                              <th className="text-left p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider">Kategori</th>
-                              <th className="text-left p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider">Detail</th>
-                              <th className="text-right p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider">Total</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {detailData.estimasi_breakdown.map((row, i) => (
-                              <tr key={i} className="border-t border-[#2A2D31]">
-                                <td className="p-2.5 text-[#e8eaed]">{row.nama_komponen}</td>
-                                <td className="p-2.5 text-[#9aa0a6] text-xs capitalize">{row.kategori}</td>
-                                <td className="p-2.5 text-[#9aa0a6] text-xs whitespace-nowrap">
-                                  {row.qty_order} pcs × @{idrFmt(row.harga_per_unit)}
-                                </td>
-                                <td className="p-2.5 text-right text-[#e8eaed]">{idrFmt(row.total)}</td>
-                              </tr>
-                            ))}
-                            <tr className="border-t-2 border-[#2A2D31] bg-[#1A1C1E]">
-                              <td colSpan={3} className="p-2.5 font-bold text-[#9aa0a6] text-xs uppercase">Total Estimasi</td>
-                              <td className="p-2.5 text-right font-bold text-[#e8eaed]">{idrFmt(detailData.totals.hpp_estimasi)}</td>
-                            </tr>
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
+                  {detailData.totals.overhead_sementara && (
+                    <p className="text-xs text-orange-300">⚠ Overhead bulan berjalan masih sementara (final setelah bulan tutup).</p>
                   )}
+                  <TabelKomponen baris={detailData.baris} />
                 </div>
               )}
 
-              {/* ── TAB 2: JURNAL AKTUAL ── */}
+              {/* ── TAB 2: RINCIAN AKTUAL ── */}
               {activeDetailTab === 'jurnal' && (
                 <div>
                   {detailData.aktual_breakdown.length === 0 ? (
@@ -595,38 +458,31 @@ export default function LaporanPOClient({ initialData, defaultBulan, defaultTahu
                             <th className="text-left p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider">Tanggal</th>
                             <th className="text-left p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider">Keterangan</th>
                             <th className="text-left p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider">Jenis</th>
-                            <th className="text-right p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider">Nominal (PO ini)</th>
+                            <th className="text-right p-2.5 text-[#9aa0a6] text-xs font-bold uppercase tracking-wider">Nominal</th>
                           </tr>
                         </thead>
                         <tbody>
                           {detailData.aktual_breakdown.map((row, i) => (
                             <tr key={i} className="border-t border-[#2A2D31] hover:bg-[#1A1C1E]/50">
                               <td className="p-2.5 text-[#9aa0a6] whitespace-nowrap text-xs">{dateFmt(row.tanggal)}</td>
-                              <td className="p-2.5 text-[#e8eaed] max-w-[220px]">
-                                <span className="truncate block">{row.keterangan}</span>
-                                {row.nominal_penuh !== row.nominal_po && (
-                                  <span className="text-[10px] text-[#5f6368] block">
-                                    dari {idrFmt(row.nominal_penuh)} ÷ {Math.round(row.nominal_penuh / row.nominal_po)} PO
-                                  </span>
-                                )}
-                              </td>
+                              <td className="p-2.5 text-[#e8eaed]">{row.keterangan}</td>
                               <td className="p-2.5">
-                                <span className={`text-xs px-2 py-0.5 rounded border ${
-                                  row.jenis === 'overhead'
+                                <span className={`text-xs px-2 py-0.5 rounded border whitespace-nowrap ${
+                                  row.jenis === 'overhead' || row.jenis === 'pembantu'
                                     ? 'bg-amber-500/15 text-amber-400 border-amber-500/30'
                                     : 'bg-[#2A2D31] text-[#9aa0a6] border-[#3A3D41]'
                                 }`}>
                                   {JENIS_LABEL[row.jenis] ?? row.jenis}
                                 </span>
                               </td>
-                              <td className="p-2.5 text-right font-semibold text-[#e8eaed]">
-                                {idrFmt(row.nominal_po)}
-                              </td>
+                              <td className="p-2.5 text-right font-semibold text-[#e8eaed] whitespace-nowrap">{idrFmt(row.nominal)}</td>
                             </tr>
                           ))}
                           <tr className="border-t-2 border-[#2A2D31] bg-[#1A1C1E]">
-                            <td colSpan={3} className="p-2.5 font-bold text-[#9aa0a6] text-xs uppercase">Total Aktual (incl. Overhead)</td>
-                            <td className="p-2.5 text-right font-bold text-[#e5c17b]">{idrFmt(detailData.totals.hpp_aktual_final)}</td>
+                            <td colSpan={3} className="p-2.5 font-bold text-[#9aa0a6] text-xs uppercase">Total aktual sejauh ini</td>
+                            <td className="p-2.5 text-right font-bold text-[#e5c17b]">
+                              {idrFmt(detailData.aktual_breakdown.reduce((s, r) => s + r.nominal, 0))}
+                            </td>
                           </tr>
                         </tbody>
                       </table>
@@ -644,81 +500,51 @@ export default function LaporanPOClient({ initialData, defaultBulan, defaultTahu
                     </div>
                   ) : hppPerSizeData ? (
                     <>
-                      {/* Overhead rate info */}
                       <div className="mb-4 px-3 py-2 rounded-lg bg-[#2A2D31] border border-[#3a3d41] text-xs text-[#9aa0a6]">
-                        Overhead aktual PO ini: <span className="text-[#e5c17b] font-semibold">
-                          {idrFmt(hppPerSizeData.overhead_rate_per_pcs)}/pcs
-                        </span>
+                        Biaya aktual sejauh ini per warna & size (pcs dipotong). Overhead PO ini dibagi rata:{' '}
+                        <span className="text-[#e5c17b] font-semibold">{idrFmt(hppPerSizeData.overhead_rate_per_pcs)}/pcs</span>
+                        {hppPerSizeData.overhead_sementara && <span className="text-orange-300"> (sementara)</span>}.
+                        Upah tahap yang belum dikerjakan belum termasuk.
                       </div>
-
-                      {/* Table */}
                       <div className="overflow-x-auto rounded-xl border border-[#3a3d41]">
                         <table className="w-full text-[13px]">
                           <thead>
                             <tr className="bg-[#2A2D31]">
-                              <th className="px-4 py-3 text-left text-[11px] font-semibold text-[#9aa0a6] uppercase">Warna</th>
-                              <th className="px-4 py-3 text-center text-[11px] font-semibold text-[#9aa0a6] uppercase">Size</th>
-                              <th className="px-4 py-3 text-right text-[11px] font-semibold text-[#9aa0a6] uppercase">Qty</th>
-                              <th className="px-4 py-3 text-right text-[11px] font-semibold text-[#9aa0a6] uppercase">Biaya Kain</th>
-                              <th className="px-4 py-3 text-right text-[11px] font-semibold text-[#9aa0a6] uppercase">Aksesori</th>
-                              <th className="px-4 py-3 text-right text-[11px] font-semibold text-[#9aa0a6] uppercase">Upah</th>
-                              <th className="px-4 py-3 text-right text-[11px] font-semibold text-[#9aa0a6] uppercase">Overhead</th>
-                              <th className="px-4 py-3 text-right text-[11px] font-semibold text-[#9aa0a6] uppercase">Total HPP</th>
-                              <th className="px-4 py-3 text-right text-[11px] font-semibold text-[#e5c17b] uppercase">HPP/pcs</th>
+                              {['Warna', 'Size', 'Pcs', 'Perkiraan', 'Kain', 'Aksesori', 'Upah', 'Overhead', 'Total', 'HPP/pcs'].map((h, i) => (
+                                <th key={h} className={`px-3 py-3 text-[11px] font-semibold uppercase ${i < 2 ? 'text-left' : 'text-right'} ${h === 'HPP/pcs' ? 'text-[#e5c17b]' : 'text-[#9aa0a6]'}`}>{h}</th>
+                              ))}
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-[#3a3d41]">
                             {hppPerSizeData.rows.map((row, i) => (
                               <tr key={i} className="hover:bg-[#2A2D31]/50 transition-colors">
-                                <td className="px-4 py-2.5 text-[#e8eaed] font-medium">{row.warna}</td>
-                                <td className="px-4 py-2.5 text-center text-[#e8eaed]">{row.size}</td>
-                                <td className="px-4 py-2.5 text-right text-[#9aa0a6]">{row.qty.toLocaleString('id-ID')}</td>
-                                <td className="px-4 py-2.5 text-right text-[#e8eaed]">{idrFmt(Math.round(row.biaya_kain))}</td>
-                                <td className="px-4 py-2.5 text-right text-[#e8eaed]">{idrFmt(Math.round(row.biaya_aksesori))}</td>
-                                <td className="px-4 py-2.5 text-right text-[#e8eaed]">{idrFmt(Math.round(row.biaya_upah))}</td>
-                                <td className="px-4 py-2.5 text-right text-[#9aa0a6]">{idrFmt(Math.round(row.overhead))}</td>
-                                <td className="px-4 py-2.5 text-right font-semibold text-[#e8eaed]">{idrFmt(Math.round(row.total_hpp))}</td>
-                                <td className="px-4 py-2.5 text-right font-bold text-[#e5c17b]">{idrFmt(Math.round(row.hpp_per_pcs))}</td>
+                                <td className="px-3 py-2.5 text-[#e8eaed] font-medium">{row.warna}</td>
+                                <td className="px-3 py-2.5 text-[#e8eaed]">{row.size}</td>
+                                <td className="px-3 py-2.5 text-right text-[#9aa0a6]">{row.qty.toLocaleString('id-ID')}</td>
+                                <td className="px-3 py-2.5 text-right text-[#9aa0a6]">{idrFmt(row.perkiraan)}</td>
+                                <td className="px-3 py-2.5 text-right text-[#e8eaed]">{idrFmt(row.biaya_kain)}</td>
+                                <td className="px-3 py-2.5 text-right text-[#e8eaed]">{idrFmt(row.biaya_aksesori)}</td>
+                                <td className="px-3 py-2.5 text-right text-[#e8eaed]">{idrFmt(row.biaya_upah)}</td>
+                                <td className="px-3 py-2.5 text-right text-[#9aa0a6]">{idrFmt(row.overhead)}</td>
+                                <td className="px-3 py-2.5 text-right font-semibold text-[#e8eaed]">{idrFmt(row.total_hpp)}</td>
+                                <td className="px-3 py-2.5 text-right font-bold text-[#e5c17b]">{row.qty > 0 ? idrFmt(row.hpp_per_pcs) : '—'}</td>
                               </tr>
                             ))}
                           </tbody>
-                          {/* Total row */}
                           <tfoot>
-                            <tr className="bg-[#2A2D31] border-t-2 border-[#3a3d41]">
-                              <td colSpan={2} className="px-4 py-3 text-[12px] font-bold text-[#e8eaed]">TOTAL</td>
-                              <td className="px-4 py-3 text-right text-[12px] font-bold text-[#e8eaed]">
-                                {hppPerSizeData.rows.reduce((s, r) => s + r.qty, 0).toLocaleString('id-ID')}
-                              </td>
-                              <td className="px-4 py-3 text-right text-[12px] font-bold text-[#e8eaed]">
-                                {idrFmt(Math.round(hppPerSizeData.rows.reduce((s, r) => s + r.biaya_kain, 0)))}
-                              </td>
-                              <td className="px-4 py-3 text-right text-[12px] font-bold text-[#e8eaed]">
-                                {idrFmt(Math.round(hppPerSizeData.rows.reduce((s, r) => s + r.biaya_aksesori, 0)))}
-                              </td>
-                              <td className="px-4 py-3 text-right text-[12px] font-bold text-[#e8eaed]">
-                                {idrFmt(Math.round(hppPerSizeData.rows.reduce((s, r) => s + r.biaya_upah, 0)))}
-                              </td>
-                              <td className="px-4 py-3 text-right text-[12px] font-bold text-[#9aa0a6]">
-                                {idrFmt(Math.round(hppPerSizeData.rows.reduce((s, r) => s + r.overhead, 0)))}
-                              </td>
-                              <td className="px-4 py-3 text-right text-[12px] font-bold text-[#e8eaed]">
-                                {idrFmt(Math.round(hppPerSizeData.rows.reduce((s, r) => s + r.total_hpp, 0)))}
-                              </td>
-                              <td className="px-4 py-3 text-right text-[12px] font-bold text-[#e5c17b]">—</td>
+                            <tr className="bg-[#2A2D31] border-t-2 border-[#3a3d41] text-[12px] font-bold">
+                              <td colSpan={2} className="px-3 py-3 text-[#e8eaed]">TOTAL</td>
+                              <td className="px-3 py-3 text-right text-[#e8eaed]">{hppPerSizeData.rows.reduce((s, r) => s + r.qty, 0).toLocaleString('id-ID')}</td>
+                              {(['perkiraan', 'biaya_kain', 'biaya_aksesori', 'biaya_upah', 'overhead', 'total_hpp'] as const).map(k => (
+                                <td key={k} className="px-3 py-3 text-right text-[#e8eaed]">
+                                  {idrFmt(hppPerSizeData.rows.reduce((s, r) => s + r[k], 0))}
+                                </td>
+                              ))}
+                              <td className="px-3 py-3 text-right text-[#e5c17b]">—</td>
                             </tr>
                           </tfoot>
                         </table>
                       </div>
-
-                      {/* Note jika RPC belum ada */}
-                      {hppPerSizeData.rows.length > 0 && hppPerSizeData.rows.every(r => r.biaya_kain === 0 && r.biaya_aksesori === 0 && r.biaya_upah === 0) && (
-                        <div className="mt-4 p-3 rounded-lg bg-blue-900/20 border border-blue-700/30 text-xs text-blue-300">
-                          ℹ Biaya kain diambil dari <code className="font-mono">pemakaian_bahan</code> (FIFO),
-                          aksesori dari <code className="font-mono">pemakaian_aksesori</code> (harga_referensi),
-                          upah dari <code className="font-mono">gaji_ledger</code>.
-                          Nilai 0 berarti belum ada pemakaian tercatat untuk size tersebut.
-                        </div>
-                      )}
                     </>
                   ) : (
                     <p className="text-center text-[#9aa0a6] text-sm py-12">Tidak ada data HPP</p>
@@ -731,6 +557,68 @@ export default function LaporanPOClient({ initialData, defaultBulan, defaultTahu
         </DialogContent>
       </Dialog>
 
+    </div>
+  );
+}
+
+// ─── Tabel per komponen (dikelompokkan per grup) ─────────────────────────────
+
+function TabelKomponen({ baris }: { baris: BarisKomponen[] }) {
+  const grup = (Object.keys(GRUP_LABEL) as GrupKomponen[])
+    .map(g => ({ g, rows: baris.filter(b => b.grup === g) }))
+    .filter(x => x.rows.length > 0);
+  const th = 'p-2.5 text-[#9aa0a6] text-[11px] font-bold uppercase tracking-wider';
+  const sum = (rows: BarisKomponen[], k: 'perkiraan' | 'aktual' | 'sisa' | 'selisih') => rows.reduce((s, r) => s + r[k], 0);
+
+  return (
+    <div className="rounded-lg border border-[#2A2D31] overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead className="bg-[#1A1C1E]">
+          <tr>
+            <th className={`${th} text-left`}>Komponen</th>
+            <th className={`${th} text-right`}>Perkiraan</th>
+            <th className={`${th} text-right`}>Aktual sejauh ini</th>
+            <th className={`${th} text-right`}>Sisa perkiraan</th>
+            <th className={`${th} text-right`}>Selisih</th>
+            <th className={`${th} text-left`}>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {grup.map(({ g, rows }) => (
+            <React.Fragment key={g}>
+              <tr className="border-t border-[#2A2D31] bg-[#1E2124]">
+                <td className="p-2 pl-2.5 text-[11px] font-bold text-[#e5c17b] uppercase tracking-wider">{GRUP_LABEL[g]}</td>
+                <td className="p-2 text-right text-xs text-[#9aa0a6]">{idrFmt(sum(rows, 'perkiraan'))}</td>
+                <td className="p-2 text-right text-xs text-[#9aa0a6]">{idrFmt(sum(rows, 'aktual'))}</td>
+                <td className="p-2 text-right text-xs text-[#9aa0a6]">{Math.round(sum(rows, 'sisa')) ? idrFmt(sum(rows, 'sisa')) : '—'}</td>
+                <td className={`p-2 text-right text-xs font-semibold ${selisihCls(sum(rows, 'selisih'))}`}>{selisihFmt(sum(rows, 'selisih'))}</td>
+                <td />
+              </tr>
+              {rows.map((r, i) => (
+                <tr key={i} className="border-t border-[#2A2D31]/60 hover:bg-[#1A1C1E]/50">
+                  <td className="p-2.5 pl-5 text-[#e8eaed]">
+                    {r.nama}
+                    {r.keterangan && <span className="block text-[10px] text-[#5f6368]">{r.keterangan}</span>}
+                  </td>
+                  <td className="p-2.5 text-right text-[#e8eaed] whitespace-nowrap">{r.perkiraan ? idrFmt(r.perkiraan) : '—'}</td>
+                  <td className="p-2.5 text-right text-[#e8eaed] whitespace-nowrap">{r.aktual ? idrFmt(r.aktual) : '—'}</td>
+                  <td className="p-2.5 text-right text-blue-300 whitespace-nowrap">{Math.round(r.sisa) ? idrFmt(r.sisa) : '—'}</td>
+                  <td className={`p-2.5 text-right font-semibold whitespace-nowrap ${selisihCls(r.selisih)}`}>{selisihFmt(r.selisih)}</td>
+                  <td className={`p-2.5 text-xs whitespace-nowrap ${TANDA_BARIS[r.tanda].cls}`}>{TANDA_BARIS[r.tanda].label}</td>
+                </tr>
+              ))}
+            </React.Fragment>
+          ))}
+          <tr className="border-t-2 border-[#2A2D31] bg-[#1A1C1E] font-bold">
+            <td className="p-2.5 text-[#9aa0a6] text-xs uppercase">Total</td>
+            <td className="p-2.5 text-right text-[#e8eaed]">{idrFmt(sum(baris, 'perkiraan'))}</td>
+            <td className="p-2.5 text-right text-[#e8eaed]">{idrFmt(sum(baris, 'aktual'))}</td>
+            <td className="p-2.5 text-right text-blue-300">{idrFmt(sum(baris, 'sisa'))}</td>
+            <td className={`p-2.5 text-right ${selisihCls(sum(baris, 'selisih'))}`}>{selisihFmt(sum(baris, 'selisih'))}</td>
+            <td />
+          </tr>
+        </tbody>
+      </table>
     </div>
   );
 }

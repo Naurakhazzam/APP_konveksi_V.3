@@ -5,7 +5,7 @@ import LaporanPOClient from './LaporanPOClient';
 
 export const metadata = {
   title: 'Laporan Per PO | Stitchlyx',
-  description: 'HPP Estimasi vs Aktual per Purchase Order',
+  description: 'Perkiraan HPP vs biaya aktual per Purchase Order',
 };
 
 export default async function LaporanPerPOPage() {
@@ -16,7 +16,7 @@ export default async function LaporanPerPOPage() {
     return (
       <PageWrapper
         title="Laporan Per PO"
-        subtitle="Kontrol biaya: patokan HPP vs biaya aktual per PO"
+        subtitle="Perkiraan (HPP × pcs dipotong) vs biaya aktual per komponen"
       >
         <div className="mt-6">
           <LaporanPOClient initialData={laporanList} defaultBulan={bulan} defaultTahun={tahun} />
