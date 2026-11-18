@@ -41,6 +41,7 @@ export default function SaldoPembantuClient({ data, bolehUbah = false }: { data:
   const sisaBelanja = Math.max(0, data.total_saldo - data.total_sisa_modal);
   const jenisHemat = data.jenis.filter(j => j.penghematan > 0);
   const mutasi = filterJenis ? data.mutasi.filter(m => m.jenis_id === filterJenis) : data.mutasi;
+  const belanjaPeringatan = data.mutasi.filter(m => m.tipe === 'beli' && m.peringatan);
 
   const tabCls = (t: Tab) =>
     `px-4 h-9 rounded-lg text-xs font-bold transition-colors ${
@@ -58,6 +59,16 @@ export default function SaldoPembantuClient({ data, bolehUbah = false }: { data:
         <Kartu judul="Penghematan Tercatat" nilai={idr(data.total_penghematan)} warna="text-green-400"
           ket="jatah yang tidak perlu dibelanjakan" />
       </div>
+
+      {belanjaPeringatan.length > 0 && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-xs text-amber-200">
+          <span className="font-bold">⚠ {belanjaPeringatan.length} belanja saat saldo masih banyak</span>{' '}
+          (saldo sebelum belanja &gt; jatah HPP 2 minggu terakhir):{' '}
+          {belanjaPeringatan.slice(0, 5).map(m => `${m.jenis} ${tgl(m.tanggal)}`).join(', ')}
+          {belanjaPeringatan.length > 5 && ', …'}.{' '}
+          <span className="text-amber-200/70">Bisa berarti tarif HPP kemurahan (pemakaian nyata lebih besar), atau belanja terlalu dini. Rincian di tab Riwayat.</span>
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-2">
         <button className={tabCls('saldo')} onClick={() => setTab('saldo')}>Saldo per Jenis</button>
@@ -120,7 +131,8 @@ export default function SaldoPembantuClient({ data, bolehUbah = false }: { data:
           </Table>
           <p className="px-4 py-3 text-[11px] text-[#5f6368] border-t border-[#2A2D31]">
             Saldo = (barang lama + belanja) − jatah HPP = barang yang seharusnya masih di rak, tidak pernah minus. Bila jatah melebihi
-            saldo, kelebihannya jadi penghematan; belanja berikutnya menutup penghematan itu dulu, sisanya baru menambah saldo.
+            saldo, kelebihannya jadi penghematan permanen (margin); belanja berikutnya seluruhnya menambah saldo dan tidak
+            menutup penghematan yang sudah tercatat. Karena itu tanggal belanja di Buku Kas harus tanggal sebenarnya.
             Karena tarif HPP sengaja di atas pemakaian nyata, isi rak biasanya sedikit lebih banyak dari saldo.
           </p>
         </div>
@@ -212,7 +224,15 @@ export default function SaldoPembantuClient({ data, bolehUbah = false }: { data:
                       {m.tipe === 'modal'
                         ? <span className="text-sky-300">Saldo awal (barang lama)</span>
                         : m.tipe === 'beli'
-                        ? <span className="text-orange-300">Belanja</span>
+                        ? <span className="text-orange-300">
+                            Belanja
+                            {m.peringatan && (
+                              <span className="block text-[10px] text-amber-400"
+                                title="Saldo sebelum belanja lebih besar dari jatah HPP 2 minggu terakhir — tarif HPP mungkin kemurahan, atau belanja terlalu dini">
+                                ⚠ saldo masih {idr(m.saldo - m.nominal)} &gt; jatah 2 minggu {idr(m.jatah_2minggu ?? 0)}
+                              </span>
+                            )}
+                          </span>
                         : m.tipe === 'potong'
                         ? <span className="text-orange-300">Potong Drill mandiri <span className="text-[10px] text-[#9aa0a6]">({m.pcs?.toLocaleString('id-ID')} dari stok bahan)</span></span>
                         : <span className="text-[#9aa0a6]">
@@ -221,10 +241,8 @@ export default function SaldoPembantuClient({ data, bolehUbah = false }: { data:
                           </span>}
                     </TableCell>
                     <TableCell className="text-sm text-right text-[#e8eaed]">{idr(m.nominal)}</TableCell>
-                    <TableCell className={`text-sm text-right ${m.ke_hemat < 0 ? 'text-red-300' : 'text-green-400'}`}>
-                      {m.ke_hemat > 0 ? idr(m.ke_hemat) : m.ke_hemat < 0
-                        ? <span title="Barang ini menutup jatah sebelumnya yang tadinya dihitung penghematan">{idr(m.ke_hemat)}<span className="block text-[10px] text-red-300/70">koreksi penghematan</span></span>
-                        : '-'}
+                    <TableCell className="text-sm text-right text-green-400">
+                      {m.ke_hemat > 0 ? idr(m.ke_hemat) : '-'}
                     </TableCell>
                     <TableCell className="text-sm text-right text-[#e8eaed]">{idr(m.saldo)}</TableCell>
                   </TableRow>

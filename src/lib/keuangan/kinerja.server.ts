@@ -13,8 +13,8 @@
  *  - Pembelian bahan = persediaan (aset), baru jadi biaya saat dipakai.
  *  - Bahan pembantu (barang lama = setoran modal barang, dan belanja Buku Kas yang bertanda jenis):
  *    mengikuti Saldo Bahan Pembantu. Yang terpakai jatah HPP jadi overhead produksi di bulan pemakaiannya;
- *    belanja yang menutup penghematan sebelumnya jadi biaya di bulan belanja; sisa saldo = aset.
- *    Jatah yang tidak tertutup saldo = penghematan (margin, tanpa biaya).
+ *    sisa saldo = aset. Jatah yang tidak tertutup saldo = penghematan permanen (margin, tanpa biaya);
+ *    belanja berikutnya hanya menambah saldo, tidak menutup penghematan lalu.
  */
 import { PO_AWAL_PERIODE, TANGGAL_AWAL_PERIODE, poPeriodeBaru } from './periode-po';
 import { pendapatanSjPerBulan } from './pendapatan.server';
@@ -245,9 +245,6 @@ export async function hitungKinerja(supabase: Supa, periode = 'semua'): Promise<
       const dariLama = -Number(r.ke_modal ?? 0);
       tambahPakai(r.tanggal, 'lama', j, dariLama);
       tambahPakai(r.tanggal, 'belanja', j, dariSaldo - dariLama);
-    } else if (Number(r.ke_hemat ?? 0) < 0) {
-      // barang masuk yang menutup penghematan sebelumnya = pengganti barang yang sudah terpakai → biaya sekarang
-      tambahPakai(r.tanggal, r.tipe === 'modal' ? 'lama' : 'belanja', j, -Number(r.ke_hemat));
     }
   });
   const pembantuLamaRinci = [...pembantuPerJenis.entries()].filter(([, v]) => v.lama + v.belanja > 0)
