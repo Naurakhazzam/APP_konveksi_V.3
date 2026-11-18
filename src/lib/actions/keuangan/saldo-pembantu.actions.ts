@@ -22,6 +22,18 @@ export interface SaldoPembantuJenis {
   total_modal: number;
   /** Sisa barang lama yang belum terpakai jatah → aset */
   sisa_modal: number;
+  /** Pcs dijahit dirinci per artikel & tarif HPP per pcs (faktor pengali jatah) */
+  rincian: RincianJatah[];
+}
+
+export interface RincianJatah {
+  artikel: string;
+  /** Rupiah per pcs dari HPP */
+  tarif: number;
+  pcs: number;
+  nominal: number;
+  /** contoh: "S 3, M 16, L 10" */
+  ukuran: string;
 }
 
 /** Barang lama milik pemilik yang dimasukkan sebagai saldo awal (harga perkiraan) */
@@ -76,7 +88,10 @@ export interface SaldoPembantuData {
 
 export async function getSaldoPembantu(): Promise<SaldoPembantuData> {
   const supabase = await createClient();
-  const [{ data: jenisRows, error: jErr }, { data: mutasiRows, error: mErr }, { data: awalRows, error: aErr }] = await Promise.all([
+  const [
+    { data: jenisRows, error: jErr }, { data: mutasiRows, error: mErr }, { data: awalRows, error: aErr },
+    { data: rincianRows, error: rErr },
+  ] = await Promise.all([
     supabase
       .from('pembantu_jenis')
       .select('id, nama, tanpa_barang, urutan')
@@ -89,8 +104,10 @@ export async function getSaldoPembantu(): Promise<SaldoPembantuData> {
       .select('id, jenis_id, tanggal, nama_barang, qty, satuan, harga_satuan, nominal, keterangan')
       .eq('tenant_id', TENANT_ID)
       .order('tanggal').order('created_at'),
+    supabase.rpc('get_rincian_jatah_pembantu', { p_tenant_id: TENANT_ID, p_mulai: PO_AWAL_PERIODE }),
   ]);
   if (jErr) throw new Error(jErr.message);
+  if (rErr) throw new Error(rErr.message);
   if (mErr) throw new Error(mErr.message);
   if (aErr) throw new Error(aErr.message);
 
@@ -99,8 +116,15 @@ export async function getSaldoPembantu(): Promise<SaldoPembantuData> {
     (jenisRows ?? []).map(j => [j.id, {
       id: j.id, nama: j.nama, tanpa_barang: j.tanpa_barang,
       total_beli: 0, total_jatah: 0, saldo: 0, penghematan: 0, pcs: 0, total_modal: 0, sisa_modal: 0,
+      rincian: [],
     }]),
   );
+  type RincianRow = { jenis_id: string; artikel: string; tarif: number | string; pcs: number | string; nominal: number | string; ukuran: string | null };
+  for (const r of (rincianRows ?? []) as RincianRow[]) {
+    ringkas.get(r.jenis_id)?.rincian.push({
+      artikel: r.artikel, tarif: Number(r.tarif), pcs: Number(r.pcs), nominal: Number(r.nominal), ukuran: r.ukuran ?? '',
+    });
+  }
   const bulanan = new Map<string, PenghematanBulan>();
 
   type Row = {

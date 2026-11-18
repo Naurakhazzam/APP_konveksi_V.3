@@ -8,7 +8,11 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import {
-  tambahSaldoAwalPembantu, hapusSaldoAwalPembantu, type SaldoPembantuData,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
+} from '@/components/ui/dialog';
+import {
+  tambahSaldoAwalPembantu, hapusSaldoAwalPembantu,
+  type SaldoPembantuData, type SaldoPembantuJenis, type RincianJatah,
 } from '@/lib/actions/keuangan/saldo-pembantu.actions';
 
 const BULAN = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
@@ -17,6 +21,13 @@ const idr = (n: number) => 'Rp ' + Math.round(Math.abs(n)).toLocaleString('id-ID
 const tgl = (d: string) =>
   new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
 const bulanLabel = (ym: string) => `${BULAN[Number(ym.slice(5, 7)) - 1]} ${ym.slice(0, 4)}`;
+const angka = (n: number) => n.toLocaleString('id-ID', { maximumFractionDigits: 2 });
+
+/** "× Rp 1.000" bila satu tarif; "× Rp 500 · 1.000 · 1.500" bila beberapa (detail per artikel di pop-up) */
+function ringkasTarif(rincian: RincianJatah[]): string {
+  const tarif = [...new Set(rincian.map(r => r.tarif))].sort((a, b) => a - b);
+  return '× Rp ' + tarif.map(angka).join(' · ');
+}
 
 type Tab = 'saldo' | 'awal' | 'penghematan' | 'riwayat';
 
@@ -25,6 +36,7 @@ const inputCls = 'w-full h-9 px-3 rounded-lg bg-[#1E2124] border border-[#2A2D31
 export default function SaldoPembantuClient({ data, bolehUbah = false }: { data: SaldoPembantuData; bolehUbah?: boolean }) {
   const [tab, setTab] = useState<Tab>('saldo');
   const [filterJenis, setFilterJenis] = useState('');
+  const [rincianJenis, setRincianJenis] = useState<SaldoPembantuJenis | null>(null);
 
   const sisaBelanja = Math.max(0, data.total_saldo - data.total_sisa_modal);
   const jenisHemat = data.jenis.filter(j => j.penghematan > 0);
@@ -76,7 +88,23 @@ export default function SaldoPembantuClient({ data, bolehUbah = false }: { data:
                     {j.nama}
                     {j.tanpa_barang && <span className="ml-2 text-[10px] text-[#5f6368]">(tanpa belanja)</span>}
                   </TableCell>
-                  <TableCell className="text-sm text-right text-[#9aa0a6]">{j.pcs.toLocaleString('id-ID')}</TableCell>
+                  <TableCell className="text-sm text-right text-[#9aa0a6]">
+                    {j.rincian.length === 0 ? j.pcs.toLocaleString('id-ID') : (
+                      <button
+                        type="button"
+                        onClick={() => setRincianJenis(j)}
+                        title="Lihat rincian per artikel"
+                        className="inline-flex flex-col items-end gap-0.5 hover:text-[#e8eaed] group"
+                      >
+                        <span className="underline decoration-dotted underline-offset-4 decoration-[#5f6368] group-hover:decoration-[#e5c17b]">
+                          {j.pcs.toLocaleString('id-ID')}
+                        </span>
+                        <span className="text-[10px] text-[#e5c17b]/80 whitespace-nowrap">
+                          {ringkasTarif(j.rincian)}
+                        </span>
+                      </button>
+                    )}
+                  </TableCell>
                   <TableCell className="text-sm text-right text-sky-300">{j.total_modal > 0 ? idr(j.total_modal) : '-'}</TableCell>
                   <TableCell className="text-sm text-right text-[#e8eaed]">{j.tanpa_barang ? '-' : idr(j.total_beli)}</TableCell>
                   <TableCell className="text-sm text-right text-[#e8eaed]">{idr(j.total_jatah)}</TableCell>
@@ -206,6 +234,54 @@ export default function SaldoPembantuClient({ data, bolehUbah = false }: { data:
           </div>
         </div>
       )}
+
+      <Dialog open={!!rincianJenis} onOpenChange={o => { if (!o) setRincianJenis(null); }}>
+        <DialogContent className="bg-[#1A1D1F] border-[#2A2D31] text-[#e8eaed] sm:max-w-[640px]">
+          {rincianJenis && (
+            <>
+              <DialogHeader>
+                <DialogTitle>Rincian Jatah — {rincianJenis.nama}</DialogTitle>
+                <DialogDescription className="text-[#9aa0a6]">
+                  Jatah = pcs selesai jahit × tarif HPP per pcs, dipisah per artikel.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="max-h-[60vh] overflow-auto rounded-lg border border-[#2A2D31]">
+                <table className="w-full text-sm">
+                  <thead className="bg-[#16181A] text-[11px] uppercase tracking-wider text-[#9aa0a6] sticky top-0">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-medium">Artikel</th>
+                      <th className="px-3 py-2 text-right font-medium">Pcs</th>
+                      <th className="px-3 py-2 text-right font-medium">× Tarif</th>
+                      <th className="px-3 py-2 text-right font-medium">= Jatah</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rincianJenis.rincian.map((r, i) => (
+                      <tr key={i} className="border-t border-[#2A2D31]">
+                        <td className="px-3 py-2">
+                          <div className="text-[#e8eaed]">{r.artikel}</div>
+                          {r.ukuran && <div className="text-[10px] text-[#5f6368]">{r.ukuran}</div>}
+                        </td>
+                        <td className="px-3 py-2 text-right text-[#e8eaed]">{angka(r.pcs)}</td>
+                        <td className="px-3 py-2 text-right text-[#e5c17b] whitespace-nowrap">Rp {angka(r.tarif)}</td>
+                        <td className="px-3 py-2 text-right text-[#e8eaed] whitespace-nowrap">{idr(r.nominal)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t border-[#3A3D41] bg-[#16181A] font-bold">
+                      <td className="px-3 py-2 text-[#9aa0a6]">Total</td>
+                      <td className="px-3 py-2 text-right">{angka(rincianJenis.pcs)}</td>
+                      <td />
+                      <td className="px-3 py-2 text-right whitespace-nowrap">{idr(rincianJenis.total_jatah)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
