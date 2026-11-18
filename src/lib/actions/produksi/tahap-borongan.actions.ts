@@ -5,6 +5,8 @@ import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { getUserFromClaims } from '@/lib/auth/session';
 import { matchesBundleQuery } from '@/lib/search/bundle-search';
+import { normalisasiTanggalKejadian } from '@/lib/produksi/tanggal-kejadian';
+import { pasangTanggalKejadian } from '@/lib/produksi/tanggal-kejadian.server';
 import { TAHAP_ORDER, TAHAP_CONFIG, getPrevTahap, type TahapKey } from '@/modules/produksi/constants/tahap';
 
 /**
@@ -186,8 +188,10 @@ export async function getRiwayatSelesaiTahap(
 export async function selesaiTahapBatch(
   tahap: TahapBorongan,
   items: { bundle_id: string; qty?: number; alasan_qty_id?: string | null }[],
-): Promise<{ jumlah: number; upah_total: number }> {
+  tanggalKejadian: string | null = null,
+): Promise<{ jumlah: number; upah_total: number; peringatan_tanggal: string | null }> {
   await assertCanEditProduksi();
+  const tglKejadian = tahap === 'packing' ? normalisasiTanggalKejadian(tanggalKejadian) : null;
   const supabase = await createClient();
   const user_id = await getUserId(supabase);
   const { data, error } = await supabase.rpc('tahap_selesai_batch', {
@@ -197,9 +201,12 @@ export async function selesaiTahapBatch(
     p_tenant_id: TENANT_ID,
   });
   if (error) throw new Error(error.message);
+  const peringatan_tanggal = await pasangTanggalKejadian(
+    supabase, items.map(i => i.bundle_id), 'packing', tglKejadian, user_id, TENANT_ID,
+  );
   revalidatePath('/app/produksi', 'layout');
   const r = (data ?? {}) as any;
-  return { jumlah: Number(r.jumlah ?? 0), upah_total: Number(r.upah_total ?? 0) };
+  return { jumlah: Number(r.jumlah ?? 0), upah_total: Number(r.upah_total ?? 0), peringatan_tanggal };
 }
 
 /** Salah klik Selesai: kembalikan ke Antrian (upah dibatalkan, stok aksesori kembali). */

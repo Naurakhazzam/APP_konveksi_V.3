@@ -11,6 +11,8 @@ import {
   type ScanSelesaiInput,
   type ScanTerimaGenericInput,
 } from '@/lib/validations/scan.schemas';
+import { normalisasiTanggalKejadian } from '@/lib/produksi/tanggal-kejadian';
+import { pasangTanggalKejadian } from '@/lib/produksi/tanggal-kejadian.server';
 
 const TENANT_ID = 'STX-001';
 
@@ -31,6 +33,8 @@ export interface ScanSelesaiResult {
   upah_nominal: number;
   is_qty_lebih: boolean;
   approval_request_id: string | null;
+  /** Peringatan bila tanggal kejadian gagal disimpan (packing tetap tercatat). */
+  peringatan_tanggal?: string | null;
 }
 
 async function resolveUserId(): Promise<string> {
@@ -78,6 +82,9 @@ export async function scanSelesai(
 ): Promise<ScanSelesaiResult> {
   await assertCanEditProduksi();
   const validated = ScanSelesaiInputSchema.parse(input);
+  const tglKejadian = validated.tahap === 'packing'
+    ? normalisasiTanggalKejadian(validated.tanggal_kejadian)
+    : null;
   const user_id   = await resolveUserId();
   const supabase  = await createClient();
 
@@ -102,7 +109,17 @@ export async function scanSelesai(
     approval_request_id: string | null;
   };
 
+  let peringatan_tanggal: string | null = null;
+  if (tglKejadian) {
+    const { data: b } = await supabase.from('bundle').select('id')
+      .eq('barcode', validated.barcode).eq('tenant_id', TENANT_ID).maybeSingle();
+    peringatan_tanggal = b
+      ? await pasangTanggalKejadian(supabase, [b.id], 'packing', tglKejadian, user_id, TENANT_ID)
+      : 'Tahap tercatat, tapi bundle tidak ditemukan untuk tanggal kejadian';
+  }
+
   return {
+    peringatan_tanggal,
     scan_log_id:         result.scan_log_id,
     gaji_entry_id:       result.gaji_entry_id ?? null,
     upah_nominal:        result.upah_nominal ?? 0,

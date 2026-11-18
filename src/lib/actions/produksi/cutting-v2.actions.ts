@@ -20,6 +20,8 @@ import { revalidatePath } from 'next/cache';
 import type { AntrianBundle } from './antrian.actions';
 import { getCurrentUserProfile, assertCanEditProduksi } from '@/lib/auth/permissions';
 import { isBahanUtama } from '@/lib/produksi/patokan-bahan';
+import { normalisasiTanggalKejadian } from '@/lib/produksi/tanggal-kejadian';
+import { pasangTanggalKejadian } from '@/lib/produksi/tanggal-kejadian.server';
 
 const TENANT_ID = 'STX-001';
 const PATH = '/app/produksi/antrian-cutting';
@@ -212,6 +214,8 @@ export interface SelesaiResult {
   lebih: { barcode: string; lebih: number; sisa_dikurangi: number }[];
   total_upah: number;
   stok_warnings: { item_nama: string; qty_kurang: number; sisa_stok: number }[];
+  /** Peringatan bila tanggal kejadian gagal disimpan (cutting tetap tercatat). */
+  peringatan_tanggal?: string | null;
   error?: string;
 }
 
@@ -225,9 +229,11 @@ export async function selesaiCuttingV2(
   kurangiSisa: boolean,
   karyawanId: string | null,
   dariSisa = false,
+  tanggalKejadian: string | null = null,
 ): Promise<SelesaiResult> {
   await assertCanEditProduksi();
   try {
+    const tglKejadian = normalisasiTanggalKejadian(tanggalKejadian);
     const user_id = await resolveUserId();
     const supabase = await createClient();
     const { data, error } = await supabase.rpc('selesai_cutting_v2', {
@@ -240,9 +246,14 @@ export async function selesaiCuttingV2(
       p_dari_sisa: dariSisa,
     });
     if (error) return { success: false, ...EMPTY_SELESAI, error: error.message };
+    const peringatan_tanggal = await pasangTanggalKejadian(
+      supabase, bundles.filter(b => b.qty_aktual > 0).map(b => b.bundle_id),
+      'cutting', tglKejadian, user_id, TENANT_ID,
+    );
     revalidatePath(PATH);
     const r = (data ?? {}) as Partial<SelesaiResult>;
     return {
+      peringatan_tanggal,
       success: true,
       jumlah_bundle: r.jumlah_bundle ?? 0,
       total_qty: r.total_qty ?? 0,

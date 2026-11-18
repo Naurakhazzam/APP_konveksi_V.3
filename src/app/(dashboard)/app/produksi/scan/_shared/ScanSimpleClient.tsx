@@ -34,6 +34,8 @@ import ModalKonfirmasiQtySingle from '@/components/produksi/ModalKonfirmasiQtySi
 import ToastQtyLebih from '@/components/produksi/ToastQtyLebih';
 import RejectSection from '@/components/produksi/RejectSection';
 import PrintHangTagLayout from '../packing/PrintHangTagLayout';
+import InputTanggalKejadian from '@/components/produksi/InputTanggalKejadian';
+import { hariIniWib } from '@/lib/produksi/tanggal-kejadian';
 import { selesaiTahapBatch, type TahapBorongan } from '@/lib/actions/produksi/tahap-borongan.actions';
 
 const TAHAP_BORONGAN: TahapKey[] = ['lubang_kancing', 'buang_benang', 'qc', 'steam'];
@@ -68,6 +70,8 @@ export default function ScanSimpleClient({ tahap, tahapLabel, mode = 'lanjut', k
   const [state, setState] = useState<ScanState>({ phase: 'IDLE' });
   const [barcode, setBarcode] = useState('');
   const [qty, setQty] = useState(0);
+  // Tanggal kejadian Selesai Packing (boleh mundur ≤7 hari).
+  const [tanggalKejadian, setTanggalKejadian] = useState(hariIniWib());
   const [showModalAlasan, setShowModalAlasan] = useState(false);
   const [showModalSingle, setShowModalSingle] = useState(false);
   const [showToastQtyLebih, setShowToastQtyLebih] = useState(false);
@@ -327,7 +331,9 @@ export default function ScanSimpleClient({ tahap, tahapLabel, mode = 'lanjut', k
         catatan: undefined,
         alasan_qty_id: alasan_qty_id,
         tenant_id: 'STX-001',
+        tanggal_kejadian: tahap === 'packing' ? tanggalKejadian : null,
       });
+      if (result.peringatan_tanggal) toast.warning(result.peringatan_tanggal);
       if (tahap === 'packing') {
         setPrintData({
           noUrut: bundle.barcode.split('-')[2] ?? String(bundle.no_urut).padStart(5, '0'),
@@ -376,8 +382,10 @@ export default function ScanSimpleClient({ tahap, tahapLabel, mode = 'lanjut', k
         qty: qty,
         catatan: undefined,
         alasan_qty_id: alasan_qty_id ?? null,
-        tenant_id: 'STX-001'
+        tenant_id: 'STX-001',
+        tanggal_kejadian: tahap === 'packing' ? tanggalKejadian : null,
       });
+      if (result.peringatan_tanggal) toast.warning(result.peringatan_tanggal);
       
       if (tahap === 'packing') {
         setPrintData({
@@ -853,6 +861,9 @@ export default function ScanSimpleClient({ tahap, tahapLabel, mode = 'lanjut', k
                   />
                 </div>
 
+                {tahap === 'packing' && (isSingleMode || state.bundle.status_tahap?.packing?.status === 'terima') && (
+                  <InputTanggalKejadian value={tanggalKejadian} onChange={setTanggalKejadian} className="w-full md:w-auto" />
+                )}
                 <div className="w-full md:w-auto flex flex-col md:flex-row gap-3">
                     {tahap === 'packing' && printData && state.bundle.status_tahap?.packing?.status === 'terima' && (
                        <button

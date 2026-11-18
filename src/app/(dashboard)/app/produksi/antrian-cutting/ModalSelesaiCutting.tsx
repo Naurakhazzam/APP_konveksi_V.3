@@ -21,6 +21,8 @@ import {
 import {
   isBahanUtama, statusPemakaian, persenSelisih, STATUS_LABEL, STATUS_CLASS,
 } from '@/lib/produksi/patokan-bahan';
+import InputTanggalKejadian from '@/components/produksi/InputTanggalKejadian';
+import { hariIniWib } from '@/lib/produksi/tanggal-kejadian';
 
 interface BahanRow {
   rowId: string;
@@ -49,6 +51,7 @@ export default function ModalSelesaiCutting({ selectedBundleIds, onSuccess, onCl
   const [kurangiSisa, setKurangiSisa] = useState(true);
   const [konfirmLebih, setKonfirmLebih] = useState(false);
   const [dariSisa, setDariSisa] = useState(false);
+  const [tanggalKejadian, setTanggalKejadian] = useState(hariIniWib());
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [stokWarnings, setStokWarnings] = useState<SelesaiResult['stok_warnings']>([]);
@@ -180,7 +183,7 @@ export default function ModalSelesaiCutting({ selectedBundleIds, onSuccess, onCl
 
     const res = await selesaiCuttingV2(
       bundles.map(b => ({ bundle_id: b.id, qty_aktual: qtyOf(b) })),
-      pemakaian, kurangiSisa, karyawanId || null, dariSisa);
+      pemakaian, kurangiSisa, karyawanId || null, dariSisa, tanggalKejadian);
     setIsSubmitting(false);
 
     if (!res.success) { toast.error(res.error ?? 'Gagal menyimpan'); return; }
@@ -191,6 +194,7 @@ export default function ModalSelesaiCutting({ selectedBundleIds, onSuccess, onCl
     if (res.lebih.length) bagian.push(`lebih ${res.lebih.reduce((s, x) => s + x.lebih, 0)} pcs`);
     if (res.total_upah > 0) bagian.push(`upah Rp${res.total_upah.toLocaleString('id-ID')}`);
     toast.success(bagian.join(' · '));
+    if (res.peringatan_tanggal) toast.warning(res.peringatan_tanggal);
     if (res.stok_warnings.length) {
       setStokWarnings(res.stok_warnings);
       toast.warning(`${res.stok_warnings.length} bahan stoknya kurang — tetap dicatat`);
@@ -234,6 +238,10 @@ export default function ModalSelesaiCutting({ selectedBundleIds, onSuccess, onCl
                 <p className="text-[10px] text-[#9aa0a6] mt-2">
                   {karyawanId ? 'Upah cutting otomatis terhitung dari tarif HPP.' : 'Tanpa tukang potong, upah cutting tidak terbentuk.'}
                 </p>
+              </section>
+
+              <section>
+                <InputTanggalKejadian value={tanggalKejadian} onChange={setTanggalKejadian} disabled={isSubmitting} />
               </section>
 
               {/* A. Hasil per bundle */}

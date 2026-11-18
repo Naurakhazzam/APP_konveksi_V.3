@@ -25,6 +25,8 @@ export const ScanSelesaiInputSchema = z.object({
   catatan: z.string().optional(),
   alasan_qty_id: z.string().uuid().nullable().optional(),
   tenant_id: z.string().min(1),
+  /** Tanggal kejadian (YYYY-MM-DD) — hanya untuk packing, boleh mundur ≤7 hari. */
+  tanggal_kejadian: z.string().nullable().optional(),
 });
 
 // Schema untuk scan terima — generik untuk tahap non-cutting

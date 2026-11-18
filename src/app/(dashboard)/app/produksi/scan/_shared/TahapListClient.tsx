@@ -10,6 +10,8 @@ import {
   getRiwayatSelesaiTahap, selesaiTahapBatch, batalSelesaiTahapBatch,
   type BundleTahapItem, type SelesaiTahapItem, type TahapBorongan,
 } from '@/lib/actions/produksi/tahap-borongan.actions';
+import InputTanggalKejadian from '@/components/produksi/InputTanggalKejadian';
+import { hariIniWib } from '@/lib/produksi/tanggal-kejadian';
 import { getAlasanQty } from '@/lib/actions/produksi/qty-approval.actions';
 import { matchesBundleQuery } from '@/lib/search/bundle-search';
 import { TAHAP_CONFIG } from '@/modules/produksi/constants/tahap';
@@ -505,14 +507,16 @@ function ModalSelesai({ tahap, bundles, onClose, onSuccess }: {
   onSuccess: (selesai: BundleTahapItem[]) => void;
 }) {
   const [sibuk, setSibuk] = useState(false);
+  const [tanggal, setTanggal] = useState(hariIniWib());
   const label = TAHAP_CONFIG[tahap].label;
   const totalPcs = bundles.reduce((s, b) => s + b.qty_per_bundle, 0);
 
   const simpan = async () => {
     setSibuk(true);
     try {
-      const res = await selesaiTahapBatch(tahap, bundles.map(b => ({ bundle_id: b.id })));
+      const res = await selesaiTahapBatch(tahap, bundles.map(b => ({ bundle_id: b.id })), tanggal);
       toast.success(`${res.jumlah} bundle selesai ${label}`);
+      if (res.peringatan_tanggal) toast.warning(res.peringatan_tanggal);
       onSuccess(bundles);
     } catch (e: any) {
       toast.error(`Gagal, tidak ada yang tersimpan: ${e.message}`);
@@ -540,6 +544,9 @@ function ModalSelesai({ tahap, bundles, onClose, onSuccess }: {
       </>}
     >
       <DaftarRingkas bundles={bundles} />
+      {tahap === 'packing' && (
+        <InputTanggalKejadian value={tanggal} onChange={setTanggal} disabled={sibuk} />
+      )}
       <p className="text-xs text-[#9aa0a6]">
         Ada yang qty-nya kurang? Tutup, lalu pakai menu ⋯ → <span className="text-[#e8eaed]">Selesaikan, qty kurang…</span> untuk bundle itu.
       </p>
@@ -555,6 +562,7 @@ function ModalQtyKurang({ tahap, bundle, onClose, onSuccess }: {
   const [qty, setQty] = useState(Math.max(bundle.qty_per_bundle - 1, 1));
   const [alasanId, setAlasanId] = useState('');
   const [alasanList, setAlasanList] = useState<{ id: string; label: string }[]>([]);
+  const [tanggal, setTanggal] = useState(hariIniWib());
   const label = TAHAP_CONFIG[tahap].label;
 
   useEffect(() => {
@@ -567,8 +575,9 @@ function ModalQtyKurang({ tahap, bundle, onClose, onSuccess }: {
     if (!valid) return;
     setSibuk(true);
     try {
-      await selesaiTahapBatch(tahap, [{ bundle_id: bundle.id, qty, alasan_qty_id: alasanId }]);
+      const res = await selesaiTahapBatch(tahap, [{ bundle_id: bundle.id, qty, alasan_qty_id: alasanId }], tanggal);
       toast.success(`${bundle.barcode} selesai ${label} — ${qty} pcs`);
+      if (res.peringatan_tanggal) toast.warning(res.peringatan_tanggal);
       onSuccess([{ ...bundle, qty_per_bundle: qty }]);
     } catch (e: any) {
       toast.error(`Gagal: ${e.message}`);
@@ -620,6 +629,9 @@ function ModalQtyKurang({ tahap, bundle, onClose, onSuccess }: {
           </select>
         </div>
       </div>
+      {tahap === 'packing' && (
+        <InputTanggalKejadian value={tanggal} onChange={setTanggal} disabled={sibuk} />
+      )}
       {qty >= bundle.qty_per_bundle && (
         <p className="text-xs text-orange-400 flex items-center gap-1.5">
           <AlertTriangle className="w-3.5 h-3.5" /> Qty penuh — pakai "Selesaikan semua" saja.
