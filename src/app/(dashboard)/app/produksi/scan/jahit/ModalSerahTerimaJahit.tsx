@@ -135,7 +135,7 @@ export default function ModalSerahTerimaJahit({ selectedBundles, karyawanList, o
       });
 
       if (res.stok_warnings.length > 0) {
-        toast.warning(`Beberapa stok aksesori kurang: ${res.stok_warnings.map(w => `${w.item_nama} kurang ${w.qty_kurang}`).join(', ')}`);
+        toast.warning(`Beberapa stok aksesori kurang: ${res.stok_warnings.map(w => `${w.item_nama} kurang ${w.qty_kurang}`).join(', ')} — dicatat menunggu harga, harganya menyusul dari Stok Masuk`);
       }
 
       const pesan = langsungSelesai

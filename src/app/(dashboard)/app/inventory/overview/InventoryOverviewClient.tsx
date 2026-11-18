@@ -195,6 +195,7 @@ export default function InventoryOverviewClient({ items, kategoriTrxList, warnaL
             ...item,
             stok_aktual: newStok,
             status: newStatus,
+            qty_tunggu_harga: Math.max((item.qty_tunggu_harga ?? 0) - result.qty_lunasi_tunggu, 0),
             batch_count: item.batch_count + 1
           };
         }
@@ -203,7 +204,9 @@ export default function InventoryOverviewClient({ items, kategoriTrxList, warnaL
 
       setShowStokMasuk(false);
       setSelectedItem(null);
-      toast.success('Stok masuk berhasil dicatat');
+      toast.success(result.qty_lunasi_tunggu > 0
+        ? `Stok masuk dicatat — ${result.qty_lunasi_tunggu.toLocaleString('id-ID')} ${selectedItem.satuan} pemakaian yang menunggu harga kini memakai harga belanja ini`
+        : 'Stok masuk berhasil dicatat');
     } catch (err: any) {
       toast.error(err.message || 'Gagal mencatat stok masuk');
     } finally {
@@ -435,6 +438,12 @@ export default function InventoryOverviewClient({ items, kategoriTrxList, warnaL
                     }>
                       {item.stok_aktual.toLocaleString('id-ID')}
                     </span>
+                    {(item.qty_tunggu_harga ?? 0) > 0 && (
+                      <div className="text-[10px] font-medium text-amber-400 whitespace-nowrap"
+                        title="Sudah terpakai produksi saat stok kosong. Harganya menyusul dari Stok Masuk berikutnya.">
+                        {item.qty_tunggu_harga!.toLocaleString('id-ID')} menunggu harga
+                      </div>
+                    )}
                   </TableCell>
                   <TableCell className="text-center text-[#9aa0a6]">{item.stok_minimum}</TableCell>
                   <TableCell>

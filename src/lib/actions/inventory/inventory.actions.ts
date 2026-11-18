@@ -33,6 +33,8 @@ export interface InventoryOverviewItem {
   harga_referensi?: number | null;
   /** utama = dipotong otomatis (FIFO); pembantu = dihitung lewat stock opname */
   jenis?: 'utama' | 'pembantu';
+  /** qty aksesori yang sudah dipakai saat stok kosong dan belum punya harga (lunas saat Stok Masuk) */
+  qty_tunggu_harga?: number;
 }
 
 export interface InventoryBatch {
@@ -105,6 +107,17 @@ export async function getInventoryOverview(): Promise<InventoryOverviewItem[]> {
 
   if (batchError) throw new Error(batchError.message);
 
+  // B2. Antrean aksesori "menunggu harga"
+  const { data: tunggu } = await supabase
+    .from('aksesori_tunggu_harga')
+    .select('inventory_item_id, qty_sisa')
+    .eq('tenant_id', TENANT_ID)
+    .gt('qty_sisa', 0);
+  const tungguMap: Record<string, number> = {};
+  (tunggu ?? []).forEach((t: any) => {
+    tungguMap[t.inventory_item_id] = (tungguMap[t.inventory_item_id] || 0) + Number(t.qty_sisa);
+  });
+
   // C. Fetch warna lookup (tanpa join — query langsung ke tabel warna)
   const warnaIds = [...new Set((items ?? []).map(i => i.warna_id).filter(Boolean))] as string[];
   let warnaMap: Record<string, string> = {};
@@ -141,6 +154,7 @@ export async function getInventoryOverview(): Promise<InventoryOverviewItem[]> {
       faktor_konversi: item.faktor_konversi != null ? Number(item.faktor_konversi) : null,
       jenis:         (item.jenis ?? 'utama') as 'utama' | 'pembantu',
       harga_referensi: item.harga_referensi != null ? Number(item.harga_referensi) : null,
+      qty_tunggu_harga: tungguMap[item.id] ?? 0,
     };
   });
 }
@@ -262,7 +276,7 @@ export async function getAlertItems(): Promise<InventoryOverviewItem[]> {
 /**
  * 5. Menambah stok masuk via RPC stok_masuk
  */
-export async function addStokMasuk(input: StokMasukInput): Promise<{ batch_id: string; stok_baru: number }> {
+export async function addStokMasuk(input: StokMasukInput): Promise<{ batch_id: string; stok_baru: number; qty_lunasi_tunggu: number }> {
   const supabase = await createClient();
   const userId = await resolveUserId();
 
@@ -287,7 +301,11 @@ export async function addStokMasuk(input: StokMasukInput): Promise<{ batch_id: s
   });
 
   if (error) throw new Error(error.message);
-  return { batch_id: data.batch_id, stok_baru: data.stok_baru };
+  return {
+    batch_id: data.batch_id,
+    stok_baru: data.stok_baru,
+    qty_lunasi_tunggu: Number(data.qty_lunasi_tunggu ?? 0),
+  };
 }
 
 /**

@@ -58,7 +58,8 @@ export default function PotongPuringTab({ data, isOwner, onChanged }: Props) {
     });
     setBusy(false);
     if (!res.success) { toast.error(res.error ?? 'Gagal menyimpan'); return; }
-    toast.success(`${pcsNum} lembar puring masuk stok · ${rp(res.harga_per_pcs ?? 0)}/lembar`);
+    toast.success(`${pcsNum} lembar puring masuk stok · ${rp(res.harga_per_pcs ?? 0)}/lembar`
+      + ((res.qty_lunasi_tunggu ?? 0) > 0 ? ` · ${res.qty_lunasi_tunggu} lembar melunasi pemakaian yang menunggu harga` : ''));
     setKg(''); setPerSize({}); setCatatan('');
     onChanged();
   };

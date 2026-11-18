@@ -49,7 +49,7 @@ export default function ModalSplitAwalJahit({ bundle, karyawanList, onSuccess, o
 
       if (result.stok_warnings.length > 0) {
         toast.warning(
-          `Stok aksesori kurang: ${result.stok_warnings.map(w => `${w.item_nama} (${w.qty_kurang})`).join(', ')}`
+          `Stok aksesori kurang: ${result.stok_warnings.map(w => `${w.item_nama} (${w.qty_kurang})`).join(', ')} — dicatat menunggu harga, harganya menyusul dari Stok Masuk`
         );
       }
 

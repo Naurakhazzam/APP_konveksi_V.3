@@ -165,7 +165,7 @@ export default function ScanJahitClient({ karyawanList }: Props) {
       toast.success('Bundle diterima di tahap Jahit');
       if (result.stok_warnings && result.stok_warnings.length > 0) {
         result.stok_warnings.forEach(w => {
-          toast.warning(`Stok kurang: ${w.item_nama} (kurang ${w.qty_kurang}, sisa ${w.sisa_stok})`);
+          toast.warning(`Stok kurang: ${w.item_nama} (kurang ${w.qty_kurang}, sisa ${w.sisa_stok}) — dicatat menunggu harga, harganya menyusul dari Stok Masuk`);
         });
       }
       setState({ phase: 'RESULT' });

@@ -107,7 +107,7 @@ export async function getPuringData(): Promise<PuringData> {
 export async function potongPuring(input: {
   bahan_item_id: string; kg: number; pcs: number; habis_roll: boolean; catatan?: string;
   per_size?: Record<string, number>;
-}): Promise<{ success: boolean; biaya_total?: number; harga_per_pcs?: number; error?: string }> {
+}): Promise<{ success: boolean; biaya_total?: number; harga_per_pcs?: number; qty_lunasi_tunggu?: number; error?: string }> {
   await assertCanEditProduksi();
   try {
     const user_id = await resolveUserId();
@@ -129,7 +129,7 @@ export async function potongPuring(input: {
       if (e2) console.error('set_per_size_potong_puring', e2.message);
     }
     revalidatePath(PATH);
-    return { success: true, biaya_total: Number(data?.biaya_total ?? 0), harga_per_pcs: Number(data?.harga_per_pcs ?? 0) };
+    return { success: true, biaya_total: Number(data?.biaya_total ?? 0), harga_per_pcs: Number(data?.harga_per_pcs ?? 0), qty_lunasi_tunggu: Number(data?.qty_lunasi_tunggu ?? 0) };
   } catch (e: any) {
     return { success: false, error: e?.message ?? 'Terjadi kesalahan' };
   }
