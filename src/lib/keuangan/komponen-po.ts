@@ -10,8 +10,8 @@
  *   - Sisa       = bagian perkiraan untuk pcs yang biayanya belum tercatat (tahap belum selesai,
  *                  aksesori yang masih menunggu harga LOT, biaya lain yang belum tercatat).
  *   - Selisih    = aktual + sisa − perkiraan (positif = boros, negatif = hemat).
- *   - Beda tarif = bagian selisih upah karena tarif HPP berubah sesudah upah dicatat
- *                  (get_laporan_po_beda_tarif) — bukan hemat/boros.
+ *   - Upah yang sudah dicatat: perkiraannya memakai tarif yang dibayar saat itu
+ *     (get_laporan_po_beda_tarif), bukan tarif HPP sekarang — tarif berubah ≠ hemat/boros.
  */
 
 export type GrupKomponen = 'bahan' | 'aksesori' | 'pembantu' | 'upah' | 'lain' | 'overhead';
@@ -157,13 +157,14 @@ export function susunKomponen(s: SumberKomponen): Map<string, BarisKomponen[]> {
       if (a.grup === 'overhead') {
         tanda = packingBelum ? 'berjalan' : 'sementara';
       }
-      if (Math.abs(a.beda) > 0.5) {
-        ket.push(`beda tarif ${a.beda < 0 ? '−' : '+'}Rp ${Math.round(Math.abs(a.beda)).toLocaleString('id-ID')} (tarif HPP berubah sesudah upah dicatat)`);
-      }
+      // Upah yang sudah dicatat: perkiraan memakai tarif yang benar-benar dibayar (keputusan user 18 Nov),
+      // jadi perubahan tarif HPP sesudahnya tidak tampil sebagai hemat/boros.
+      const perkiraan = a.perkiraan + a.beda;
+      if (Math.abs(a.beda) > 0.5) ket.push('tarif = yang dibayar');
       return {
         grup: a.grup, nama: a.nama, keterangan: ket.length ? ket.join(' · ') : null,
-        perkiraan: a.perkiraan, aktual: a.aktual, sisa, selisih: a.aktual + sisa - a.perkiraan,
-        beda_tarif: a.beda, tanda,
+        perkiraan, aktual: a.aktual, sisa, selisih: a.aktual + sisa - perkiraan,
+        beda_tarif: 0, tanda,
       };
     });
     const urutTahap = (r: BarisKomponen) => URUT_TAHAP.findIndex(t => r.nama === labelUpah(t));

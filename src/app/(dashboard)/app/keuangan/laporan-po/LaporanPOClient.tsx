@@ -224,8 +224,7 @@ export default function LaporanPOClient({ initialData, defaultBulan, defaultTahu
           <b className="text-amber-300">Sisa perkiraan</b> = bagian HPP untuk pcs yang biayanya belum tercatat
           (tahap belum selesai, aksesori menunggu harga). <b className="text-amber-300">Selisih</b> = aktual + sisa − perkiraan
           (<span className="text-red-400">+ boros</span>, <span className="text-green-400">− hemat</span>).{' '}
-          <b className="text-amber-300">Beda tarif</b> = bagian selisih upah karena tarif HPP berubah sesudah upah dicatat
-          — bukan hemat/boros.
+          Upah yang sudah dibayar dibandingkan dengan tarif yang dibayar saat itu.
         </p>
         <p>Laba memakai angka yang sama dengan <b>Kinerja Keuangan</b>.</p>
         {adaSementara && (
