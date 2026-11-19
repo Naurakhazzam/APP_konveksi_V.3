@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Loader2, Filter, Eye, AlertTriangle } from 'lucide-react';
+import { Loader2, Filter, Eye, AlertTriangle, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import {
@@ -23,6 +23,7 @@ import {
   type GrupKomponen,
   type TandaBaris,
   type TandaPO,
+  type RincianKomponen,
 } from '@/lib/actions/keuangan/laporan-po.actions';
 import { poPeriodeBaru } from '@/lib/keuangan/periode-po';
 import type { KunciIstilah } from '@/lib/keuangan/kamus';
@@ -641,9 +642,18 @@ function TabelKomponen({ baris }: { baris: BarisKomponen[] }) {
     .filter(x => x.rows.length > 0);
   const th = 'p-2.5 text-[#9aa0a6] text-[11px] font-bold uppercase tracking-wider';
   const sum = (rows: BarisKomponen[], k: 'perkiraan' | 'aktual' | 'sisa' | 'selisih') => rows.reduce((s, r) => s + r[k], 0);
+  const [buka, setBuka] = useState<Set<string>>(new Set());
+  const toggle = (k: string) => setBuka(prev => {
+    const n = new Set(prev);
+    if (n.has(k)) n.delete(k); else n.add(k);
+    return n;
+  });
 
   return (
     <div className="rounded-lg border border-[#2A2D31] overflow-x-auto">
+      <p className="px-3 py-2 text-[11px] text-[#9aa0a6] bg-[#1A1C1E] border-b border-[#2A2D31]">
+        Klik baris bertanda <ChevronRight className="inline h-3 w-3" /> untuk melihat rincian HPP vs aktual dan penyebab hemat / boros.
+      </p>
       <table className="w-full text-sm">
         <thead className="bg-[#1A1C1E]">
           <tr>
@@ -666,11 +676,24 @@ function TabelKomponen({ baris }: { baris: BarisKomponen[] }) {
                 <td className={`p-2 text-right text-xs font-semibold ${selisihCls(sum(rows, 'selisih'))}`}>{selisihFmt(sum(rows, 'selisih'))}</td>
                 <td />
               </tr>
-              {rows.map((r, i) => (
-                <tr key={i} className="border-t border-[#2A2D31]/60 hover:bg-[#1A1C1E]/50">
+              {rows.map((r, i) => {
+                const kunci = `${g}:${i}`;
+                const terbuka = buka.has(kunci);
+                return (
+                <React.Fragment key={i}>
+                <tr
+                  className={`border-t border-[#2A2D31]/60 hover:bg-[#1A1C1E]/50 ${r.rincian ? 'cursor-pointer' : ''}`}
+                  onClick={r.rincian ? () => toggle(kunci) : undefined}
+                  aria-expanded={r.rincian ? terbuka : undefined}
+                >
                   <td className="p-2.5 pl-5 text-[#e8eaed]">
-                    {r.nama}
-                    {r.keterangan && <span className="block text-[10px] text-[#5f6368]">{r.keterangan}</span>}
+                    <span className="inline-flex items-center gap-1">
+                      {r.rincian
+                        ? <ChevronRight className={`h-3.5 w-3.5 shrink-0 text-[#e5c17b] transition-transform ${terbuka ? 'rotate-90' : ''}`} />
+                        : <span className="inline-block w-3.5" />}
+                      {r.nama}
+                    </span>
+                    {r.keterangan && <span className="block pl-[18px] text-[10px] text-[#5f6368]">{r.keterangan}</span>}
                   </td>
                   <td className="p-2.5 text-right text-[#e8eaed] whitespace-nowrap">{r.perkiraan ? idrFmt(r.perkiraan) : '—'}</td>
                   <td className="p-2.5 text-right text-[#e8eaed] whitespace-nowrap">{r.aktual ? idrFmt(r.aktual) : '—'}</td>
@@ -683,7 +706,14 @@ function TabelKomponen({ baris }: { baris: BarisKomponen[] }) {
                   </td>
                   <td className={`p-2.5 text-xs whitespace-nowrap ${TANDA_BARIS[r.tanda].cls}`}>{TANDA_BARIS[r.tanda].label}</td>
                 </tr>
-              ))}
+                {terbuka && r.rincian && (
+                  <tr className="bg-[#16181A]">
+                    <td colSpan={6} className="p-3 pl-9"><PanelRincian rincian={r.rincian} /></td>
+                  </tr>
+                )}
+                </React.Fragment>
+                );
+              })}
             </React.Fragment>
           ))}
           <tr className="border-t-2 border-[#2A2D31] bg-[#1A1C1E] font-bold">
@@ -696,6 +726,62 @@ function TabelKomponen({ baris }: { baris: BarisKomponen[] }) {
           </tr>
         </tbody>
       </table>
+    </div>
+  );
+}
+
+// ─── Rincian satu komponen (HPP vs aktual + penyebab) ───────────────────────
+
+function PanelRincian({ rincian }: { rincian: RincianKomponen }) {
+  const th = 'p-2 text-[#9aa0a6] text-[10px] font-bold uppercase tracking-wider';
+  return (
+    <div className="space-y-2">
+      {rincian.kalimat.length > 0 && (
+        <ul className="space-y-0.5 text-xs text-[#c4c7c5] list-disc pl-4">
+          {rincian.kalimat.map((k, i) => <li key={i}>{k}</li>)}
+        </ul>
+      )}
+      {rincian.baris.length > 0 && (
+        <div className="rounded border border-[#2A2D31] overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead className="bg-[#1A1C1E]">
+              <tr>
+                <th className={`${th} text-left`}>Rincian</th>
+                <th className={`${th} text-right`}>HPP (patokan)</th>
+                <th className={`${th} text-right`}>Aktual</th>
+                <th className={`${th} text-right`}>Hemat / Boros</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rincian.baris.map((b, i) => {
+                const sel = b.perkiraan == null ? null : b.aktual - b.perkiraan;
+                return (
+                  <tr key={i} className="border-t border-[#2A2D31]/60 align-top">
+                    <td className="p-2 text-[#e8eaed]">
+                      {b.nama}
+                      {b.catatan && <span className="block text-[10px] text-[#9aa0a6]">{b.catatan}</span>}
+                      {b.anak && b.anak.length > 0 && (
+                        <ul className="mt-1 space-y-0.5 text-[10px] text-[#5f6368]">
+                          {b.anak.map((a, j) => (
+                            <li key={j} className="flex justify-between gap-4 max-w-sm">
+                              <span>· {a.nama}</span><span className="whitespace-nowrap">{idrFmt(a.nominal)}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </td>
+                    <td className="p-2 text-right text-[#e8eaed] whitespace-nowrap">{b.perkiraan == null ? '—' : idrFmt(b.perkiraan)}</td>
+                    <td className="p-2 text-right text-[#e8eaed] whitespace-nowrap">{b.aktual ? idrFmt(b.aktual) : '—'}</td>
+                    <td className={`p-2 text-right font-semibold whitespace-nowrap ${sel == null ? 'text-[#5f6368]' : selisihCls(sel)}`}>
+                      {sel == null ? '—' : selisihFmt(sel)}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

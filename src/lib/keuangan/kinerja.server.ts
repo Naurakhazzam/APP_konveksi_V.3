@@ -30,7 +30,7 @@ import { pendapatanSjPerBulan, returRejectKejadian, type KejadianReject } from '
 import { KATEGORI_BAYAR_KLIEN } from './pendapatan.server';
 import { KATEGORI_SETORAN_MODAL } from '@/lib/actions/keuangan/buku-kas.types';
 import { bulanBerjalan } from '@/lib/bulan-berjalan';
-import { susunKomponen, sisaNonUpah, type BarisKomponen } from './komponen-po';
+import { susunKomponen, sisaNonUpah, type BarisKomponen, type OverheadRinci } from './komponen-po';
 
 type Supa = any;
 const TENANT_ID = 'STX-001';
@@ -240,7 +240,8 @@ export async function hitungKinerja(supabase: Supa, periode = 'semua'): Promise<
   const dalamPeriode = (ym: string) => periodeValid === 'semua' || ym === periodeValid;
   const perTanggal = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Jakarta' });
 
-  const [poRes, poBulanRes, kasRes, lotRes, btRes, sjMap, pembRes, jenisRes, ohBundleRes, pembPoRes, perkRes, aktRes, bedaRes, rejectKejadian] = await Promise.all([
+  const [poRes, poBulanRes, kasRes, lotRes, btRes, sjMap, pembRes, jenisRes, ohBundleRes, pembPoRes, perkRes, aktRes, bedaRes, rejectKejadian,
+         subRes, kompOhRes, kainRes] = await Promise.all([
     supabase.rpc('get_proyeksi_surplus_po', { p_tenant_id: TENANT_ID, p_po_mulai: PO_AWAL_PERIODE }),
     supabase.rpc('get_kinerja_po_bulan', { p_tenant_id: TENANT_ID, p_po_mulai: PO_AWAL_PERIODE }),
     supabase.from('buku_kas')
@@ -260,8 +261,11 @@ export async function hitungKinerja(supabase: Supa, periode = 'semua'): Promise<
     supabase.rpc('get_laporan_po_aktual', { p_tenant_id: TENANT_ID, p_po_mulai: PO_AWAL_PERIODE }),
     supabase.rpc('get_laporan_po_beda_tarif', { p_tenant_id: TENANT_ID, p_po_mulai: PO_AWAL_PERIODE }),
     returRejectKejadian(supabase, true),
+    supabase.from('overhead_sub').select('id, nama, hpp_komponen_id').eq('tenant_id', TENANT_ID),
+    supabase.from('hpp_komponen').select('id, nama').eq('tenant_id', TENANT_ID).eq('kategori', 'overhead'),
+    supabase.rpc('get_laporan_po_kain', { p_tenant_id: TENANT_ID, p_po_mulai: PO_AWAL_PERIODE }),
   ]);
-  for (const r of [poRes, poBulanRes, kasRes, lotRes, btRes, pembRes, jenisRes, ohBundleRes, pembPoRes, perkRes, aktRes, bedaRes]) if (r.error) throw new Error(r.error.message);
+  for (const r of [poRes, poBulanRes, kasRes, lotRes, btRes, pembRes, jenisRes, ohBundleRes, pembPoRes, perkRes, aktRes, bedaRes, subRes, kompOhRes, kainRes]) if (r.error) throw new Error(r.error.message);
 
   // ── Bahan pembantu lama (saldo awal = setoran modal barang) ──
   const namaJenis = new Map(((jenisRes.data ?? []) as any[]).map(j => [String(j.id), String(j.nama)]));
@@ -348,13 +352,32 @@ export async function hitungKinerja(supabase: Supa, periode = 'semua'): Promise<
   const kasUmum = kasOverhead.filter(k => !k.po_id);
   const kasLangsung = kasOverhead.filter(k => k.po_id);
 
-  type BundleOH = { po: string; pcs: number; mulai: string; selesai: string | null; bobot: number; kirim: { bulan: string; pcs: number }[]; oh: number };
+  // Asal biaya overhead → jenis HPP (sub-kelompok tertaut komponen HPP; tanpa tautan / tanpa sub = Operasional)
+  const kompOh = new Map(((kompOhRes.data ?? []) as any[]).map(k => [String(k.id), String(k.nama)]));
+  const idOperasional = [...kompOh.entries()].find(([, n]) => n.toLowerCase() === 'operasional')?.[0] ?? 'operasional';
+  const subInfo = new Map(((subRes.data ?? []) as any[]).map(x => [String(x.id), {
+    nama: String(x.nama), jenis: x.hpp_komponen_id && kompOh.has(String(x.hpp_komponen_id)) ? String(x.hpp_komponen_id) : idOperasional,
+  }]));
+  type Asal = { kunci: string; label: string; jenis_id: string };
+  const asalKas = (k: any): Asal => {
+    const sub = k.overhead_sub_id ? subInfo.get(String(k.overhead_sub_id)) : undefined;
+    return sub ? { kunci: `sub:${k.overhead_sub_id}`, label: sub.nama, jenis_id: sub.jenis }
+      : { kunci: `kat:${k.kategori}`, label: `${k.kategori ?? 'Lainnya'} (tanpa sub-kelompok)`, jenis_id: idOperasional };
+  };
+  const asalBt = (b: any): Asal => {
+    const sub = b.overhead_sub_id ? subInfo.get(String(b.overhead_sub_id)) : undefined;
+    return { kunci: `bt:${b.nama}`, label: `${b.nama} (kontrak)`, jenis_id: sub?.jenis ?? idOperasional };
+  };
+  const asalMap = new Map<string, Asal>();
+
+  type BundleOH = { po: string; pcs: number; mulai: string; selesai: string | null; bobot: number; kirim: { bulan: string; pcs: number }[]; oh: number;
+                    ohAsal: Map<string, number> };
   const bundles: BundleOH[] = ((ohBundleRes.data ?? []) as any[]).map(r => ({
     po: String(r.po_id), pcs: Number(r.pcs),
     mulai: String(r.tgl_mulai).slice(0, 10), selesai: r.tgl_selesai ? String(r.tgl_selesai).slice(0, 10) : null,
     bobot: Number(r.bobot ?? 0),
     kirim: ((r.kirim ?? []) as any[]).map(x => ({ bulan: String(x.bulan), pcs: Number(x.pcs) })),
-    oh: 0,
+    oh: 0, ohAsal: new Map<string, number>(),
   })).filter(b => b.pcs > 0 && !(b.selesai && b.selesai < TANGGAL_AWAL_PERIODE)); // selesai sebelum periode: tidak ikut
   // Produk tanpa overhead HPP → bobot rata-rata produk lain (atau 1 bila semua kosong)
   const bobotAda = bundles.filter(b => b.bobot > 0);
@@ -367,14 +390,30 @@ export async function hitungKinerja(supabase: Supa, periode = 'semua'): Promise<
     const kasTotal = transaksi.reduce((s, t) => s + t.nominal, 0);
     const d0 = awalHitung(m), d1 = akhirHitung(m);
     const hari = d1 >= d0 ? hariInklusif(d0, d1) : 0;
-    const kasHarian = hari > 0 ? kasTotal / hari : 0;
+    // Pool harian per asal biaya (sub-kelompok Buku Kas) — jumlahnya = kasTotal / hari
+    const kasHarianAsal = new Map<string, number>();
+    kasUmum.filter(k => ym(k) === m).forEach(k => {
+      const a = asalKas(k); asalMap.set(a.kunci, a);
+      if (hari > 0) kasHarianAsal.set(a.kunci, (kasHarianAsal.get(a.kunci) ?? 0) + Number(k.nominal ?? 0) / hari);
+    });
+    const sewaAsal = btData.map(b => { const a = asalBt(b); asalMap.set(a.kunci, a); return a.kunci; });
     let teralokasi = 0, tanpaProduksi = hari > 0 ? 0 : kasTotal, pcsHari = 0, hariTanpaProduksi = 0;
     for (let d = d0; hari > 0 && d <= d1; d = besok(d)) {
-      const pool = kasHarian + sewa.reduce((s, x) => s + (d >= x.dari && d <= x.sampai ? x.perHari : 0), 0);
+      const poolAsal = new Map(kasHarianAsal);
+      sewa.forEach(x => {
+        if (!(d >= x.dari && d <= x.sampai)) return;
+        const kunci = sewaAsal[btData.findIndex(b => b.nama === x.nama)] ?? `bt:${x.nama}`;
+        poolAsal.set(kunci, (poolAsal.get(kunci) ?? 0) + x.perHari);
+      });
+      const pool = [...poolAsal.values()].reduce((s, n) => s + n, 0);
       const aktif = bundles.filter(b => b.mulai <= d && (b.selesai === null || d <= maks(b.selesai, b.mulai)));
       const w = aktif.reduce((s, b) => s + b.pcs * b.bobot, 0);
       if (w > 0) {
-        aktif.forEach(b => { b.oh += pool * (b.pcs * b.bobot) / w; });
+        aktif.forEach(b => {
+          const f = (b.pcs * b.bobot) / w;
+          b.oh += pool * f;
+          poolAsal.forEach((n, kunci) => b.ohAsal.set(kunci, (b.ohAsal.get(kunci) ?? 0) + n * f));
+        });
         teralokasi += pool;
         pcsHari += aktif.reduce((s, b) => s + b.pcs, 0);
       } else {
@@ -421,10 +460,23 @@ export async function hitungKinerja(supabase: Supa, periode = 'semua'): Promise<
   const ohAktualPo = new Map<string, number>();
   ohPo.forEach((v, id) => ohAktualPo.set(id, v.alokasi));
   kasLangsungPo.forEach((n, id) => ohAktualPo.set(id, (ohAktualPo.get(id) ?? 0) + n));
+  // Overhead per asal biaya per PO (rincian Laporan Per PO): alokasi pcs-hari + bertanda PO
+  const ohRinciPo = new Map<string, Map<string, OverheadRinci>>();
+  const tambahRinci = (po: string, a: Asal, n: number, langsung: boolean) => {
+    const m = ohRinciPo.get(po) ?? new Map<string, OverheadRinci>();
+    const kunci = `${langsung ? 'L' : 'A'}|${a.kunci}`;
+    const cur = m.get(kunci) ?? { kunci, label: a.label, jenis_id: a.jenis_id, jenis: kompOh.get(a.jenis_id) ?? 'Operasional', nominal: 0, langsung };
+    cur.nominal += n; m.set(kunci, cur); ohRinciPo.set(po, m);
+  };
+  bundles.forEach(b => b.ohAsal.forEach((n, kunci) => { const a = asalMap.get(kunci); if (a) tambahRinci(b.po, a, n, false); }));
+  kasLangsung.forEach(k => tambahRinci(String(k.po_id), asalKas(k), Number(k.nominal ?? 0), true));
+
   const komponenPo = susunKomponen({
     perkiraan: (perkRes.data ?? []) as any[], aktual: (aktRes.data ?? []) as any[],
     pembantu: (pembPoRes.data ?? []) as any[], bedaTarif: (bedaRes.data ?? []) as any[],
     namaJenis, overhead: ohAktualPo,
+    overheadRinci: new Map([...ohRinciPo.entries()].map(([po, m]) => [po, [...m.values()]])),
+    kain: (kainRes.data ?? []) as any[],
   });
 
   /** po → bulan → perkiraan bahan pembantu yang ikut barang terkirim (HPP, seperti upah sisa) */

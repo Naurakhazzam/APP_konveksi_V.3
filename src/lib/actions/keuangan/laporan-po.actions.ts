@@ -22,7 +22,7 @@ import {
   type BarisKomponen, type BarisQty, type KesimpulanPO,
 } from '@/lib/keuangan/komponen-po';
 
-export type { BarisKomponen, BarisQty, KesimpulanPO, GrupKomponen, TandaBaris } from '@/lib/keuangan/komponen-po';
+export type { BarisKomponen, BarisQty, KesimpulanPO, GrupKomponen, TandaBaris, RincianKomponen } from '@/lib/keuangan/komponen-po';
 
 const TENANT_ID = 'STX-001';
 /** Batas selisih PO (di luar beda tarif) dianggap boros / hemat (Rp) */

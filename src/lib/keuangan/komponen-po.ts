@@ -29,6 +29,35 @@ export interface BarisKomponen {
   /** Bagian selisih karena tarif HPP berubah (upah) — tidak dihitung hemat/boros */
   beda_tarif: number;
   tanda: TandaBaris;
+  /** Rincian HPP vs aktual (baris bisa di-klik); upah & biaya lain tidak punya rincian */
+  rincian?: RincianKomponen;
+}
+
+export interface BarisRincian {
+  nama: string;
+  /** Patokan HPP (null = tidak bisa dipisah per baris) */
+  perkiraan: number | null;
+  aktual: number;
+  catatan: string | null;
+  /** Asal biaya aktual (mis. sub-kelompok Buku Kas) */
+  anak?: { nama: string; nominal: number }[];
+}
+
+export interface RincianKomponen {
+  /** Kalimat penjelasan kenapa hemat / boros */
+  kalimat: string[];
+  baris: BarisRincian[];
+}
+
+/** Overhead aktual satu PO per asal biaya (sub-kelompok Buku Kas / kontrak) → jenis HPP */
+export interface OverheadRinci {
+  kunci: string;
+  label: string;
+  /** hpp_komponen overhead (Listrik / Makan / Operasional / Sewa Rumah) */
+  jenis_id: string;
+  jenis: string;
+  nominal: number;
+  langsung: boolean;
 }
 
 export const LABEL_TAHAP: Record<string, string> = {
@@ -56,17 +85,33 @@ export interface SumberKomponen {
   namaJenis: Map<string, string>;
   /** po → overhead aktual (alokasi pcs-hari + bertanda PO di Buku Kas; pembantu di grupnya sendiri) */
   overhead: Map<string, number>;
+  /** po → overhead aktual per asal biaya (jumlahnya = overhead) */
+  overheadRinci?: Map<string, OverheadRinci[]>;
+  /** get_laporan_po_kain: per PO × bahan, patokan vs terpakai */
+  kain?: any[];
 }
+
+const rpR = (n: number) => 'Rp ' + Math.round(Math.abs(n)).toLocaleString('id-ID');
+const angka = (n: number, d = 2) => n.toLocaleString('id-ID', { maximumFractionDigits: d });
+const hb = (n: number) => (n > 0 ? 'boros' : 'hemat');
+/** Batas selisih yang disebut di kalimat penjelasan */
+const AMBANG_RINCI = 500;
 
 export function susunKomponen(s: SumberKomponen): Map<string, BarisKomponen[]> {
   type Acc = { grup: GrupKomponen; nama: string; ket: Set<string>; perkiraan: number; aktual: number; sisa: number;
-               qty: number; qtyTunggu: number; beda: number };
+               qty: number; qtyTunggu: number; beda: number; qtyHpp: number;
+               item: Map<string, { qty: number; tunggu: number; nominal: number }>;
+               ohJenis: Map<string, { nama: string; perkiraan: number }> };
   const perPo = new Map<string, Map<string, Acc>>();
   const ambil = (po: string, kunci: string, grup: GrupKomponen, nama: string): Acc => {
     const m = perPo.get(po) ?? new Map<string, Acc>();
     perPo.set(po, m);
     let a = m.get(kunci);
-    if (!a) { a = { grup, nama, ket: new Set(), perkiraan: 0, aktual: 0, sisa: 0, qty: 0, qtyTunggu: 0, beda: 0 }; m.set(kunci, a); }
+    if (!a) {
+      a = { grup, nama, ket: new Set(), perkiraan: 0, aktual: 0, sisa: 0, qty: 0, qtyTunggu: 0, beda: 0, qtyHpp: 0,
+            item: new Map(), ohJenis: new Map() };
+      m.set(kunci, a);
+    }
     return a;
   };
   const labelUpah = (t: string) => `Upah ${LABEL_TAHAP[t] ?? t}`;
@@ -78,6 +123,9 @@ export function susunKomponen(s: SumberKomponen): Map<string, BarisKomponen[]> {
     let a: Acc;
     if (r.kategori === 'overhead') {
       a = ambil(po, 'overhead', 'overhead', 'Overhead produksi'); a.ket.add(nama);
+      const j = String(r.komponen_id);
+      const cur = a.ohJenis.get(j) ?? { nama, perkiraan: 0 };
+      cur.perkiraan += perk; a.ohJenis.set(j, cur);
     } else if (r.jenis_id) {
       const j = String(r.jenis_id);
       a = ambil(po, `pembantu:${j}`, 'pembantu', s.namaJenis.get(j) ?? 'Bahan pembantu');
@@ -92,7 +140,7 @@ export function susunKomponen(s: SumberKomponen): Map<string, BarisKomponen[]> {
     } else {
       a = ambil(po, `lain:${nama}`, 'lain', nama);
     }
-    a.perkiraan += perk; a.sisa += sisa;
+    a.perkiraan += perk; a.sisa += sisa; a.qtyHpp += Number(r.qty_hpp ?? 0);
   });
 
   // Aktual kain, aksesori, upah
@@ -105,6 +153,9 @@ export function susunKomponen(s: SumberKomponen): Map<string, BarisKomponen[]> {
       const a = ambil(po, `aks:${nama}`, 'aksesori', nama);
       a.aktual += n; a.qty += Number(r.qty); a.qtyTunggu += Number(r.qty_tunggu);
       if (String(r.kunci) !== nama) a.ket.add(String(r.kunci));
+      const it = a.item.get(String(r.kunci)) ?? { qty: 0, tunggu: 0, nominal: 0 };
+      it.qty += Number(r.qty); it.tunggu += Number(r.qty_tunggu); it.nominal += n;
+      a.item.set(String(r.kunci), it);
     } else if (r.sumber === 'upah') {
       const t = String(r.kunci);
       const a = ambil(po, `upah:${t}`, 'upah', labelUpah(t)); a.aktual += n;
@@ -120,12 +171,19 @@ export function susunKomponen(s: SumberKomponen): Map<string, BarisKomponen[]> {
 
   // Bahan pembantu: biaya aktual = pemakaian dari saldo (jatah yang tak tertutup saldo = penghematan)
   const hematPembantu = new Map<string, number>();
+  const pembantuRinci = new Map<string, { pcs: number; jatah: number; pakai: number; lama: number }>();
   s.pembantu.forEach(r => {
     const po = String(r.po_id), j = String(r.jenis_id);
     const a = ambil(po, `pembantu:${j}`, 'pembantu', s.namaJenis.get(j) ?? 'Bahan pembantu');
     a.aktual += Number(r.pakai ?? 0);
     hematPembantu.set(`${po}|${j}`, (hematPembantu.get(`${po}|${j}`) ?? 0) + Number(r.hemat ?? 0));
+    const cur = pembantuRinci.get(`${po}|${j}`) ?? { pcs: 0, jatah: 0, pakai: 0, lama: 0 };
+    cur.pcs += Number(r.pcs ?? 0); cur.jatah += Number(r.jatah ?? 0);
+    cur.pakai += Number(r.pakai ?? 0); cur.lama += Number(r.pakai_lama ?? 0);
+    pembantuRinci.set(`${po}|${j}`, cur);
   });
+  const kainPo = new Map<string, any[]>();
+  (s.kain ?? []).forEach(r => kainPo.set(String(r.po_id), [...(kainPo.get(String(r.po_id)) ?? []), r]));
 
   // Overhead pcs-hari & bertanda PO
   s.overhead.forEach((n, po) => {
@@ -161,10 +219,19 @@ export function susunKomponen(s: SumberKomponen): Map<string, BarisKomponen[]> {
       // jadi perubahan tarif HPP sesudahnya tidak tampil sebagai hemat/boros.
       const perkiraan = a.perkiraan + a.beda;
       if (Math.abs(a.beda) > 0.5) ket.push('tarif = yang dibayar');
+      const selisih = a.aktual + sisa - perkiraan;
+      let rincian: RincianKomponen | undefined;
+      if (a.grup === 'overhead') rincian = rinciOverhead(a, s.overheadRinci?.get(po) ?? [], packingBelum);
+      else if (a.grup === 'bahan') rincian = rinciKain(kainPo.get(po) ?? [], selisih);
+      else if (a.grup === 'aksesori') rincian = rinciAksesori(a, sisa);
+      else if (a.grup === 'pembantu') {
+        const j = kunci.slice('pembantu:'.length);
+        rincian = rinciPembantu(a, pembantuRinci.get(`${po}|${j}`), hematPembantu.get(`${po}|${j}`) ?? 0, sisa);
+      }
       return {
         grup: a.grup, nama: a.nama, keterangan: ket.length ? ket.join(' · ') : null,
-        perkiraan, aktual: a.aktual, sisa, selisih: a.aktual + sisa - perkiraan,
-        beda_tarif: 0, tanda,
+        perkiraan, aktual: a.aktual, sisa, selisih,
+        beda_tarif: 0, tanda, ...(rincian ? { rincian } : {}),
       };
     });
     const urutTahap = (r: BarisKomponen) => URUT_TAHAP.findIndex(t => r.nama === labelUpah(t));
@@ -174,6 +241,142 @@ export function susunKomponen(s: SumberKomponen): Map<string, BarisKomponen[]> {
     hasil.set(po, rows);
   });
   return hasil;
+}
+
+// ─── Rincian per komponen ────────────────────────────────────────────────────
+
+type AccRinci = {
+  nama: string; perkiraan: number; aktual: number; sisa: number; qty: number; qtyTunggu: number; qtyHpp: number;
+  item: Map<string, { qty: number; tunggu: number; nominal: number }>;
+  ohJenis: Map<string, { nama: string; perkiraan: number }>;
+};
+
+/** Overhead: patokan HPP vs bagian PO per jenis (Listrik / Makan / Operasional / Sewa Rumah) */
+function rinciOverhead(a: AccRinci, rinci: OverheadRinci[], berjalan: boolean): RincianKomponen {
+  const jenis = new Map<string, { nama: string; perkiraan: number; aktual: number; anak: Map<string, number> }>();
+  a.ohJenis.forEach((v, id) => jenis.set(id, { nama: v.nama, perkiraan: v.perkiraan, aktual: 0, anak: new Map() }));
+  rinci.forEach(r => {
+    const cur = jenis.get(r.jenis_id) ?? { nama: r.jenis, perkiraan: 0, aktual: 0, anak: new Map<string, number>() };
+    cur.aktual += r.nominal;
+    const label = r.langsung ? `${r.label} (khusus PO ini)` : r.label;
+    cur.anak.set(label, (cur.anak.get(label) ?? 0) + r.nominal);
+    jenis.set(r.jenis_id, cur);
+  });
+  const baris: BarisRincian[] = [...jenis.values()].map(j => {
+    const sel = j.aktual - j.perkiraan;
+    const catatan = j.aktual < 1 && j.perkiraan > 0
+      ? `Belum ada biaya ${j.nama} tercatat selama PO ini dikerjakan (mis. tagihan belum dibayar / belum diinput)`
+      : j.perkiraan <= 0 ? `Tidak ada patokan ${j.nama} di HPP sheet`
+      : Math.abs(sel) >= AMBANG_RINCI ? `${hb(sel)} ${rpR(sel)}` : 'sesuai patokan';
+    const anak = [...j.anak.entries()].filter(([, n]) => Math.abs(n) >= 1)
+      .map(([nama, nominal]) => ({ nama, nominal })).sort((x, y) => y.nominal - x.nominal);
+    return { nama: j.nama, perkiraan: j.perkiraan, aktual: j.aktual, catatan, anak };
+  }).sort((x, y) => (y.perkiraan ?? 0) - (x.perkiraan ?? 0));
+
+  const kalimat = ['Biaya overhead (makan, listrik, operasional, sewa) dibagi tiap hari ke semua barang yang sedang '
+    + 'dikerjakan (selesai cutting s/d selesai packing). Di bawah: patokan HPP vs bagian PO ini per jenis biaya.'];
+  const beda = (b: BarisRincian) => b.aktual - (b.perkiraan ?? 0);
+  baris.filter(b => Math.abs(beda(b)) >= AMBANG_RINCI)
+    .sort((x, y) => Math.abs(beda(y)) - Math.abs(beda(x)))
+    .slice(0, 3).forEach(b => {
+      const sel = beda(b);
+      const asal = b.anak?.[0];
+      kalimat.push(`${b.nama}: patokan ${rpR(b.perkiraan ?? 0)}, bagian PO ini ${rpR(b.aktual)} → ${hb(sel)} ${rpR(sel)}`
+        + (b.aktual < 1 ? ' (belum ada biaya tercatat).'
+          : sel < 0 && b.aktual < 0.3 * (b.perkiraan ?? 0) ? ' (jauh di bawah patokan — mungkin tagihan/pembayaran belum diinput).'
+          : sel > 0 && asal && (b.anak?.length ?? 0) > 1 ? ` (terbesar dari ${asal.nama} ${rpR(asal.nominal)}).` : '.'));
+    });
+  kalimat.push(berjalan
+    ? 'PO masih dikerjakan — bagian overhead masih bertambah sampai packing selesai.'
+    : 'Angka bulan berjalan masih sementara sampai bulan tutup.');
+  return { kalimat, baris };
+}
+
+/** Kain: per bahan × warna — pemakaian vs patokan & harga beli vs harga HPP */
+function rinciKain(rows: any[], selisih: number): RincianKomponen {
+  let efekPakai = 0, efekHarga = 0, lebih = 0;
+  const satuan = new Set<string>();
+  const baris: BarisRincian[] = rows.map(r => {
+    const qp = Number(r.qty_patokan), qa = Number(r.qty_pakai), nh = Number(r.nilai_hpp), na = Number(r.nilai_aktual);
+    const pcs = Number(r.pcs);
+    if (!r.bahan) {
+      return { nama: 'Belum tercatat pemakaiannya', perkiraan: nh, aktual: na,
+        catatan: `${angka(pcs, 0)} pcs sudah dipotong tanpa catatan pemakaian bahan` };
+    }
+    const sat = String(r.satuan ?? '');
+    satuan.add(sat);
+    const hh = qp > 0 ? nh / qp : 0, ha = qa > 0 ? na / qa : 0;
+    const bag: string[] = [`${angka(pcs, 0)} pcs`];
+    if (qp > 0) {
+      const d = qa - qp;
+      bag.push(`patokan ${angka(qp)} ${sat} → terpakai ${angka(qa)} ${sat}`
+        + (Math.abs(d) >= 0.005 ? ` (${d > 0 ? 'boros' : 'irit'} ${angka(Math.abs(d))} ${sat})` : ' (pas)'));
+      bag.push(`harga HPP ${rpR(hh)}/${sat} vs harga beli ${rpR(ha)}/${sat}`);
+      efekPakai += d * hh; efekHarga += qa * (ha - hh); lebih += d;
+    } else {
+      bag.push(`terpakai ${angka(qa)} ${sat} · patokan pemakaian belum ada`);
+    }
+    return { nama: String(r.bahan), perkiraan: nh, aktual: na, catatan: bag.join(' · ') };
+  }).sort((x, y) => (y.perkiraan ?? 0) - (x.perkiraan ?? 0));
+
+  const sat = satuan.size === 1 ? [...satuan][0] : 'satuan';
+  const kalimat = [Math.abs(selisih) < AMBANG_RINCI ? 'Biaya kain sesuai patokan HPP.'
+    : `Kain ${hb(selisih)} ${rpR(selisih)} dibanding patokan HPP.`];
+  if (Math.abs(efekPakai) >= AMBANG_RINCI)
+    kalimat.push(`Pemakaian ${efekPakai > 0 ? 'lebih boros' : 'lebih irit'} ${angka(Math.abs(lebih))} ${sat} dari patokan → ${hb(efekPakai)} ${rpR(efekPakai)}.`);
+  if (Math.abs(efekHarga) >= AMBANG_RINCI)
+    kalimat.push(`Harga beli kain ${efekHarga > 0 ? 'lebih mahal' : 'lebih murah'} dari harga di HPP → ${hb(efekHarga)} ${rpR(efekHarga)}.`);
+  return { kalimat, baris };
+}
+
+/** Aksesori: qty HPP vs qty terpakai & harga beli vs harga HPP */
+function rinciAksesori(a: AccRinci, sisa: number): RincianKomponen {
+  const tercatat = a.perkiraan > 0 ? Math.max(0, (a.perkiraan - a.sisa) / a.perkiraan) : 0;
+  const qtyHppCatat = a.qtyHpp * tercatat;
+  const hh = a.qtyHpp > 0 ? a.perkiraan / a.qtyHpp : 0;
+  const qtyHarga = a.qty - a.qtyTunggu;
+  const ha = qtyHarga > 0 ? a.aktual / qtyHarga : 0;
+  const efekQty = (a.qty - qtyHppCatat) * hh;
+  const efekHarga = qtyHarga > 0 ? qtyHarga * (ha - hh) : 0;
+  const sel = a.aktual + sisa - a.perkiraan;
+
+  const baris: BarisRincian[] = [...a.item.entries()].map(([nama, it]) => ({
+    nama, perkiraan: a.item.size === 1 ? a.perkiraan - a.sisa : null, aktual: it.nominal,
+    catatan: `terpakai ${angka(it.qty)}`
+      + (it.qty - it.tunggu > 0 ? ` × rata-rata ${rpR(it.nominal / (it.qty - it.tunggu))}` : '')
+      + (it.tunggu > 0 ? ` · ${angka(it.tunggu)} menunggu harga` : ''),
+  }));
+  if (a.sisa > 0.5) baris.push({ nama: 'Pcs belum dipasang', perkiraan: a.sisa, aktual: 0, catatan: 'masih perkiraan (sisa)' });
+
+  const kalimat: string[] = [];
+  if (a.qtyHpp > 0) kalimat.push(`Patokan HPP: ${angka(a.qtyHpp)} × ${rpR(hh)} = ${rpR(a.perkiraan)}.`
+    + (a.qty > 0 ? ` Tercatat terpakai ${angka(a.qty)} (patokan untuk pcs yang sudah dipasang ${angka(qtyHppCatat)}).` : ''));
+  if (Math.abs(sel) < AMBANG_RINCI) kalimat.push(`${a.nama} sesuai patokan HPP.`);
+  else {
+    if (Math.abs(efekQty) >= AMBANG_RINCI) kalimat.push(`Jumlah terpakai ${efekQty > 0 ? 'lebih banyak' : 'lebih sedikit'} dari patokan → ${hb(efekQty)} ${rpR(efekQty)}.`);
+    if (Math.abs(efekHarga) >= AMBANG_RINCI) kalimat.push(`Harga beli ${efekHarga > 0 ? 'lebih mahal' : 'lebih murah'} (rata-rata ${rpR(ha)} vs HPP ${rpR(hh)}) → ${hb(efekHarga)} ${rpR(efekHarga)}.`);
+  }
+  if (a.qtyTunggu > 0) kalimat.push(`${angka(a.qtyTunggu)} masih menunggu harga (stok belum masuk) — dihitung perkiraan dulu.`);
+  return { kalimat, baris };
+}
+
+/** Bahan pembantu: jatah HPP (pcs selesai jahit) vs terpakai dari saldo */
+function rinciPembantu(a: AccRinci, p: { pcs: number; jatah: number; pakai: number; lama: number } | undefined,
+                       hemat: number, sisa: number): RincianKomponen {
+  const baris: BarisRincian[] = [];
+  if (p) {
+    const anak = [
+      { nama: 'Dari barang lama (setoran modal)', nominal: p.lama },
+      { nama: 'Dari belanja', nominal: p.pakai - p.lama },
+    ].filter(x => Math.abs(x.nominal) >= 1);
+    baris.push({ nama: `Sudah dijahit (${angka(p.pcs, 0)} pcs)`, perkiraan: p.jatah, aktual: p.pakai,
+      catatan: hemat > 0.5 ? `saldo di rak tidak cukup → hemat ${rpR(hemat)}` : 'diambil penuh dari saldo', anak });
+  }
+  if (sisa > 0.5) baris.push({ nama: 'Belum dijahit', perkiraan: sisa, aktual: 0, catatan: 'masih perkiraan (sisa)' });
+  const kalimat = [`Biaya ${a.nama} = jatah HPP per pcs yang selesai jahit, diambil dari Saldo Bahan Pembantu.`];
+  if (hemat > 0.5) kalimat.push(`Saldo ${a.nama} kurang saat dipakai, jadi ${rpR(hemat)} tidak menjadi biaya (penghematan).`);
+  else if (p) kalimat.push('Semua jatah tertutup saldo — biaya sama dengan patokan HPP.');
+  return { kalimat, baris };
 }
 
 /** Sisa perkiraan non-upah (upah tersisa sudah ada di upah_sisa Kinerja) */
