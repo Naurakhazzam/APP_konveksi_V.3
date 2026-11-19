@@ -26,11 +26,9 @@ export interface PoArtikelRow {
 
 /**
  * Daftar artikel per PO untuk tab "Daftar Artikel PO".
- *   scope 'aktif' → PO yang benar-benar masih dikerjakan. Yaitu status 'aktif'
- *     DAN belum semua bundle-nya terkirim. Catatan: po.status di DB tidak
- *     pernah di-set 'selesai' otomatis (hanya 'dibatalkan' saat batal), jadi
- *     banyak PO yang sudah tuntas tetap berstatus 'aktif'. Kelengkapan dihitung
- *     dari bundle — sama seperti halaman Monitoring — bukan dari po.status.
+ *   scope 'aktif' → PO berstatus 'aktif' (sejak 19 Nov 2026 status otomatis
+ *     'selesai' lewat trigger saat semua bundle hidup ber-SJ), dan per baris
+ *     artikel yang belum semua bundle-nya terkirim.
  *   scope 'semua' → semua PO (aktif & selesai), kecuali yang dibatalkan.
  */
 export async function getPoArtikelList(scope: DaftarPoScope): Promise<PoArtikelRow[]> {

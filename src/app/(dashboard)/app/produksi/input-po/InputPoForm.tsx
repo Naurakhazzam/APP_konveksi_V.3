@@ -45,6 +45,7 @@ export function InputPoForm({ defaultPoNumber, klienList, modelList }: Props) {
   const [appendConfirm, setAppendConfirm] = useState<{
     payload: AddItemsToPoInput;
     klienNama: string | null;
+    status: string | null;
   } | null>(null);
 
   const handleBlockChange = useCallback((id: string, updates: Partial<ModelBlockState>) => {
@@ -106,10 +107,11 @@ export function InputPoForm({ defaultPoNumber, klienList, modelList }: Props) {
           setIsLoading(false);
           return;
         }
-        // PO aktif → minta konfirmasi tambah artikel
+        // PO aktif/selesai → minta konfirmasi tambah artikel
         setAppendConfirm({
           payload: { no_po: noPo, items },
           klienNama: check.klienNama,
+          status: check.status,
         });
         setIsLoading(false);
         return;
@@ -273,7 +275,10 @@ export function InputPoForm({ defaultPoNumber, klienList, modelList }: Props) {
           <DialogTitle className="text-[#e5c17b]">PO sudah ada</DialogTitle>
           <DialogDescription className="text-[#9aa0a6]">
             Nomor <span className="font-semibold text-[#e8eaed]">{appendConfirm?.payload.no_po}</span>
-            {appendConfirm?.klienNama ? <> (klien {appendConfirm.klienNama})</> : null} sudah terdaftar dan masih aktif.
+            {appendConfirm?.klienNama ? <> (klien {appendConfirm.klienNama})</> : null} sudah terdaftar
+            {appendConfirm?.status === 'selesai'
+              ? <> dan sudah <span className="font-semibold text-[#e8eaed]">selesai</span> — PO akan dibuka lagi (status aktif).</>
+              : <> dan masih aktif.</>}
             Tambahkan <span className="font-semibold text-[#e8eaed]">{appendConfirm?.payload.items.length} artikel</span> ke PO ini?
             Artikel baru beserta barcode bundle-nya akan ditambahkan ke PO tersebut.
           </DialogDescription>

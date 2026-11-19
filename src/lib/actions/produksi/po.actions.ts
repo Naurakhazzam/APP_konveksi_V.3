@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server';
 import { getCurrentUserProfile, assertCanEditProduksi } from '@/lib/auth/permissions';
+import { keteranganPoSelesai } from '@/lib/po-keterangan';
 
 const TENANT_ID = 'STX-001';
 
@@ -298,6 +299,8 @@ export type PoDetail = Omit<RawPoDetail, 'po_item'> & {
     model_nama: string;
     range: string | null;
   })[];
+  /** Hanya untuk PO selesai: mis. "terkirim 186 / 848 pcs · 53 bundle ditutup". */
+  keterangan_selesai: string | null;
 };
 
 // 10. getPoDetail()
@@ -343,9 +346,26 @@ export async function getPoDetail(noPoNumber: string): Promise<PoDetail | null> 
     };
   });
 
+  let keterangan_selesai: string | null = null;
+  if (rawPo.status === 'selesai') {
+    const { data: rk } = await supabase
+      .from('v_po_ringkasan_kirim')
+      .select('qty_order, qty_kirim, bundle_ditutup')
+      .eq('po_id', (po as any).id)
+      .maybeSingle();
+    if (rk) {
+      keterangan_selesai = keteranganPoSelesai({
+        qty_order: Number(rk.qty_order ?? 0),
+        qty_kirim: Number(rk.qty_kirim ?? 0),
+        bundle_ditutup: Number(rk.bundle_ditutup ?? 0),
+      });
+    }
+  }
+
   return {
     ...po,
      po_item: mappedItems,
+     keterangan_selesai,
   };
 }
 
@@ -439,7 +459,7 @@ export interface PoExistCheck {
   exists: boolean;
   status: string | null;
   klienNama: string | null;
-  canAppend: boolean; // true hanya jika status === 'aktif'
+  canAppend: boolean; // true jika status 'aktif' atau 'selesai' (PO selesai dibuka lagi otomatis)
 }
 
 export async function checkPoExists(noPo: string): Promise<PoExistCheck> {
@@ -464,6 +484,6 @@ export async function checkPoExists(noPo: string): Promise<PoExistCheck> {
     exists: true,
     status: data.status,
     klienNama,
-    canAppend: data.status === 'aktif',
+    canAppend: data.status === 'aktif' || data.status === 'selesai',
   };
 }

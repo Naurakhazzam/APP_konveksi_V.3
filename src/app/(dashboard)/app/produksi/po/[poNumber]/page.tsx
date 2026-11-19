@@ -78,7 +78,12 @@ export default async function PoDetailPage({ params }: { params: Promise<{ poNum
         <div className="space-y-4">
           <div>
             <div className="text-xs text-[#9aa0a6] font-medium tracking-wide mb-1 uppercase">Status</div>
-            <div>{getStatusBadge(detail.status)}</div>
+            <div className="flex flex-wrap items-center gap-2">
+              {getStatusBadge(detail.status)}
+              {detail.keterangan_selesai && (
+                <span className="text-xs text-[#9aa0a6]">{detail.keterangan_selesai}</span>
+              )}
+            </div>
           </div>
           <div>
             <div className="text-xs text-[#9aa0a6] font-medium tracking-wide mb-1 uppercase">Deadline</div>

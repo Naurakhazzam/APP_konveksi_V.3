@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server';
 import { getCurrentUserProfile } from '@/lib/auth/permissions';
+import { keteranganPoSelesai, type RingkasanKirimPo } from '@/lib/po-keterangan';
 
 const TENANT_ID = 'STX-001';
 
@@ -19,6 +20,8 @@ export interface PoRow {
   klien_nama: string;
   total_bundle: number;
   progress: Record<string, { done: number; total: number }>;
+  /** Hanya untuk PO selesai: mis. "terkirim 186 / 848 pcs · 53 bundle ditutup". */
+  keterangan: string | null;
 }
 
 export interface PoGrouped {
@@ -131,7 +134,9 @@ export async function getPoGrouped(): Promise<PoGrouped> {
 
   const supabase = await createClient();
 
-  // Fetch PO aktif + bundle + scan_log + status_tahap
+  // Fetch PO aktif & selesai + bundle + scan_log + status_tahap.
+  // PO 'selesai' (otomatis via trigger saat semua bundle hidup ber-SJ) masuk
+  // sub-tab "Selesai Dikirim" beserta keterangannya.
   const { data, error } = await supabase
     .from('po')
     .select(`
@@ -141,15 +146,33 @@ export async function getPoGrouped(): Promise<PoGrouped> {
         id,
         status_tahap,
         surat_jalan_id,
+        ditutup_at,
         scan_log(tahap, tipe)
       )
     `)
-    .eq('status', 'aktif')
+    .in('status', ['aktif', 'selesai'])
     .eq('tenant_id', TENANT_ID)
-    .limit(100)
+    .limit(300)
     .order('created_at', { ascending: false });
 
   if (error) throw new Error(`Gagal ambil data PO grouped: ${error.message}`);
+
+  const poIds = (data as any[]).map((p) => p.id);
+  const ringkasanMap = new Map<string, RingkasanKirimPo>();
+  if (poIds.length > 0) {
+    const { data: rk, error: rkErr } = await supabase
+      .from('v_po_ringkasan_kirim')
+      .select('po_id, qty_order, qty_kirim, bundle_ditutup')
+      .in('po_id', poIds);
+    if (rkErr) throw new Error(`Gagal ambil ringkasan kirim PO: ${rkErr.message}`);
+    (rk ?? []).forEach((r: any) =>
+      ringkasanMap.set(r.po_id, {
+        qty_order: Number(r.qty_order ?? 0),
+        qty_kirim: Number(r.qty_kirim ?? 0),
+        bundle_ditutup: Number(r.bundle_ditutup ?? 0),
+      })
+    );
+  }
 
   const belum_mulai: PoRow[] = [];
   const sedang_diproses: PoRow[] = [];
@@ -157,7 +180,9 @@ export async function getPoGrouped(): Promise<PoGrouped> {
   const selesai_dikirim: PoRow[] = [];
 
   (data as any[]).forEach((po) => {
-    const total_bundle = po.bundle?.length ?? 0;
+    // Bundle yang ditutup tidak akan diproses/dikirim — keluarkan dari progres.
+    po.bundle = (po.bundle ?? []).filter((b: any) => !b.ditutup_at);
+    const total_bundle = po.bundle.length;
     const progress: Record<string, { done: number; total: number }> = {};
 
     // Initialize progress for all stages + pengiriman
@@ -202,10 +227,13 @@ export async function getPoGrouped(): Promise<PoGrouped> {
       no_po: po.no_po,
       klien_nama: po.klien?.nama ?? '-',
       total_bundle,
-      progress
+      progress,
+      keterangan: po.status === 'selesai' ? keteranganPoSelesai(ringkasanMap.get(po.id)) : null,
     };
 
-    if (!hasAnyScan && total_bundle > 0) {
+    if (po.status === 'selesai') {
+      selesai_dikirim.push(row);
+    } else if (!hasAnyScan && total_bundle > 0) {
       belum_mulai.push(row);
     } else if (allFinishedPacking && allShipped && total_bundle > 0) {
       selesai_dikirim.push(row);

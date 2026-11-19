@@ -241,7 +241,16 @@ export default function MonitoringStatusPO({ initialData, role }: Props) {
                     ) : (
                       <>
                         {activeSubTab === 'selesai_dikirim' && (
-                          <span className="text-[10px] font-bold text-[#a855f7] bg-[#a855f7]/10 px-2 py-0.5 rounded uppercase">Terkirim Semua</span>
+                          po.keterangan ? (
+                            <span
+                              title="PO selesai: semua bundle yang masih berjalan sudah dikirim"
+                              className="text-[10px] font-bold text-[#e5c17b] bg-[#e5c17b]/10 px-2 py-0.5 rounded"
+                            >
+                              Selesai · {po.keterangan}
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-bold text-[#a855f7] bg-[#a855f7]/10 px-2 py-0.5 rounded uppercase">Terkirim Semua</span>
+                          )
                         )}
                         {activeSubTab === 'selesai_produksi' && (
                           <span className="text-[10px] font-bold text-[#e5c17b] bg-[#e5c17b]/10 px-2 py-0.5 rounded uppercase">
