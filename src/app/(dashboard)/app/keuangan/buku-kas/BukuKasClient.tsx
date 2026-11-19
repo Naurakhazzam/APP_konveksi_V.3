@@ -2,6 +2,9 @@
 
 import React, { useState } from 'react';
 import TogglePoLama from '@/components/keuangan/TogglePoLama';
+import { PanduanProvider, PanelPanduan, InfoIstilah, TombolPanduan } from '@/components/keuangan/panduan/Panduan';
+import type { KunciIstilah } from '@/lib/keuangan/kamus';
+import { buatPanduanBukuKas } from './panduan-buku-kas';
 import { poPeriodeBaru, tanggalPeriodeBaru } from '@/lib/keuangan/periode-po';
 import { toast } from 'sonner';
 import Link from 'next/link';
@@ -145,7 +148,25 @@ const SATUAN_LAINNYA = '__lainnya__';
 
 // ─── COMPONENT ───────────────────────────────────────────────────────────────
 
-export default function BukuKasClient({ initialEntries, poList, overheadSubList, pembantuList, defaultBulan, defaultTahun }: Props) {
+export default function BukuKasClient(props: Props) {
+  return (
+    <PanduanProvider>
+      <BukuKasIsi {...props} />
+    </PanduanProvider>
+  );
+}
+
+/** Judul kolom + ikon ⓘ */
+const KolomInfo = ({ judul, k }: { judul: string; k: KunciIstilah }) => (
+  <span className="inline-flex items-center gap-1">{judul}<InfoIstilah k={k} /></span>
+);
+
+const labelPeriode = (bulan: string, tahun: string) =>
+  bulan ? `${BULAN[Number(bulan) - 1]} ${tahun}` : `semua bulan ${tahun}`;
+
+function BukuKasIsi({ initialEntries, poList, overheadSubList, pembantuList, defaultBulan, defaultTahun }: Props) {
+  /** Periode data yang sedang tampil (filter terakhir yang diterapkan) */
+  const [periodeTampil, setPeriodeTampil] = useState(() => labelPeriode(defaultBulan, defaultTahun));
   const [entries, setEntries] = useState<BukuKasEntry[]>(initialEntries);
   // Sub-kelompok overhead (bisa bertambah dari form)
   const [subList, setSubList] = useState<OverheadSubOption[]>(overheadSubList);
@@ -455,6 +476,10 @@ export default function BukuKasClient({ initialEntries, poList, overheadSubList,
   const totalMasuk  = tampil.filter(e => e.tipe === 'masuk' && !grupModal.has(e.id)).reduce((s, e) => s + e.nominal, 0);
   const totalKeluar = tampil.filter(e => e.tipe === 'keluar' && !grupModal.has(e.id)).reduce((s, e) => s + e.nominal, 0);
   const saldo       = totalMasuk - totalKeluar;
+  const kontenPanduan = buatPanduanBukuKas({
+    periode: periodeTampil, totalMasuk, totalKeluar, saldo, totalModal,
+    jumlahTransaksi: tampil.length, rekapOverhead,
+  });
 
   // ─── FILTER ───────────────────────────────────────────────────────────────
 
@@ -467,6 +492,7 @@ export default function BukuKasClient({ initialEntries, poList, overheadSubList,
         tipe:  filterTipe  || undefined,
       });
       setEntries(data);
+      setPeriodeTampil(labelPeriode(filterBulan, filterTahun));
       setHalaman(1);
     } catch (e: any) {
       toast.error(e.message || 'Gagal memuat data');
@@ -593,9 +619,11 @@ export default function BukuKasClient({ initialEntries, poList, overheadSubList,
     <div className="space-y-6 mt-4">
 
       {/* ─── HEADER ─────────────────────────────────────────────────────── */}
+      <PanelPanduan konten={kontenPanduan} />
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h2 className="text-base font-bold text-[#e8eaed]">Buku Kas</h2>
-        <div className="flex gap-2">
+        <div data-panduan="tombol-kas" className="flex gap-2">
+          <TombolPanduan />
           <Button
             onClick={() => openModal('masuk')}
             className="bg-green-600 hover:bg-green-700 text-white font-bold text-xs h-9 px-4"
@@ -612,24 +640,24 @@ export default function BukuKasClient({ initialEntries, poList, overheadSubList,
       </div>
 
       {/* ─── SUMMARY CARDS ──────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <div data-panduan="ringkasan-kas" className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <div className="p-4 rounded-xl bg-[#1A1D1F] border border-[#2A2D31]">
           <div className="flex items-center justify-between mb-1">
-            <p className="text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold">Total Masuk</p>
+            <p className="flex items-center gap-1 text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold">Total Masuk <InfoIstilah k="kas_masuk" /></p>
             <TrendingUp className="h-4 w-4 text-green-400" />
           </div>
           <p className="text-sm font-bold text-green-400">{idrFmt(totalMasuk)}</p>
         </div>
         <div className="p-4 rounded-xl bg-[#1A1D1F] border border-[#2A2D31]">
           <div className="flex items-center justify-between mb-1">
-            <p className="text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold">Total Keluar</p>
+            <p className="flex items-center gap-1 text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold">Total Keluar <InfoIstilah k="kas_keluar" /></p>
             <TrendingDown className="h-4 w-4 text-red-400" />
           </div>
           <p className="text-sm font-bold text-red-400">{idrFmt(totalKeluar)}</p>
         </div>
         <div className="p-4 rounded-xl bg-[#1A1D1F] border border-[#2A2D31]">
           <div className="flex items-center justify-between mb-1">
-            <p className="text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold">Saldo Kas</p>
+            <p className="flex items-center gap-1 text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold">Saldo Kas <InfoIstilah k="saldo_kas_periode" /></p>
             {saldo >= 0
               ? <TrendingUp className="h-4 w-4 text-[#e5c17b]" />
               : <TrendingDown className="h-4 w-4 text-red-400" />}
@@ -641,15 +669,15 @@ export default function BukuKasClient({ initialEntries, poList, overheadSubList,
       </div>
       {totalModal > 0 && (
         <p className="-mt-3 text-[11px] text-[#9aa0a6]">
-          Setoran modal barang (sisa bahan lama) {idrFmt(totalModal)} tidak dihitung di Total Masuk/Keluar: barangnya bukan uang, jadi netral kas.
+          <InfoIstilah k="modal_barang" className="mr-1 inline-flex align-middle" />Setoran modal barang (sisa bahan lama) {idrFmt(totalModal)} tidak dihitung di Total Masuk/Keluar: barangnya bukan uang, jadi netral kas.
         </p>
       )}
 
       {/* ─── REKAP OVERHEAD PER SUB-KELOMPOK ─────────────────────────────── */}
       {rekapOverhead.length > 0 && (
-        <div className="p-4 rounded-xl bg-[#1A1D1F] border border-[#2A2D31]">
+        <div data-panduan="rekap-overhead" className="p-4 rounded-xl bg-[#1A1D1F] border border-[#2A2D31]">
           <div className="flex items-center justify-between mb-2">
-            <p className="text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold">Biaya Overhead per Sub-kelompok</p>
+            <p className="flex items-center gap-1 text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold">Biaya Overhead per Sub-kelompok <InfoIstilah k="rekap_overhead_sub" /></p>
             <p className="text-xs font-bold text-red-400">
               {idrFmt(rekapOverhead.reduce((s, [, v]) => s + v, 0))}
             </p>
@@ -666,7 +694,7 @@ export default function BukuKasClient({ initialEntries, poList, overheadSubList,
       )}
 
       {/* ─── FILTER BAR ─────────────────────────────────────────────────── */}
-      <div className="flex flex-wrap gap-3 items-end p-4 rounded-xl bg-[#1A1D1F] border border-[#2A2D31]">
+      <div data-panduan="filter-kas" className="flex flex-wrap gap-3 items-end p-4 rounded-xl bg-[#1A1D1F] border border-[#2A2D31]">
         <div>
           <p className={labelCls}>Bulan</p>
           <select
@@ -763,13 +791,13 @@ export default function BukuKasClient({ initialEntries, poList, overheadSubList,
       </div>
 
       {/* ─── TABEL ──────────────────────────────────────────────────────── */}
-      <div className="rounded-xl border border-[#2A2D31] overflow-hidden bg-[#16181A]">
+      <div data-panduan="tabel-kas" className="rounded-xl border border-[#2A2D31] overflow-hidden bg-[#16181A]">
         <Table>
           <TableHeader className="bg-[#1A1C1E]">
             <TableRow className="border-[#2A2D31] hover:bg-transparent">
               <TableHead className="text-[#9aa0a6]">Tanggal</TableHead>
               <TableHead className="text-[#9aa0a6]">Tipe</TableHead>
-              <TableHead className="text-[#9aa0a6]">Kategori</TableHead>
+              <TableHead className="text-[#9aa0a6]"><KolomInfo judul="Kategori" k="kategori_kas" /></TableHead>
               <TableHead className="text-[#9aa0a6]">Keterangan</TableHead>
               <TableHead className="text-[#9aa0a6] text-right">Qty</TableHead>
               <TableHead className="text-[#9aa0a6] text-right">Harga Satuan</TableHead>

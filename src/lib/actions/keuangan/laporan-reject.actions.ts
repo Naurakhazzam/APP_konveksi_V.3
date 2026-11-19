@@ -6,16 +6,26 @@ import { rentangPeriodeBaru } from '@/lib/keuangan/periode-po';
 
 const TENANT_ID = 'STX-001';
 
+/**
+ * Laporan Potongan Reject: potongan upah dari menu Produksi → Reject (gaji_ledger tipe reject_potong,
+ * disimpan positif) dan pengembaliannya saat rework selesai (tipe rework_selesai).
+ * sumber_id kedua tipe = bundle, jadi ikut filter periode baru.
+ */
 export interface LaporanRejectItem {
   id: string;
   tanggal: string;
   karyawan_nama: string;
   keterangan: string;
+  /** 'potong' = potongan upah; 'kembali' = pengembalian setelah rework selesai */
+  jenis: 'potong' | 'kembali';
+  /** Bertanda: potongan positif, pengembalian negatif */
   total_potongan: number;
 }
 
 export interface LaporanRejectSummary {
+  /** Potongan bersih = potongan − pengembalian rework */
   total_potongan_periode: number;
+  total_dikembalikan: number;
   jumlah_kejadian: number;
   per_karyawan: {
     karyawan_nama: string;
@@ -41,11 +51,11 @@ export async function getLaporanReject(filters?: {
   let query = supabase
     .from('gaji_ledger')
     .select(`
-      id, tanggal, keterangan, total, sumber_id,
+      id, tanggal, tipe, keterangan, total, sumber_id,
       karyawan:karyawan_id(nama)
     `)
     .eq('tenant_id', TENANT_ID)
-    .eq('tipe', 'reject_potong')
+    .in('tipe', ['reject_potong', 'rework_selesai'])
     .order('tanggal', { ascending: false });
 
   if (filters?.bulan && filters?.tahun) {
@@ -71,7 +81,8 @@ export async function getLaporanReject(filters?: {
     tanggal: row.tanggal,
     karyawan_nama: (row.karyawan as any)?.nama ?? '-',
     keterangan: row.keterangan ?? '-',
-    total_potongan: Math.abs(Number(row.total)),
+    jenis: row.tipe === 'rework_selesai' ? 'kembali' : 'potong',
+    total_potongan: (row.tipe === 'rework_selesai' ? -1 : 1) * Math.abs(Number(row.total)),
   }));
 
   // Per-karyawan aggregation
@@ -81,7 +92,7 @@ export async function getLaporanReject(filters?: {
       karyawanAgg[item.karyawan_nama] = { total: 0, count: 0 };
     }
     karyawanAgg[item.karyawan_nama].total += item.total_potongan;
-    karyawanAgg[item.karyawan_nama].count += 1;
+    if (item.jenis === 'potong') karyawanAgg[item.karyawan_nama].count += 1;
   });
 
   const per_karyawan = Object.entries(karyawanAgg)
@@ -94,7 +105,8 @@ export async function getLaporanReject(filters?: {
 
   return {
     total_potongan_periode: items.reduce((s, i) => s + i.total_potongan, 0),
-    jumlah_kejadian: items.length,
+    total_dikembalikan: -items.filter(i => i.jenis === 'kembali').reduce((s, i) => s + i.total_potongan, 0),
+    jumlah_kejadian: items.filter(i => i.jenis === 'potong').length,
     per_karyawan,
     items,
   };

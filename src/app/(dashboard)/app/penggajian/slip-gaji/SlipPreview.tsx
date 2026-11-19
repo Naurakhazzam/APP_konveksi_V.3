@@ -26,7 +26,7 @@ export default function SlipPreview({ karyawan, ledgerEntries, kasbonEntries, da
   
   // Calculations
   const upahProduksi = ledgerEntries
-    .filter(e => e.tipe === 'selesai' || e.tipe === 'rework')
+    .filter(e => e.tipe === 'selesai' || e.tipe === 'rework' || e.tipe === 'rework_selesai')
     .reduce((acc, curr) => acc + Number(curr.total), 0);
     
   const potonganReject = ledgerEntries

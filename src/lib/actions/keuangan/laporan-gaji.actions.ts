@@ -43,7 +43,7 @@ export async function getLaporanGaji(filters?: {
     .from('gaji_ledger')
     .select('id, karyawan_id, tipe, total, status, tanggal_bayar, sumber_id, karyawan:karyawan_id(nama)')
     .eq('tenant_id', TENANT_ID)
-    .in('tipe', ['selesai', 'rework', 'reject_potong']);
+    .in('tipe', ['selesai', 'rework', 'rework_selesai', 'reject_potong']);
 
   if (filters?.bulan && filters?.tahun) {
     const mm = filters.bulan.padStart(2, '0');

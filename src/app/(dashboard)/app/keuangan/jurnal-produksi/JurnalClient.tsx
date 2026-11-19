@@ -13,20 +13,26 @@ import {
   type JenisJurnal,
   type JurnalProduksiData,
 } from '@/lib/actions/keuangan/jurnal.actions';
+import { PanduanProvider, PanelPanduan, InfoIstilah, TombolPanduan } from '@/components/keuangan/panduan/Panduan';
+import type { KunciIstilah } from '@/lib/keuangan/kamus';
+import { buatPanduanJurnal } from './panduan-jurnal';
 
 // ─── CONSTANTS ──────────────────────────────────────────────────────────────
 
 const JENIS: Record<JenisJurnal, { label: string; badge: string; sumber: string }> = {
   kain:        { label: 'Kain',           badge: 'bg-blue-500/10 text-blue-400 border-blue-500/20',       sumber: 'Selesai Cutting (modal FIFO LOT)' },
   aksesori:    { label: 'Aksesori',       badge: 'bg-sky-500/10 text-sky-400 border-sky-500/20',          sumber: 'Pemakaian aksesori per bundle' },
-  pembantu:    { label: 'Bahan Pembantu', badge: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20',       sumber: 'Buku Kas — Bahan Pembantu' },
+  pembantu:    { label: 'Bahan Pembantu', badge: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20',       sumber: 'Jatah HPP per pcs selesai jahit (Saldo Bahan Pembantu)' },
   upah:        { label: 'Upah',           badge: 'bg-purple-500/10 text-purple-400 border-purple-500/20', sumber: 'Penggajian (upah borongan)' },
-  overhead:    { label: 'Overhead',       badge: 'bg-orange-500/10 text-orange-400 border-orange-500/20', sumber: 'Buku Kas — Biaya Overhead' },
-  biaya_tetap: { label: 'Biaya Tetap',    badge: 'bg-amber-500/10 text-amber-400 border-amber-500/20',    sumber: 'Biaya Overhead — kontrak, dialokasikan per hari' },
-  lainnya:     { label: 'Lainnya',        badge: 'bg-zinc-500/10 text-zinc-300 border-zinc-500/20',       sumber: 'Buku Kas — Biaya Operasional & Lainnya' },
+  overhead:    { label: 'Overhead',       badge: 'bg-orange-500/10 text-orange-400 border-orange-500/20', sumber: 'Buku Kas — Biaya Overhead, Peralatan, Bahan Pembantu tanpa jenis' },
+  biaya_tetap: { label: 'Biaya Tetap',    badge: 'bg-amber-500/10 text-amber-400 border-amber-500/20',    sumber: 'Biaya Overhead — kontrak, dialokasikan per hari s/d hari ini' },
+  lainnya:     { label: 'Operasional',    badge: 'bg-zinc-500/10 text-zinc-300 border-zinc-500/20',       sumber: 'Buku Kas — Biaya Operasional & Lainnya (di luar produksi)' },
   pembelian:   { label: 'Pembelian',      badge: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20', sumber: 'Stok Masuk (masuk stok, bukan biaya)' },
+  belanja_pembantu: { label: 'Belanja Pembantu', badge: 'bg-zinc-500/10 text-zinc-400 border-zinc-500/20', sumber: 'Buku Kas — Bahan Pembantu (masuk saldo, bukan biaya)' },
 };
 const URUTAN_JENIS = Object.keys(JENIS) as JenisJurnal[];
+/** Hanya informasi (masuk stok / saldo), bukan biaya */
+const JENIS_INFO: JenisJurnal[] = ['pembelian', 'belanja_pembantu'];
 
 const PER_HALAMAN = 50;
 
@@ -44,7 +50,15 @@ const labelCls = 'block text-[10px] font-bold text-[#9aa0a6] uppercase tracking-
 
 // ─── COMPONENT ───────────────────────────────────────────────────────────────
 
-export default function JurnalClient({ initialData }: { initialData: JurnalProduksiData }) {
+export default function JurnalClient(props: { initialData: JurnalProduksiData }) {
+  return (
+    <PanduanProvider>
+      <JurnalIsi {...props} />
+    </PanduanProvider>
+  );
+}
+
+function JurnalIsi({ initialData }: { initialData: JurnalProduksiData }) {
   const [data, setData] = useState(initialData);
   const [dari, setDari] = useState(initialData.dari);
   const [sampai, setSampai] = useState(initialData.sampai);
@@ -53,6 +67,7 @@ export default function JurnalClient({ initialData }: { initialData: JurnalProdu
   const [filterJenis, setFilterJenis] = useState<JenisJurnal | ''>('');
   const [cari, setCari] = useState('');
   const [halaman, setHalaman] = useState(1);
+  const kontenPanduan = useMemo(() => buatPanduanJurnal(data), [data]);
 
   const muat = async (opts?: { lama?: boolean }) => {
     if (!dari || !sampai || sampai < dari) { toast.error('Rentang tanggal tidak valid'); return; }
@@ -76,13 +91,15 @@ export default function JurnalClient({ initialData }: { initialData: JurnalProdu
     return t;
   }, [data]);
 
-  const kartu = [
-    { label: 'Kain (cutting)',   value: total.kain,                                    color: 'text-blue-400' },
-    { label: 'Aksesori & Pembantu', value: total.aksesori + total.pembantu,            color: 'text-cyan-400' },
-    { label: 'Upah',             value: total.upah,                                    color: 'text-purple-400' },
-    { label: 'Overhead',         value: total.overhead + total.biaya_tetap + total.lainnya, color: 'text-orange-400' },
+  const kartu: { label: string; value: number; color: string; k: KunciIstilah }[] = [
+    { label: 'Kain (cutting)',   value: total.kain,                                    color: 'text-blue-400',   k: 'jurnal_kain' },
+    { label: 'Aksesori & Pembantu', value: total.aksesori + total.pembantu,            color: 'text-cyan-400',   k: 'jurnal_aksesori_pembantu' },
+    { label: 'Upah',             value: total.upah,                                    color: 'text-purple-400', k: 'jurnal_upah' },
+    { label: 'Overhead',         value: total.overhead + total.biaya_tetap,            color: 'text-orange-400', k: 'jurnal_overhead' },
   ];
   const totalBiaya = kartu.reduce((s, k) => s + k.value, 0);
+  const ph = data.penghubung;
+  const selisihProses = ph ? totalBiaya - ph.hpp - ph.overheadTanpaProduksi : 0;
 
   // ─── FILTER & PAGINASI ───────────────────────────────────────────────────
 
@@ -102,9 +119,10 @@ export default function JurnalClient({ initialData }: { initialData: JurnalProdu
 
   return (
     <div className="space-y-6 mt-4">
+      <PanelPanduan konten={kontenPanduan} />
 
       {/* Filter bar */}
-      <div className="flex flex-wrap gap-3 items-end p-4 rounded-xl bg-[#1A1D1F] border border-[#2A2D31]">
+      <div data-panduan="filter-jurnal" className="flex flex-wrap gap-3 items-end p-4 rounded-xl bg-[#1A1D1F] border border-[#2A2D31]">
         <div>
           <p className={labelCls}>Dari</p>
           <input type="date" className={inputCls} value={dari} onChange={e => setDari(e.target.value)} />
@@ -120,34 +138,74 @@ export default function JurnalClient({ initialData }: { initialData: JurnalProdu
         </Button>
         <TogglePoLama className="ml-auto" checked={tampilkanLama}
           onChange={v => { setTampilkanLama(v); muat({ lama: v }); }} />
+        <div className="ml-auto"><TombolPanduan /></div>
       </div>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+      <div data-panduan="kartu-jurnal" className="grid grid-cols-2 md:grid-cols-5 gap-3">
         {kartu.map(card => (
           <div key={card.label} className="p-4 rounded-xl bg-[#1A1D1F] border border-[#2A2D31]">
-            <p className="text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold mb-1">{card.label}</p>
+            <p className="flex items-center gap-1 text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold mb-1">{card.label}<InfoIstilah k={card.k} /></p>
             <p className={`text-sm font-bold ${card.color}`}>{idrFmt(card.value)}</p>
           </div>
         ))}
         <div className="p-4 rounded-xl bg-[#1A1D1F] border border-[#e5c17b]/30 col-span-2 md:col-span-1">
-          <p className="text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold mb-1">Total Biaya Produksi</p>
+          <p className="flex items-center gap-1 text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold mb-1">Total Biaya Produksi<InfoIstilah k="jurnal_total" /></p>
           <p className="text-sm font-bold text-[#e5c17b]">{idrFmt(totalBiaya)}</p>
         </div>
       </div>
 
-      <div className="flex items-start gap-2 text-xs text-[#9aa0a6]">
+      <div data-panduan="operasional-jurnal" className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-xl bg-[#1A1D1F] border border-dashed border-[#2A2D31]">
+        <div>
+          <p className="flex items-center gap-1 text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold mb-1">Beban operasional (di luar produksi)<InfoIstilah k="jurnal_operasional" /></p>
+          <p className="text-xs text-[#9aa0a6]">Biaya Operasional & Lainnya di Buku Kas — tidak ikut Total Biaya Produksi.</p>
+        </div>
+        <p className="text-sm font-bold text-zinc-300">{idrFmt(total.lainnya)}</p>
+      </div>
+
+      <div data-panduan="catatan-jurnal" className="flex items-start gap-2 text-xs text-[#9aa0a6]">
         <Info className="h-4 w-4 shrink-0 mt-0.5" />
         <p>
           Semua baris dibuat otomatis dari sumber aslinya — tidak ada input manual di sini.
           Overhead dicatat lewat <span className="text-[#e8eaed]">Buku Kas</span>, kontrak lewat menu{' '}
-          <span className="text-[#e8eaed]">Biaya Overhead</span>. Pembelian bahan ({idrFmt(total.pembelian)}) hanya
-          informasi karena masuk stok; biayanya terhitung saat kain dipakai cutting.
+          <span className="text-[#e8eaed]">Biaya Overhead</span>. Pembelian bahan ({idrFmt(total.pembelian)}) dan
+          belanja bahan pembantu ({idrFmt(total.belanja_pembantu)}) hanya informasi karena masuk stok / saldo; biayanya
+          terhitung saat kain dipakai cutting dan saat pcs selesai dijahit (jatah HPP).{' '}
+          <InfoIstilah k="jurnal_pembelian" className="align-middle" />{' '}
+          <InfoIstilah k="jurnal_belanja_pembantu" className="align-middle" />
         </p>
       </div>
 
+      {/* Penghubung ke Laba Rugi */}
+      <div data-panduan="penghubung-jurnal" className="rounded-xl bg-[#1A1D1F] border border-[#2A2D31] p-4">
+        <p className="flex items-center gap-1 text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold mb-3">
+          Dari Jurnal ke Laba Rugi<InfoIstilah k="jurnal_penghubung" />
+          {ph?.sementara && <span className="ml-2 normal-case tracking-normal font-normal text-amber-400">(bulan berjalan — sementara)</span>}
+        </p>
+        {ph ? (
+          <div className="space-y-1.5 text-sm max-w-xl">
+            <div className="flex justify-between"><span className="text-[#e8eaed]">Total Biaya Produksi (terjadi)</span><span className="font-semibold text-[#e5c17b]">{idrFmt(totalBiaya)}</span></div>
+            <div className="flex justify-between text-[#9aa0a6]">
+              <span>− Sudah masuk HPP (barang terkirim)<span className="block text-[11px]">bahan {idrFmt(ph.hppBahan)} · upah {idrFmt(ph.hppUpah)} · overhead {idrFmt(ph.hppOverhead)}</span></span>
+              <span>{idrFmt(-ph.hpp)}</span>
+            </div>
+            <div className="flex justify-between text-[#9aa0a6]"><span>− Overhead tanpa produksi (jadi beban bulan itu)</span><span>{idrFmt(-ph.overheadTanpaProduksi)}</span></div>
+            <div className="flex justify-between border-t border-[#2A2D31] pt-1.5">
+              <span className="text-[#e8eaed]">= Masih di barang dalam proses (perkiraan)</span>
+              <span className={`font-semibold ${selisihProses < 0 ? 'text-red-400' : 'text-[#e8eaed]'}`}>{idrFmt(selisihProses)}</span>
+            </div>
+            <p className="text-[11px] text-[#5f6368] pt-1">
+              Perkiraan: HPP barang terkirim juga memuat biaya bulan sebelumnya dan perkiraan upah / bahan pembantu tahap yang
+              belum dikerjakan, sehingga angka ini bisa minus bila banyak barang lama yang dikirim.
+            </p>
+          </div>
+        ) : (
+          <p className="text-xs text-[#5f6368]">{data.alasanTanpaPenghubung}</p>
+        )}
+      </div>
+
       {/* Filter jenis & cari */}
-      <div className="flex flex-wrap items-center gap-2">
+      <div data-panduan="saring-jurnal" className="flex flex-wrap items-center gap-2">
         <button onClick={() => { setFilterJenis(''); setHalaman(1); }}
           className={`rounded-full border px-3 py-1 text-xs ${filterJenis === '' ? 'border-[#e5c17b] text-[#e5c17b]' : 'border-[#2A2D31] text-[#9aa0a6] hover:text-[#e8eaed]'}`}>
           Semua ({data.baris.length})
@@ -170,12 +228,12 @@ export default function JurnalClient({ initialData }: { initialData: JurnalProdu
       </div>
 
       {/* Tabel */}
-      <div className="rounded-xl border border-[#2A2D31] overflow-x-auto bg-[#1A1D1F]">
+      <div data-panduan="tabel-jurnal" className="rounded-xl border border-[#2A2D31] overflow-x-auto bg-[#1A1D1F]">
         <Table>
           <TableHeader className="bg-[#1A1C1E]">
             <TableRow className="border-[#2A2D31] hover:bg-transparent">
               <TableHead className="text-[#9aa0a6]">Tanggal</TableHead>
-              <TableHead className="text-[#9aa0a6]">Jenis</TableHead>
+              <TableHead className="text-[#9aa0a6]"><span className="inline-flex items-center gap-1">Jenis<InfoIstilah k="jurnal_jenis" /></span></TableHead>
               <TableHead className="text-[#9aa0a6]">Kategori</TableHead>
               <TableHead className="text-[#9aa0a6]">Keterangan</TableHead>
               <TableHead className="text-[#9aa0a6]">PO</TableHead>
@@ -203,7 +261,7 @@ export default function JurnalClient({ initialData }: { initialData: JurnalProdu
                 <TableCell className="text-sm text-[#e8eaed] max-w-[280px] truncate" title={b.keterangan}>{b.keterangan || '-'}</TableCell>
                 <TableCell className="text-xs text-[#9aa0a6] font-mono whitespace-nowrap">{b.no_po ?? '-'}</TableCell>
                 <TableCell className="text-sm text-[#9aa0a6] text-right whitespace-nowrap">{qtyFmt(b.qty, b.satuan)}</TableCell>
-                <TableCell className={`text-sm font-semibold text-right whitespace-nowrap ${b.jenis === 'pembelian' ? 'text-[#9aa0a6]' : b.nominal < 0 ? 'text-red-400' : 'text-[#e8eaed]'}`}>
+                <TableCell className={`text-sm font-semibold text-right whitespace-nowrap ${JENIS_INFO.includes(b.jenis) ? 'text-[#9aa0a6]' : b.nominal < 0 ? 'text-red-400' : 'text-[#e8eaed]'}`}>
                   {idrFmt(b.nominal)}
                 </TableCell>
               </TableRow>

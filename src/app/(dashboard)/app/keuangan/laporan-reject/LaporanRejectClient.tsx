@@ -9,6 +9,8 @@ import {
 } from '@/components/ui/table';
 import { getLaporanReject, type LaporanRejectSummary } from '@/lib/actions/keuangan/laporan-reject.actions';
 import TogglePoLama from '@/components/keuangan/TogglePoLama';
+import { PanduanProvider, PanelPanduan, InfoIstilah, TombolPanduan } from '@/components/keuangan/panduan/Panduan';
+import { buatPanduanKoreksiQty } from './panduan-koreksi-qty';
 
 const BULAN = [
   'Januari','Februari','Maret','April','Mei','Juni',
@@ -27,13 +29,22 @@ interface Props {
   defaultTahun: string;
 }
 
-export default function LaporanRejectClient({ initialData, karyawanList, defaultBulan, defaultTahun }: Props) {
+export default function LaporanRejectClient(props: Props) {
+  return (
+    <PanduanProvider>
+      <LaporanRejectIsi {...props} />
+    </PanduanProvider>
+  );
+}
+
+function LaporanRejectIsi({ initialData, karyawanList, defaultBulan, defaultTahun }: Props) {
   const [data, setData] = useState<LaporanRejectSummary>(initialData);
   const [filterBulan, setFilterBulan] = useState(defaultBulan);
   const [filterTahun, setFilterTahun] = useState(defaultTahun);
   const [filterKaryawan, setFilterKaryawan] = useState('');
   const [loading, setLoading] = useState(false);
   const [tampilkanLama, setTampilkanLama] = useState(false);
+  const kontenPanduan = buatPanduanKoreksiQty(data);
 
   const handleFilter = async (lama = tampilkanLama) => {
     setLoading(true);
@@ -54,8 +65,9 @@ export default function LaporanRejectClient({ initialData, karyawanList, default
 
   return (
     <div className="space-y-6">
+      <PanelPanduan konten={kontenPanduan} />
       {/* Filter */}
-      <div className="flex flex-wrap gap-3 items-end p-4 rounded-xl bg-[#1A1D1F] border border-[#2A2D31]">
+      <div data-panduan="filter-koreksi" className="flex flex-wrap gap-3 items-end p-4 rounded-xl bg-[#1A1D1F] border border-[#2A2D31]">
         <div>
           <p className={labelCls}>Bulan</p>
           <select className="h-9 px-3 rounded-lg bg-[#1E2124] border border-[#2A2D31] text-sm text-[#e8eaed] outline-none focus:ring-1 focus:ring-[#e5c17b]"
@@ -84,16 +96,22 @@ export default function LaporanRejectClient({ initialData, karyawanList, default
         </Button>
         <TogglePoLama className="ml-auto" checked={tampilkanLama}
           onChange={v => { setTampilkanLama(v); handleFilter(v); }} />
+        <div className="ml-auto"><TombolPanduan /></div>
       </div>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div data-panduan="kartu-koreksi" className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div className="p-4 rounded-xl bg-[#1A1D1F] border border-red-500/20">
-          <p className="text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold mb-1">Total Potongan Periode</p>
+          <p className="text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold mb-1 flex items-center gap-1">Total Potongan Periode (bersih)<InfoIstilah k="potongan_upah" /></p>
           <p className="text-lg font-bold font-mono text-red-400">-{idrFmt(data.total_potongan_periode)}</p>
+          {data.total_dikembalikan > 0 && (
+            <p className="mt-1 flex items-center gap-1 text-xs text-green-400">
+              sudah dikurangi pengembalian rework +{idrFmt(data.total_dikembalikan)}<InfoIstilah k="pengembalian_rework" />
+            </p>
+          )}
         </div>
         <div className="p-4 rounded-xl bg-[#1A1D1F] border border-orange-500/20">
-          <p className="text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold mb-1">Jumlah Kejadian</p>
+          <p className="text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold mb-1 flex items-center gap-1">Jumlah Kejadian<InfoIstilah k="jumlah_kejadian" /></p>
           <div className="flex items-center gap-2">
             <AlertTriangle className="h-4 w-4 text-orange-400" />
             <p className="text-lg font-bold text-orange-400">{data.jumlah_kejadian}x</p>
@@ -103,7 +121,7 @@ export default function LaporanRejectClient({ initialData, karyawanList, default
 
       {/* Per-karyawan breakdown */}
       {data.per_karyawan.length > 0 && (
-        <div className="rounded-xl border border-[#2A2D31] overflow-hidden bg-[#16181A]">
+        <div data-panduan="tabel-koreksi-karyawan" className="rounded-xl border border-[#2A2D31] overflow-hidden bg-[#16181A]">
           <div className="p-3 bg-[#1A1C1E] border-b border-[#2A2D31]">
             <h4 className="text-xs font-bold text-[#9aa0a6] uppercase tracking-widest">Breakdown per Karyawan</h4>
           </div>
@@ -112,7 +130,7 @@ export default function LaporanRejectClient({ initialData, karyawanList, default
               <TableRow className="border-[#2A2D31] hover:bg-transparent">
                 <TableHead className="text-[#9aa0a6]">Karyawan</TableHead>
                 <TableHead className="text-[#9aa0a6] text-center">Jumlah Kejadian</TableHead>
-                <TableHead className="text-[#9aa0a6] text-right">Total Potongan</TableHead>
+                <TableHead className="text-[#9aa0a6] text-right">Potongan Bersih</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -120,7 +138,7 @@ export default function LaporanRejectClient({ initialData, karyawanList, default
                 <TableRow key={i} className="border-[#2A2D31] bg-[#16181A] hover:bg-[#1A1C1E]">
                   <TableCell className="text-sm text-[#e8eaed] font-medium">{k.karyawan_nama}</TableCell>
                   <TableCell className="text-sm text-center text-orange-400 font-bold">{k.jumlah_kejadian}x</TableCell>
-                  <TableCell className="text-sm text-right font-mono text-red-400">-{idrFmt(k.total_potongan)}</TableCell>
+                  <TableCell className="text-sm text-right font-mono text-red-400">{k.total_potongan < 0 ? '+' : '-'}{idrFmt(k.total_potongan)}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -129,7 +147,7 @@ export default function LaporanRejectClient({ initialData, karyawanList, default
       )}
 
       {/* Detail table */}
-      <div className="rounded-xl border border-[#2A2D31] overflow-hidden bg-[#16181A]">
+      <div data-panduan="tabel-koreksi-detail" className="rounded-xl border border-[#2A2D31] overflow-hidden bg-[#16181A]">
         <div className="p-3 bg-[#1A1C1E] border-b border-[#2A2D31]">
           <h4 className="text-xs font-bold text-[#9aa0a6] uppercase tracking-widest">Detail Semua Kejadian</h4>
         </div>
@@ -139,7 +157,7 @@ export default function LaporanRejectClient({ initialData, karyawanList, default
               <TableHead className="text-[#9aa0a6]">Tanggal</TableHead>
               <TableHead className="text-[#9aa0a6]">Karyawan</TableHead>
               <TableHead className="text-[#9aa0a6]">Keterangan</TableHead>
-              <TableHead className="text-[#9aa0a6] text-right">Potongan</TableHead>
+              <TableHead className="text-[#9aa0a6] text-right">Potongan / Pengembalian</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -154,7 +172,9 @@ export default function LaporanRejectClient({ initialData, karyawanList, default
                 <TableCell className="text-sm text-[#9aa0a6] whitespace-nowrap">{dateFmt(item.tanggal)}</TableCell>
                 <TableCell className="text-sm text-[#e8eaed]">{item.karyawan_nama}</TableCell>
                 <TableCell className="text-sm text-[#e8eaed] max-w-[250px] truncate">{item.keterangan}</TableCell>
-                <TableCell className="text-sm text-right font-mono text-red-400 font-semibold">-{idrFmt(item.total_potongan)}</TableCell>
+                <TableCell className={`text-sm text-right font-mono font-semibold ${item.jenis === 'kembali' ? 'text-green-400' : 'text-red-400'}`}>
+                  {item.jenis === 'kembali' ? '+' : '-'}{idrFmt(item.total_potongan)}
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>

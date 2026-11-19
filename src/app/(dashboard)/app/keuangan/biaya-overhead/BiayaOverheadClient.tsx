@@ -15,6 +15,9 @@ import {
   type BiayaOverheadData, type OverheadSubRealisasi, type BiayaTetap,
 } from '@/lib/actions/keuangan/biaya-overhead.actions';
 import type { BukuKasEntry } from '@/lib/actions/keuangan/buku-kas.types';
+import { PanduanProvider, PanelPanduan, InfoIstilah, TombolPanduan } from '@/components/keuangan/panduan/Panduan';
+import type { KunciIstilah } from '@/lib/keuangan/kamus';
+import { buatPanduanBiayaOverhead } from './panduan-biaya-overhead';
 
 // Warna grafik: tervalidasi (dataviz validate_palette, mode gelap, surface #16181A) — ALL PASS
 const WARNA_REALISASI = '#3987e5';
@@ -33,8 +36,17 @@ const tgl = (d: string) =>
 const inputCls = 'h-9 px-3 rounded-lg bg-[#1E2124] border border-[#2A2D31] text-sm text-[#e8eaed] outline-none focus:ring-1 focus:ring-[#e5c17b]';
 const labelCls = 'block text-[10px] font-bold text-[#9aa0a6] uppercase tracking-widest mb-1';
 
-export default function BiayaOverheadClient({ initialData }: { initialData: BiayaOverheadData }) {
+export default function BiayaOverheadClient(props: { initialData: BiayaOverheadData }) {
+  return (
+    <PanduanProvider>
+      <BiayaOverheadIsi {...props} />
+    </PanduanProvider>
+  );
+}
+
+function BiayaOverheadIsi({ initialData }: { initialData: BiayaOverheadData }) {
   const [data, setData] = useState(initialData);
+  const kontenPanduan = React.useMemo(() => buatPanduanBiayaOverhead(data), [data]);
   const [dari, setDari] = useState(initialData.dari);
   const [sampai, setSampai] = useState(initialData.sampai);
   const [tampilkanLama, setTampilkanLama] = useState(!initialData.hanyaPeriodeBaru);
@@ -110,7 +122,8 @@ export default function BiayaOverheadClient({ initialData }: { initialData: Biay
   return (
     <div className="space-y-6">
       {/* ─── FILTER ─────────────────────────────────────────────────── */}
-      <div className="flex flex-wrap gap-3 items-end p-4 rounded-xl bg-[#1A1D1F] border border-[#2A2D31]">
+      <PanelPanduan konten={kontenPanduan} />
+      <div data-panduan="filter-overhead" className="flex flex-wrap gap-3 items-end p-4 rounded-xl bg-[#1A1D1F] border border-[#2A2D31]">
         <div>
           <label className={labelCls}>Dari</label>
           <input type="date" className={inputCls} value={dari} onChange={e => setDari(e.target.value)} />
@@ -128,6 +141,7 @@ export default function BiayaOverheadClient({ initialData }: { initialData: Biay
         </Button>
         <TogglePoLama className="ml-auto" checked={tampilkanLama}
           onChange={v => { setTampilkanLama(v); muat({ lama: v }); }} />
+        <TombolPanduan />
       </div>
 
       {data.pcsTerkirim === 0 && (
@@ -142,22 +156,22 @@ export default function BiayaOverheadClient({ initialData }: { initialData: Biay
       )}
 
       {/* ─── RINGKASAN ──────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <Kartu judul="Pcs Terkirim" nilai={data.pcsTerkirim.toLocaleString('id-ID') + ' pcs'}
+      <div data-panduan="kartu-overhead" className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <Kartu judul="Pcs Terkirim" k="pcs_terkirim_oh" nilai={data.pcsTerkirim.toLocaleString('id-ID') + ' pcs'}
           ket="dari surat jalan pada rentang ini" />
-        <Kartu judul="Patokan HPP" nilai={idr(data.totalPatokan)}
+        <Kartu judul="Patokan HPP" k="patokan_oh" nilai={idr(data.totalPatokan)}
           ket="tarif overhead HPP × pcs terkirim" />
-        <Kartu judul="Realisasi" nilai={idr(data.totalRealisasiHpp)}
+        <Kartu judul="Realisasi" k="realisasi_oh" nilai={idr(data.totalRealisasiHpp)}
           ket="uang keluar yang ditanggung komponen HPP" />
         <div className="p-4 rounded-xl bg-[#1A1D1F] border border-[#2A2D31]">
-          <p className="text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold">Selisih</p>
+          <p className="flex items-center gap-1 text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold">Selisih <InfoIstilah k="selisih_oh" /></p>
           <StatusSelisih selisih={selisih} besar />
           <p className="text-[11px] text-[#5f6368] mt-1">patokan − realisasi</p>
         </div>
       </div>
 
       {/* ─── PER KOMPONEN HPP (meter list) ──────────────────────────── */}
-      <Panel judul="Ditanggung HPP — per komponen"
+      <Panel id="komponen-overhead" k="komponen_oh" judul="Ditanggung HPP — per komponen"
         ket="Bar = realisasi terhadap patokannya. Klik baris untuk rincian sub-kelompok dan transaksi.">
         <div className="divide-y divide-[#2A2D31]">
           {data.komponen.map(k => {
@@ -198,7 +212,7 @@ export default function BiayaOverheadClient({ initialData }: { initialData: Biay
       </Panel>
 
       {/* ─── DI LUAR PATOKAN HPP ────────────────────────────────────── */}
-      <Panel judul="Di luar patokan HPP"
+      <Panel id="luar-hpp" k="luar_hpp" judul="Di luar patokan HPP"
         ket="Overhead yang tetap keluar uang tetapi tidak punya jatah di HPP."
         total={totalLuar}>
         <div className="px-4 py-3 space-y-2">
@@ -212,7 +226,7 @@ export default function BiayaOverheadClient({ initialData }: { initialData: Biay
       </Panel>
 
       {/* ─── BIAYA LAIN ─────────────────────────────────────────────── */}
-      <Panel judul="Biaya lain (Biaya Operasional & Lainnya)"
+      <Panel k="biaya_lain" judul="Biaya lain (Biaya Operasional & Lainnya)"
         ket="Bukan kategori overhead; ditanggung komponen mana ditentukan per kasus."
         total={totalLain}>
         <div className="px-4 py-3 space-y-2">
@@ -232,7 +246,7 @@ export default function BiayaOverheadClient({ initialData }: { initialData: Biay
       <PanelBiayaTetap list={data.biayaTetap} subList={data.subList} onBerubah={() => muat()} />
 
       {/* ─── TREN 6 BULAN ───────────────────────────────────────────── */}
-      <Panel judul="Tren 6 bulan — realisasi vs patokan HPP"
+      <Panel id="tren-overhead" k="tren_overhead" judul="Tren 6 bulan — realisasi vs patokan HPP"
         ket="Batang = uang overhead yang keluar (ditanggung HPP); garis = patokan HPP × pcs terkirim.">
         <div className="px-4 pt-4">
           <div className="h-64">
@@ -297,22 +311,27 @@ export default function BiayaOverheadClient({ initialData }: { initialData: Biay
 
 // ─── KOMPONEN KECIL ──────────────────────────────────────────────────────────
 
-function Kartu({ judul, nilai, ket }: { judul: string; nilai: string; ket: string }) {
+function Kartu({ judul, nilai, ket, k }: { judul: string; nilai: string; ket: string; k?: KunciIstilah }) {
   return (
     <div className="p-4 rounded-xl bg-[#1A1D1F] border border-[#2A2D31]">
-      <p className="text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold">{judul}</p>
+      <p className="flex items-center gap-1 text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold">{judul}{k && <InfoIstilah k={k} />}</p>
       <p className="text-lg font-bold text-[#e8eaed] mt-1">{nilai}</p>
       <p className="text-[11px] text-[#5f6368] mt-1">{ket}</p>
     </div>
   );
 }
 
-function Panel({ judul, ket, total, children }: { judul: string; ket: string; total?: number; children: React.ReactNode }) {
+function Panel({ judul, ket, total, children, id, k }: {
+  judul: string; ket: string; total?: number; children: React.ReactNode;
+  /** nilai data-panduan (target tombol "Tunjukkan") */
+  id?: string;
+  k?: KunciIstilah;
+}) {
   return (
-    <div className="rounded-xl border border-[#2A2D31] bg-[#16181A] overflow-hidden">
+    <div data-panduan={id} className="rounded-xl border border-[#2A2D31] bg-[#16181A] overflow-hidden">
       <div className="flex flex-wrap items-start justify-between gap-2 px-4 py-3 bg-[#1A1C1E] border-b border-[#2A2D31]">
         <div>
-          <p className="text-sm font-bold text-[#e8eaed]">{judul}</p>
+          <p className="flex items-center gap-1.5 text-sm font-bold text-[#e8eaed]">{judul}{k && <InfoIstilah k={k} />}</p>
           <p className="text-[11px] text-[#9aa0a6] mt-0.5">{ket}</p>
         </div>
         {total !== undefined && <p className="text-sm font-bold text-[#e8eaed]">{idr(total)}</p>}
@@ -460,7 +479,7 @@ function PanelBiayaTetap({ list, subList, onBerubah }: {
   };
 
   return (
-    <Panel judul="Biaya Tetap (kontrak)"
+    <Panel id="biaya-tetap" k="biaya_tetap" judul="Biaya Tetap (kontrak)"
       ket="Biaya yang dibayar sekaligus untuk jangka panjang (mis. kontrak rumah). Dibagi rata per hari selama masa kontrak.">
       <div className="px-4 py-3 space-y-3">
         {list.length === 0 && !formBuka && <p className="text-xs text-[#5f6368] italic">Belum ada biaya tetap.</p>}
@@ -570,7 +589,7 @@ function PerluDirapikan({ entri, subList, onSelesai }: {
   };
 
   return (
-    <Panel judul={`Perlu dirapikan — ${entri.length} entri overhead tanpa sub-kelompok`}
+    <Panel id="perlu-dirapikan" k="perlu_dirapikan" judul={`Perlu dirapikan — ${entri.length} entri overhead tanpa sub-kelompok`}
       ket="Entri sejak 14 Nov 2026 yang belum punya sub-kelompok. Pilihkan sub-kelompoknya agar ikut terkelompok.">
       <div className="divide-y divide-[#2A2D31]">
         {entri.map(e => (

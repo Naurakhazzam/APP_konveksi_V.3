@@ -8,7 +8,7 @@ const TENANT_ID = 'STX-001';
 export interface GajiLedgerEntry {
   id: string;
   karyawan_id: string;
-  tipe: 'selesai' | 'reject_potong' | 'rework';
+  tipe: 'selesai' | 'reject_potong' | 'rework' | 'rework_selesai';
   total: number;
   qty: number;
   upah_per_pcs: number;
@@ -95,7 +95,7 @@ export async function getRekapGaji(
 
     map[kid].entry_ids.push(row.id);
 
-    if (row.tipe === 'selesai' || row.tipe === 'rework') {
+    if (row.tipe === 'selesai' || row.tipe === 'rework' || row.tipe === 'rework_selesai') {
       map[kid].total_upah_kotor += Number(row.total);
     } else if (row.tipe === 'reject_potong') {
       map[kid].total_potongan += Number(row.total);
@@ -341,7 +341,7 @@ export async function prosesBayar(input: {
     .in('id', input.entry_ids);
 
   const upah_bersih = (ledgerEntries ?? []).reduce((acc: number, e: any) => {
-    if (e.tipe === 'selesai' || e.tipe === 'rework') return acc + Number(e.total);
+    if (e.tipe === 'selesai' || e.tipe === 'rework' || e.tipe === 'rework_selesai') return acc + Number(e.total);
     if (e.tipe === 'reject_potong') return acc - Number(e.total);
     return acc;
   }, 0);

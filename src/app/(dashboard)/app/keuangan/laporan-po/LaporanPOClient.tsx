@@ -25,6 +25,11 @@ import {
   type TandaPO,
 } from '@/lib/actions/keuangan/laporan-po.actions';
 import { poPeriodeBaru } from '@/lib/keuangan/periode-po';
+import type { KunciIstilah } from '@/lib/keuangan/kamus';
+import {
+  PanduanProvider, PanelPanduan, InfoIstilah, TombolPanduan, usePanduan,
+} from '@/components/keuangan/panduan/Panduan';
+import { buatPanduanLaporanPO, pilihPOContoh } from './panduan-laporan-po';
 
 // ─── CONSTANTS ──────────────────────────────────────────────────────────────
 
@@ -89,7 +94,16 @@ interface Props {
 
 // ─── COMPONENT ───────────────────────────────────────────────────────────────
 
-export default function LaporanPOClient({ initialData, defaultBulan, defaultTahun }: Props) {
+export default function LaporanPOClient(props: Props) {
+  return (
+    <PanduanProvider>
+      <LaporanPOIsi {...props} />
+    </PanduanProvider>
+  );
+}
+
+function LaporanPOIsi({ initialData, defaultBulan, defaultTahun }: Props) {
+  const panduan = usePanduan();
   const [data, setData] = useState<POLaporanItem[]>(initialData);
   const [filterBulan, setFilterBulan] = useState(defaultBulan);
   const [filterTahun, setFilterTahun] = useState(defaultTahun);
@@ -117,7 +131,7 @@ export default function LaporanPOClient({ initialData, defaultBulan, defaultTahu
     setSortConfig({ key, direction: sortConfig?.key === key && sortConfig.direction === 'asc' ? 'desc' : 'asc' });
   };
 
-  const kolomUrut = (label: string, sortKey: KunciUrut, align: "left" | "right" | "center" = "left") => {
+  const kolomUrut = (label: string, sortKey: KunciUrut, align: "left" | "right" | "center" = "left", istilah?: KunciIstilah) => {
     const isActive = sortConfig?.key === sortKey;
     return (
       <TableHead key={sortKey}
@@ -128,6 +142,7 @@ export default function LaporanPOClient({ initialData, defaultBulan, defaultTahu
       >
         <div className={`flex items-center gap-1 ${align === 'right' ? 'justify-end' : align === 'center' ? 'justify-center' : 'justify-start'}`}>
           {label}
+          {istilah && <InfoIstilah k={istilah} />}
           <span className={`text-[10px] font-mono ${isActive ? 'text-[#e5c17b]' : 'text-[#5f6368] group-hover:text-[#9aa0a6]'}`}>
             {isActive && sortConfig.direction === 'desc' ? '↓' : '↑'}
           </span>
@@ -154,17 +169,19 @@ export default function LaporanPOClient({ initialData, defaultBulan, defaultTahu
   const totalLaba      = jml(p => p.profit_final);
   const adaSementara   = visible.some(p => p.overhead_sementara);
   const hitungTanda = (t: TandaPO) => visible.filter(p => p.tanda === t).length;
+  const poContoh = React.useMemo(() => pilihPOContoh(visible), [visible]);
+  const kontenPanduan = React.useMemo(() => buatPanduanLaporanPO(visible, poContoh), [visible, poContoh]);
   const poPeringatan = visible.filter(p => p.kesimpulan?.peringatan);
   const totalBedaTarif = jml(p => p.beda_tarif);
 
-  const summaryCards: { label: string; value: string; color: string; sub?: string }[] = [
-    { label: 'Perkiraan (HPP × dipotong)', value: idrFmt(totalPerkiraan), color: 'text-[#e8eaed]' },
-    { label: 'Aktual sejauh ini',          value: idrFmt(totalAktual),    color: 'text-[#e8eaed]' },
-    { label: 'Sisa perkiraan',             value: idrFmt(totalSisa),      color: 'text-blue-300' },
+  const summaryCards: { label: string; value: string; color: string; sub?: string; k: KunciIstilah }[] = [
+    { label: 'Perkiraan (HPP × dipotong)', value: idrFmt(totalPerkiraan), color: 'text-[#e8eaed]', k: 'perkiraan' },
+    { label: 'Aktual sejauh ini',          value: idrFmt(totalAktual),    color: 'text-[#e8eaed]', k: 'aktual' },
+    { label: 'Sisa perkiraan',             value: idrFmt(totalSisa),      color: 'text-blue-300', k: 'sisa' },
     { label: 'Hemat / Boros biaya',        value: selisihFmt(totalSelisih), color: selisihCls(totalSelisih),
-      sub: Math.round(totalBedaTarif) ? `${selisihFmt(totalBedaTarif)} beda tarif` : undefined },
+      sub: Math.round(totalBedaTarif) ? `${selisihFmt(totalBedaTarif)} beda tarif` : undefined, k: 'hemat_boros' },
     { label: 'Laba (Kinerja)',             value: (totalLaba < 0 ? '−' : '') + idrFmt(totalLaba),
-      color: totalLaba > 0 ? 'text-green-400' : totalLaba < 0 ? 'text-red-400' : 'text-[#9aa0a6]' },
+      color: totalLaba > 0 ? 'text-green-400' : totalLaba < 0 ? 'text-red-400' : 'text-[#9aa0a6]', k: 'laba' },
   ];
 
   // ─── FILTER ────────────────────────────────────────────────────────────
@@ -215,29 +232,27 @@ export default function LaporanPOClient({ initialData, defaultBulan, defaultTahu
   return (
     <div className="space-y-6">
 
-      {/* Info cara hitung */}
-      <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300/90 leading-relaxed space-y-1">
-        <p>
-          <b className="text-amber-300">Perkiraan</b> = HPP di sheet × pcs yang <b>dipotong</b>.{' '}
-          <b className="text-amber-300">Aktual sejauh ini</b> = kain, puring & sleting (modal FIFO) + bahan pembantu
-          (Saldo Bahan Pembantu) + upah tercatat (lunas & terutang) + overhead produksi metode pcs-hari.{' '}
-          <b className="text-amber-300">Sisa perkiraan</b> = bagian HPP untuk pcs yang biayanya belum tercatat
-          (tahap belum selesai, aksesori menunggu harga).{' '}
-          <b className="text-amber-300">Hemat / Boros</b> = (aktual + sisa) dibanding perkiraan:{' '}
-          <span className="text-green-400">Hemat</span> = biaya lebih kecil dari patokan HPP, untung bertambah sebesar itu;{' '}
-          <span className="text-red-400">Boros</span> = biaya lebih besar dari patokan HPP, untung berkurang sebesar itu.{' '}
-          Upah yang sudah dibayar dibandingkan dengan tarif yang dibayar saat itu.
-        </p>
-        <p>Laba memakai angka yang sama dengan <b>Kinerja Keuangan</b>.</p>
-        {adaSementara && (
-          <p className="text-orange-300">
-            ⚠ Overhead bulan berjalan masih <b>sementara</b>; angkanya final setelah bulan tutup.
+      {/* Info singkat + Panduan */}
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex-1 min-w-[240px] p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300/90 leading-relaxed space-y-1">
+          <p>
+            <b className="text-amber-300">Perkiraan</b> = patokan HPP × pcs dipotong. <b className="text-amber-300">Aktual</b> = biaya yang sudah keluar.{' '}
+            <b className="text-amber-300">Sisa</b> = biaya yang belum keluar. <span className="text-green-400">Hemat</span> /{' '}
+            <span className="text-red-400">Boros</span> = (aktual + sisa) dibanding perkiraan. Laba sama dengan <b>Kinerja Keuangan</b>.
           </p>
-        )}
+          <p className="text-amber-300/70">Bingung arti angka? Klik ikon <b>ⓘ</b> di samping judul, atau buka <b>📖 Panduan</b>.</p>
+          {adaSementara && (
+            <p className="text-orange-300">
+              ⚠ Overhead bulan berjalan masih <b>sementara</b>; angkanya final setelah bulan tutup.
+            </p>
+          )}
+        </div>
+        <TombolPanduan />
       </div>
+      <PanelPanduan konten={kontenPanduan} />
 
       {poPeringatan.length > 0 && (
-        <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/25 text-xs text-red-300 space-y-1">
+        <div data-panduan="peringatan" className="p-4 rounded-xl bg-red-500/10 border border-red-500/25 text-xs text-red-300 space-y-1">
           <p className="flex items-center gap-2 font-bold"><AlertTriangle className="h-4 w-4" /> {poPeringatan.length} PO perlu perhatian</p>
           {poPeringatan.map(p => (
             <p key={p.po_id}>
@@ -251,16 +266,16 @@ export default function LaporanPOClient({ initialData, defaultBulan, defaultTahu
       )}
 
       {/* Summary Bar */}
-      <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+      <div data-panduan="ringkasan" className="grid grid-cols-2 md:grid-cols-6 gap-3">
         {summaryCards.map(card => (
           <div key={card.label} className="p-4 rounded-xl bg-[#1A1D1F] border border-[#2A2D31]">
-            <p className="text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold mb-1">{card.label}</p>
+            <p className="flex items-center gap-1 text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold mb-1">{card.label} <InfoIstilah k={card.k} /></p>
             <p className={`text-sm font-bold ${card.color}`}>{card.value}</p>
             {card.sub && <p className="text-[10px] text-[#9aa0a6] mt-0.5">{card.sub}</p>}
           </div>
         ))}
         <div className="p-4 rounded-xl bg-[#1A1D1F] border border-[#2A2D31]">
-          <p className="text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold mb-1">Status PO</p>
+          <p className="flex items-center gap-1 text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold mb-1">Status PO <InfoIstilah k="status_po" /></p>
           <div className="flex gap-1.5 flex-wrap">
             {(['final', 'berjalan', 'menunggu_harga'] as TandaPO[]).map(t => (
               <span key={t} className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${TANDA_PO[t].cls}`}>
@@ -272,7 +287,7 @@ export default function LaporanPOClient({ initialData, defaultBulan, defaultTahu
       </div>
 
       {/* Filter Bar */}
-      <div className="flex flex-wrap gap-3 items-end p-4 rounded-xl bg-[#1A1D1F] border border-[#2A2D31]">
+      <div data-panduan="filter" className="flex flex-wrap gap-3 items-end p-4 rounded-xl bg-[#1A1D1F] border border-[#2A2D31]">
         <div>
           <p className={labelCls}>Bulan order</p>
           <select
@@ -313,24 +328,24 @@ export default function LaporanPOClient({ initialData, defaultBulan, defaultTahu
       </div>
 
       {/* Tabel */}
-      <div className="rounded-xl border border-[#2A2D31] overflow-x-auto bg-[#16181A]">
+      <div data-panduan="tabel" className="rounded-xl border border-[#2A2D31] overflow-x-auto bg-[#16181A]">
         <Table>
           <TableHeader className="bg-[#1A1C1E]">
             <TableRow className="border-[#2A2D31] hover:bg-transparent">
               {kolomUrut("No. PO", "no_po")}
               <TableHead className="text-[#9aa0a6]">Klien</TableHead>
               {kolomUrut("Tanggal", "tanggal")}
-              {kolomUrut("Order", "total_qty", "right")}
-              {kolomUrut("Dipotong", "pcs_potong", "right")}
-              {kolomUrut("Dikirim", "qty_shipped", "right")}
-              {kolomUrut("Perkiraan", "perkiraan", "right")}
-              {kolomUrut("Aktual", "aktual", "right")}
-              {kolomUrut("Sisa", "sisa", "right")}
-              {kolomUrut("Hemat / Boros", "selisih", "right")}
-              {kolomUrut("Nilai Jual", "nilai_project", "right")}
-              {kolomUrut("Laba", "profit_final", "right")}
-              {kolomUrut("Margin", "margin_pct_final", "right")}
-              <TableHead className="text-[#9aa0a6] text-center">Status</TableHead>
+              {kolomUrut("Order", "total_qty", "right", "qty_order")}
+              {kolomUrut("Dipotong", "pcs_potong", "right", "pcs_potong")}
+              {kolomUrut("Dikirim", "qty_shipped", "right", "pcs_kirim")}
+              {kolomUrut("Perkiraan", "perkiraan", "right", "perkiraan")}
+              {kolomUrut("Aktual", "aktual", "right", "aktual")}
+              {kolomUrut("Sisa", "sisa", "right", "sisa")}
+              {kolomUrut("Hemat / Boros", "selisih", "right", "hemat_boros")}
+              {kolomUrut("Nilai Jual", "nilai_project", "right", "nilai_jual")}
+              {kolomUrut("Laba", "profit_final", "right", "laba")}
+              {kolomUrut("Margin", "margin_pct_final", "right", "margin")}
+              <TableHead className="text-[#9aa0a6] text-center"><span className="inline-flex items-center gap-1">Status <InfoIstilah k="status_po" /></span></TableHead>
               <TableHead className="text-[#9aa0a6] w-20 text-center">Aksi</TableHead>
             </TableRow>
           </TableHeader>
@@ -342,7 +357,8 @@ export default function LaporanPOClient({ initialData, defaultBulan, defaultTahu
             ) : sortedData.map(po => {
               const kosong = po.tanda === 'belum_dipotong';
               return (
-                <TableRow key={po.po_id} className="border-[#2A2D31] bg-[#16181A] hover:bg-[#1A1C1E]">
+                <TableRow key={po.po_id} data-panduan={po.po_id === poContoh?.po_id ? 'baris-contoh' : undefined}
+                  className="border-[#2A2D31] bg-[#16181A] hover:bg-[#1A1C1E]">
                   <TableCell className="font-mono text-sm text-[#e5c17b] font-bold">{po.no_po}</TableCell>
                   <TableCell className="text-sm text-[#e8eaed]">{po.klien_nama}</TableCell>
                   <TableCell className="text-sm text-[#9aa0a6] whitespace-nowrap">{dateFmt(po.tanggal)}</TableCell>
@@ -401,6 +417,7 @@ export default function LaporanPOClient({ initialData, defaultBulan, defaultTahu
                       variant="ghost"
                       size="sm"
                       disabled={kosong}
+                      data-panduan={po.po_id === poContoh?.po_id ? 'detail-contoh' : undefined}
                       onClick={() => handleOpenDetail(po)}
                       className="h-7 px-2 text-xs text-[#9aa0a6] hover:text-[#e8eaed] hover:bg-[#2A2D31]"
                     >
@@ -416,7 +433,7 @@ export default function LaporanPOClient({ initialData, defaultBulan, defaultTahu
       </div>
 
       {/* ─── MODAL DETAIL ──────────────────────────────────────────────────── */}
-      <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
+      <Dialog open={detailOpen} onOpenChange={o => { if (!o && panduan.terbuka) return; setDetailOpen(o); }}>
         <DialogContent className="bg-[#16181A] border-[#2A2D31] text-[#e8eaed] sm:max-w-5xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 flex-wrap">
@@ -440,14 +457,14 @@ export default function LaporanPOClient({ initialData, defaultBulan, defaultTahu
 
               {/* ── Tab Bar ── */}
               <div className="flex border-b border-[#3a3d41] mb-1">
-                {[
-                  { key: 'komponen', label: 'Per Komponen' },
-                  { key: 'qty',      label: 'Qty Pesan vs Potong' },
-                  { key: 'jurnal',   label: 'Rincian Aktual' },
-                  { key: 'hpp-size', label: 'HPP per Size' },
-                ].map(tab => (
+                {([
+                  { key: 'komponen', label: 'Per Komponen',        k: 'tab_komponen' },
+                  { key: 'qty',      label: 'Qty Pesan vs Potong', k: 'tab_qty' },
+                  { key: 'jurnal',   label: 'Rincian Aktual',      k: 'tab_rincian' },
+                  { key: 'hpp-size', label: 'HPP per Size',        k: 'tab_hpp_size' },
+                ] as const).map(tab => (
+                  <div key={tab.key} data-panduan={`tab-${tab.key === 'jurnal' ? 'rincian' : tab.key}`} className="flex items-center">
                   <button
-                    key={tab.key}
                     onClick={() => tab.key === 'hpp-size' ? handleHppTabClick() : setActiveDetailTab(tab.key as 'komponen' | 'qty' | 'jurnal')}
                     className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${
                       activeDetailTab === tab.key
@@ -457,6 +474,8 @@ export default function LaporanPOClient({ initialData, defaultBulan, defaultTahu
                   >
                     {tab.label}
                   </button>
+                  <InfoIstilah k={tab.k} className="-ml-2 mr-2" />
+                  </div>
                 ))}
               </div>
 
@@ -467,20 +486,20 @@ export default function LaporanPOClient({ initialData, defaultBulan, defaultTahu
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                     {[
                       { label: 'Perkiraan biaya',   value: idrFmt(detailData.totals.perkiraan), color: 'text-[#e8eaed]',
-                        ket: 'Patokan HPP di sheet × pcs yang dipotong' },
+                        ket: 'Patokan HPP di sheet × pcs yang dipotong', k: 'perkiraan' as KunciIstilah },
                       { label: 'Aktual sejauh ini', value: idrFmt(detailData.totals.aktual),    color: 'text-[#e8eaed]',
-                        ket: 'Biaya yang sudah benar-benar keluar / tercatat' },
+                        ket: 'Biaya yang sudah benar-benar keluar / tercatat', k: 'aktual' as KunciIstilah },
                       { label: 'Sisa perkiraan',    value: idrFmt(detailData.totals.sisa),      color: 'text-blue-300',
-                        ket: 'Biaya yang belum keluar (tahap belum selesai), dihitung dari HPP' },
+                        ket: 'Biaya yang belum keluar (tahap belum selesai), dihitung dari HPP', k: 'sisa' as KunciIstilah },
                       { label: 'Hemat / Boros biaya', value: selisihFmt(detailData.totals.selisih), color: selisihCls(detailData.totals.selisih),
                         ket: Math.round(detailData.totals.selisih) < 0
                           ? 'Aktual + sisa lebih KECIL dari perkiraan → untung bertambah sebesar ini'
                           : Math.round(detailData.totals.selisih) > 0
                             ? 'Aktual + sisa lebih BESAR dari perkiraan → untung berkurang sebesar ini'
-                            : 'Aktual + sisa sama dengan perkiraan' },
+                            : 'Aktual + sisa sama dengan perkiraan', k: 'hemat_boros' as KunciIstilah },
                     ].map(c => (
                       <div key={c.label} className="p-3 rounded-lg bg-[#1A1D1F] border border-[#2A2D31]">
-                        <p className="text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold mb-1">{c.label}</p>
+                        <p className="flex items-center gap-1 text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold mb-1">{c.label} <InfoIstilah k={c.k} /></p>
                         <p className={`text-sm font-bold ${c.color}`}>{c.value}</p>
                         <p className="text-[10px] text-[#9aa0a6] mt-1 leading-snug">{c.ket}</p>
                       </div>
@@ -629,11 +648,11 @@ function TabelKomponen({ baris }: { baris: BarisKomponen[] }) {
         <thead className="bg-[#1A1C1E]">
           <tr>
             <th className={`${th} text-left`}>Komponen</th>
-            <th className={`${th} text-right`}>Perkiraan</th>
-            <th className={`${th} text-right`}>Aktual sejauh ini</th>
-            <th className={`${th} text-right`}>Sisa perkiraan</th>
-            <th className={`${th} text-right`}>Hemat / Boros</th>
-            <th className={`${th} text-left`}>Status</th>
+            <th className={`${th} text-right`}><span className="inline-flex items-center gap-1">Perkiraan <InfoIstilah k="perkiraan" /></span></th>
+            <th className={`${th} text-right`}><span className="inline-flex items-center gap-1">Aktual sejauh ini <InfoIstilah k="aktual" /></span></th>
+            <th className={`${th} text-right`}><span className="inline-flex items-center gap-1">Sisa perkiraan <InfoIstilah k="sisa" /></span></th>
+            <th className={`${th} text-right`}><span className="inline-flex items-center gap-1">Hemat / Boros <InfoIstilah k="hemat_boros" /></span></th>
+            <th className={`${th} text-left`}><span className="inline-flex items-center gap-1">Status <InfoIstilah k="status_komponen" /></span></th>
           </tr>
         </thead>
         <tbody>
@@ -688,7 +707,7 @@ function KotakKesimpulan({ k }: { k: KesimpulanPO }) {
   return (
     <div className={`p-4 rounded-lg border ${warna}`}>
       <div className="flex flex-wrap items-center gap-2 mb-2">
-        <p className="text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold">Kesimpulan</p>
+        <p className="flex items-center gap-1 text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold">Kesimpulan <InfoIstilah k="kesimpulan" /></p>
         {k.peringatan && (
           <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-red-500/15 text-red-300 border border-red-500/30">
             ⚠ {k.peringatan === 'rugi' ? 'Rugi' : `Margin turun ${k.turun_pct}%`}
@@ -701,19 +720,19 @@ function KotakKesimpulan({ k }: { k: KesimpulanPO }) {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
         {[
           { label: 'Nilai jual', value: idrFmt(k.nilai_jual), cls: 'text-[#e8eaed]',
-            ket: 'Harga jual × pcs yang dipotong' },
+            ket: 'Harga jual × pcs yang dipotong', k: 'nilai_jual' as KunciIstilah },
           { label: 'Untung menurut HPP', value: `${k.margin_perkiraan < 0 ? '−' : ''}${idrFmt(k.margin_perkiraan)} (${k.margin_perkiraan_pct}%)`, cls: 'text-[#e8eaed]',
-            ket: 'Nilai jual − perkiraan biaya (patokan sheet HPP)' },
+            ket: 'Nilai jual − perkiraan biaya (patokan sheet HPP)', k: 'untung_hpp' as KunciIstilah },
           { label: 'Untung sebenarnya', value: `${k.margin_aktual < 0 ? '−' : ''}${idrFmt(k.margin_aktual)} (${k.margin_aktual_pct}%)`,
             cls: k.margin_aktual < 0 ? 'text-red-400' : 'text-green-400',
-            ket: 'Nilai jual − (biaya aktual + sisa perkiraan)' },
+            ket: 'Nilai jual − (biaya aktual + sisa perkiraan)', k: 'untung_sebenarnya' as KunciIstilah },
           { label: 'Dibanding HPP', value: Math.round(k.selisih_margin) > 0 ? `Lebih untung ${idrFmt(k.selisih_margin)}`
               : Math.round(k.selisih_margin) < 0 ? `Kurang untung ${idrFmt(k.selisih_margin)}` : 'Sesuai',
             cls: Math.round(k.selisih_margin) < 0 ? 'text-red-400' : Math.round(k.selisih_margin) > 0 ? 'text-green-400' : 'text-[#9aa0a6]',
-            ket: 'Untung sebenarnya − untung menurut HPP' },
+            ket: 'Untung sebenarnya − untung menurut HPP', k: 'dibanding_hpp' as KunciIstilah },
         ].map(c => (
           <div key={c.label}>
-            <p className="text-[10px] text-[#9aa0a6]">{c.label}</p>
+            <p className="flex items-center gap-1 text-[10px] text-[#9aa0a6]">{c.label} <InfoIstilah k={c.k} /></p>
             <p className={`text-sm font-bold ${c.cls}`}>{c.value}</p>
             <p className="text-[10px] text-[#5f6368] mt-0.5 leading-snug">{c.ket}</p>
           </div>
@@ -762,7 +781,7 @@ function TabelQty({ rows }: { rows: BarisQty[] }) {
               <th className={`${th} text-left`}>Size</th>
               <th className={`${th} text-right`}>Pesan</th>
               <th className={`${th} text-right`}>Dipotong</th>
-              <th className={`${th} text-right`}>Selisih</th>
+              <th className={`${th} text-right`}><span className="inline-flex items-center gap-1">Selisih <InfoIstilah k="kurang_potong" /></span></th>
               <th className={`${th} text-right`}>Dikirim</th>
               <th className={`${th} text-left`}>Tanda</th>
             </tr>

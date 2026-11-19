@@ -76,6 +76,7 @@ export const gajiLedgerTipeEnum = pgEnum('gaji_ledger_tipe', [
   'selesai',
   'reject_potong',
   'rework',
+  'rework_selesai',
 ]);
 
 export const gajiStatusEnum = pgEnum('gaji_status', [

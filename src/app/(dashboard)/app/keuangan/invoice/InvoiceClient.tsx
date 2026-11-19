@@ -23,6 +23,9 @@ import {
   getInvoiceList, getInvoiceDetail,
   addPembayaran, deletePembayaran, deleteInvoice,
 } from '@/lib/actions/keuangan/invoice.actions';
+import { PanduanProvider, PanelPanduan, InfoIstilah, TombolPanduan } from '@/components/keuangan/panduan/Panduan';
+import type { KunciIstilah } from '@/lib/keuangan/kamus';
+import { buatPanduanInvoice } from './panduan-invoice';
 
 // ─── CONSTANTS ───────────────────────────────────────────────────────────────
 
@@ -59,12 +62,26 @@ const defaultBayarForm = (invoice_id: string) => ({
 
 // ─── COMPONENT ───────────────────────────────────────────────────────────────
 
-export default function InvoiceClient({ initialInvoices, klienList, defaultBulan, defaultTahun }: Props) {
+export default function InvoiceClient(props: Props) {
+  return (
+    <PanduanProvider>
+      <InvoiceIsi {...props} />
+    </PanduanProvider>
+  );
+}
+
+/** Judul kolom + ikon ⓘ */
+const KolomInfo = ({ judul, k }: { judul: string; k: KunciIstilah }) => (
+  <span className="inline-flex items-center gap-1">{judul}<InfoIstilah k={k} /></span>
+);
+
+function InvoiceIsi({ initialInvoices, klienList, defaultBulan, defaultTahun }: Props) {
   const [invoices, setInvoices]     = useState<InvoiceRow[]>(initialInvoices);
   /** Invoice PO lama (sebelum PO-0100) disembunyikan kecuali dicentang */
   const [tampilkanLama, setTampilkanLama] = useState(false);
   const tampil = tampilkanLama ? invoices : invoices.filter(i => i.periode_baru !== false && tanggalPeriodeBaru(i.tanggal));
   const jumlahLama = invoices.length - tampil.length;
+  const kontenPanduan = buatPanduanInvoice(tampil);
   const [filtering, setFiltering]   = useState(false);
 
   // Filter
@@ -207,12 +224,14 @@ export default function InvoiceClient({ initialInvoices, klienList, defaultBulan
 
   return (
     <div className="space-y-6 mt-4">
+      <PanelPanduan konten={kontenPanduan} />
+      <div className="flex justify-end -mb-3"><TombolPanduan /></div>
 
       {/* ─── SUMMARY CARDS ────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <div data-panduan="kartu-invoice" className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <div className="p-4 rounded-xl bg-[#1A1D1F] border border-red-500/20">
           <div className="flex items-center justify-between mb-1">
-            <p className="text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold">Total Piutang Aktif</p>
+            <p className="text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold flex items-center gap-1">Total Piutang Aktif<InfoIstilah k="piutang_invoice" /></p>
             <AlertCircle className="h-4 w-4 text-red-400" />
           </div>
           <p className="text-lg font-bold font-mono text-red-400">{idrFmt(totalPiutang)}</p>
@@ -220,14 +239,14 @@ export default function InvoiceClient({ initialInvoices, klienList, defaultBulan
         </div>
         <div className="p-4 rounded-xl bg-[#1A1D1F] border border-green-500/20">
           <div className="flex items-center justify-between mb-1">
-            <p className="text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold">Total Lunas</p>
+            <p className="text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold flex items-center gap-1">Total Lunas<InfoIstilah k="lunas_invoice" /></p>
             <Receipt className="h-4 w-4 text-green-400" />
           </div>
           <p className="text-lg font-bold font-mono text-green-400">{idrFmt(totalLunas)}</p>
         </div>
         <div className="p-4 rounded-xl bg-[#1A1D1F] border border-[#2A2D31]">
           <div className="flex items-center justify-between mb-1">
-            <p className="text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold">Total Invoice</p>
+            <p className="text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold flex items-center gap-1">Total Invoice<InfoIstilah k="jumlah_invoice" /></p>
             <CreditCard className="h-4 w-4 text-[#e5c17b]" />
           </div>
           <p className="text-lg font-bold font-mono text-[#e5c17b]">{tampil.length} invoice</p>
@@ -236,7 +255,7 @@ export default function InvoiceClient({ initialInvoices, klienList, defaultBulan
       </div>
 
       {/* ─── FILTER BAR ───────────────────────────────────────────────────── */}
-      <div className="flex flex-wrap gap-3 items-end p-4 rounded-xl bg-[#1A1D1F] border border-[#2A2D31]">
+      <div data-panduan="filter-invoice" className="flex flex-wrap gap-3 items-end p-4 rounded-xl bg-[#1A1D1F] border border-[#2A2D31]">
         <div>
           <p className={labelCls}>Status</p>
           <select className="h-9 px-3 rounded-lg bg-[#1E2124] border border-[#2A2D31] text-sm text-[#e8eaed] outline-none focus:ring-1 focus:ring-[#e5c17b]"
@@ -284,7 +303,7 @@ export default function InvoiceClient({ initialInvoices, klienList, defaultBulan
       </div>
 
       {/* ─── TABEL ────────────────────────────────────────────────────────── */}
-      <div className="rounded-xl border border-[#2A2D31] overflow-hidden bg-[#16181A]">
+      <div data-panduan="tabel-invoice" className="rounded-xl border border-[#2A2D31] overflow-hidden bg-[#16181A]">
         <Table>
           <TableHeader className="bg-[#1A1C1E]">
             <TableRow className="border-[#2A2D31] hover:bg-transparent">
@@ -292,10 +311,10 @@ export default function InvoiceClient({ initialInvoices, klienList, defaultBulan
               <TableHead className="text-[#9aa0a6]">Klien</TableHead>
               <TableHead className="text-[#9aa0a6]">No. SJ</TableHead>
               <TableHead className="text-[#9aa0a6]">Tanggal</TableHead>
-              <TableHead className="text-[#9aa0a6] text-right">Total Tagihan</TableHead>
-              <TableHead className="text-[#9aa0a6] text-right">Terbayar</TableHead>
-              <TableHead className="text-[#9aa0a6] text-right">Sisa</TableHead>
-              <TableHead className="text-[#9aa0a6] text-center">Status</TableHead>
+              <TableHead className="text-[#9aa0a6] text-right"><KolomInfo judul="Total Tagihan" k="total_tagihan" /></TableHead>
+              <TableHead className="text-[#9aa0a6] text-right"><KolomInfo judul="Terbayar" k="terbayar_invoice" /></TableHead>
+              <TableHead className="text-[#9aa0a6] text-right"><KolomInfo judul="Sisa" k="sisa_invoice" /></TableHead>
+              <TableHead className="text-[#9aa0a6] text-center"><KolomInfo judul="Status" k="status_invoice" /></TableHead>
               <TableHead className="text-[#9aa0a6] text-center w-24">Aksi</TableHead>
             </TableRow>
           </TableHeader>
@@ -328,7 +347,7 @@ export default function InvoiceClient({ initialInvoices, klienList, defaultBulan
                     {idrFmt(inv.total_netto)}
                     {inv.potongan_reject > 0 && (
                       <div className="text-[10px] font-normal text-red-400 whitespace-nowrap" title={`Nilai barang ${idrFmt(inv.total_nilai)} dikurangi reject kantor yang belum dikirim ulang`}>
-                        − {idrFmt(inv.potongan_reject)} reject
+                        − {idrFmt(inv.potongan_reject)} reject <InfoIstilah k="potongan_reject" className="align-middle" />
                       </div>
                     )}
                   </TableCell>

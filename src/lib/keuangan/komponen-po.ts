@@ -287,12 +287,19 @@ export function hitungKesimpulan(p: {
   const kalimat: string[] = [];
   if (p.nilai_jual > 0) {
     kalimat.push(`PO ini ${margin_aktual >= 0 ? 'untung' : 'rugi'} ${rp(margin_aktual)} (${pct(margin_aktual)}% dari nilai jual). `
-      + `Menurut patokan HPP di sheet, untungnya seharusnya ${rp(margin_perkiraan)} (${pct(margin_perkiraan)}%).`);
+      + `Menurut patokan HPP di sheet, seharusnya ${margin_perkiraan >= 0 ? 'untung' : 'rugi'} ${rp(margin_perkiraan)} (${pct(margin_perkiraan)}%)`
+      + (margin_perkiraan < 0 ? ' — harga jual di bawah HPP.' : '.'));
     const sm = margin_aktual - margin_perkiraan;
     if (Math.abs(sm) >= AMBANG_PENYEBAB) {
-      kalimat.push(sm > 0
-        ? `Biaya produksi ${rp(sm)} lebih hemat dari patokan HPP, jadi untung bertambah ${rp(sm)} dari perkiraan.`
-        : `Biaya produksi ${rp(sm)} lebih boros dari patokan HPP, jadi untung berkurang ${rp(sm)} dari perkiraan.`);
+      // Akibat pada untung/rugi bergantung tanda margin sebelum & sesudah (harga jual bisa di bawah HPP)
+      const akibat = sm > 0
+        ? (margin_perkiraan >= 0 ? `untung bertambah ${rp(sm)}`
+          : margin_aktual < 0 ? `rugi berkurang ${rp(sm)}`
+          : 'yang seharusnya rugi berbalik jadi untung')
+        : (margin_aktual >= 0 ? `untung berkurang ${rp(sm)}`
+          : margin_perkiraan < 0 ? `rugi bertambah ${rp(sm)}`
+          : 'yang seharusnya untung berbalik jadi rugi');
+      kalimat.push(`Biaya produksi ${rp(sm)} lebih ${sm > 0 ? 'hemat' : 'boros'} dari patokan HPP, jadi ${akibat} dibanding perkiraan.`);
     } else {
       kalimat.push('Biaya produksi sesuai patokan HPP, untung sesuai perkiraan.');
     }

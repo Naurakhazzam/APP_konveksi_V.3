@@ -129,23 +129,24 @@ export async function getPoItemBundleDetail(poItemId: string): Promise<BundleDet
   // Fetch gaji_ledger
   const { data: gajiList } = await supabase
     .from('gaji_ledger')
-    .select('sumber_id, total, status')
+    .select('sumber_id, total, status, tipe')
     .in('sumber_id', bundleIds);
   const gajiMap = new Map<string, { total: number; all_lunas: boolean }>();
   for (const g of (gajiList || [])) {
+    const nilai = (g.tipe === 'reject_potong' ? -1 : 1) * Number(g.total); // potongan reject mengurangi
     const ex = gajiMap.get(g.sumber_id);
     if (ex) {
-      ex.total += Number(g.total);
+      ex.total += nilai;
       if (g.status !== 'lunas') ex.all_lunas = false;
     } else {
-      gajiMap.set(g.sumber_id, { total: Number(g.total), all_lunas: g.status === 'lunas' });
+      gajiMap.set(g.sumber_id, { total: nilai, all_lunas: g.status === 'lunas' });
     }
   }
 
   // Fetch reject_log
   const { data: rejectList } = await supabase
     .from('reject_log')
-    .select('bundle_id, nomor_reject, qty_reject, tahap_ditemukan, keterangan, source, status, alasan_reject:alasan_reject_id(label)')
+    .select('bundle_id, nomor_reject, qty_reject, tahap_ditemukan, keterangan, source, status, alasan_reject:alasan_reject_id(nama)')
     .in('bundle_id', bundleIds)
     .eq('tenant_id', TENANT_ID);
   const rejectMap = new Map<string, any[]>();
@@ -209,7 +210,7 @@ export async function getPoItemBundleDetail(poItemId: string): Promise<BundleDet
       nomor_reject: r.nomor_reject,
       qty_reject: r.qty_reject,
       tahap_ditemukan: r.tahap_ditemukan,
-      alasan: (r.alasan_reject as any)?.label ?? '-',
+      alasan: (r.alasan_reject as any)?.nama ?? '-',
       keterangan: r.keterangan ?? null,
       source: r.source,
       status: r.status,

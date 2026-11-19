@@ -3,7 +3,7 @@ import { bulanBerjalan } from '@/lib/bulan-berjalan';
 import { PageWrapper } from '@/components/ui/PageWrapper';
 import LaporanRejectClient from './LaporanRejectClient';
 
-export const metadata = { title: 'Laporan Koreksi QTY | Stitchlyx' };
+export const metadata = { title: 'Laporan Potongan Reject | Stitchlyx' };
 
 export default async function LaporanRejectPage() {
   try {
@@ -13,7 +13,7 @@ export default async function LaporanRejectPage() {
       getKaryawanList(),
     ]);
     return (
-      <PageWrapper title="Laporan Koreksi QTY" subtitle="Daftar reject dan potongan upah karyawan">
+      <PageWrapper title="Laporan Potongan Reject" subtitle="Potongan upah karyawan karena reject produksi, dan pengembaliannya setelah rework">
         <div className="mt-6">
           <LaporanRejectClient initialData={data} karyawanList={karyawanList} defaultBulan={bulan} defaultTahun={tahun} />
         </div>

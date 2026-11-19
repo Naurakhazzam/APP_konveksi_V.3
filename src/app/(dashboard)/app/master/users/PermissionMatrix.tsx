@@ -57,7 +57,7 @@ const ALL_MENUS = [
   { group: 'Keuangan',      path: '/app/keuangan/laporan-po',          label: '└ Laporan Per PO' },
   { group: 'Keuangan',      path: '/app/keuangan/laporan-gaji',        label: '└ Laporan Gaji' },
   { group: 'Keuangan',      path: '/app/keuangan/laporan-reject-kantor', label: '└ Laporan Reject Kantor' },
-  { group: 'Keuangan',      path: '/app/keuangan/laporan-reject',      label: '└ Laporan Koreksi QTY' },
+  { group: 'Keuangan',      path: '/app/keuangan/laporan-reject',      label: '└ Laporan Potongan Reject' },
   { group: 'Settings',      path: '/app/settings',                     label: 'Settings' },
 ];
 

@@ -14,6 +14,9 @@ import {
   tambahSaldoAwalPembantu, hapusSaldoAwalPembantu,
   type SaldoPembantuData, type SaldoPembantuJenis, type RincianJatah,
 } from '@/lib/actions/keuangan/saldo-pembantu.actions';
+import { PanduanProvider, PanelPanduan, InfoIstilah, TombolPanduan } from '@/components/keuangan/panduan/Panduan';
+import type { KunciIstilah } from '@/lib/keuangan/kamus';
+import { buatPanduanSaldoPembantu } from './panduan-saldo-pembantu';
 
 const BULAN = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
 
@@ -33,7 +36,21 @@ type Tab = 'saldo' | 'awal' | 'penghematan' | 'riwayat';
 
 const inputCls = 'w-full h-9 px-3 rounded-lg bg-[#1E2124] border border-[#2A2D31] text-sm text-[#e8eaed] outline-none focus:border-[#e5c17b]';
 
-export default function SaldoPembantuClient({ data, bolehUbah = false }: { data: SaldoPembantuData; bolehUbah?: boolean }) {
+export default function SaldoPembantuClient(props: { data: SaldoPembantuData; bolehUbah?: boolean }) {
+  return (
+    <PanduanProvider>
+      <SaldoPembantuIsi {...props} />
+    </PanduanProvider>
+  );
+}
+
+/** Judul kolom + ikon ⓘ */
+const KolomInfo = ({ judul, k }: { judul: string; k: KunciIstilah }) => (
+  <span className="inline-flex items-center gap-1">{judul}<InfoIstilah k={k} /></span>
+);
+
+function SaldoPembantuIsi({ data, bolehUbah = false }: { data: SaldoPembantuData; bolehUbah?: boolean }) {
+  const kontenPanduan = React.useMemo(() => buatPanduanSaldoPembantu(data), [data]);
   const [tab, setTab] = useState<Tab>('saldo');
   const [filterJenis, setFilterJenis] = useState('');
   const [rincianJenis, setRincianJenis] = useState<SaldoPembantuJenis | null>(null);
@@ -50,19 +67,21 @@ export default function SaldoPembantuClient({ data, bolehUbah = false }: { data:
 
   return (
     <div className="space-y-6">
+      <PanelPanduan konten={kontenPanduan} />
+      <div className="flex justify-end -mb-3"><TombolPanduan /></div>
       {/* ─── KESIMPULAN ─────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <Kartu judul="Total Belanja" nilai={idr(data.total_beli)} warna="text-[#e8eaed]" ket="dari Buku Kas" />
-        <Kartu judul="Total Jatah HPP" nilai={idr(data.total_jatah)} warna="text-[#e8eaed]" ket="tarif HPP × pcs selesai jahit" />
-        <Kartu judul="Persediaan di Rak (catatan)" nilai={idr(data.total_saldo)} warna="text-orange-300"
+      <div data-panduan="kartu-pembantu" className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <Kartu judul="Total Belanja" k="belanja_pembantu" nilai={idr(data.total_beli)} warna="text-[#e8eaed]" ket="dari Buku Kas" />
+        <Kartu judul="Total Jatah HPP" k="jatah_hpp" nilai={idr(data.total_jatah)} warna="text-[#e8eaed]" ket="tarif HPP × pcs selesai jahit" />
+        <Kartu judul="Persediaan di Rak (catatan)" k="saldo_rak" nilai={idr(data.total_saldo)} warna="text-orange-300"
           ket={`seharusnya ada di rak: barang lama ${idr(data.total_sisa_modal)} + belanja baru ${idr(sisaBelanja)}`} />
-        <Kartu judul="Penghematan Tercatat" nilai={idr(data.total_penghematan)} warna="text-green-400"
+        <Kartu judul="Penghematan Tercatat" k="penghematan_pembantu" nilai={idr(data.total_penghematan)} warna="text-green-400"
           ket="jatah yang tidak perlu dibelanjakan" />
       </div>
 
       {belanjaPeringatan.length > 0 && (
-        <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-xs text-amber-200">
-          <span className="font-bold">⚠ {belanjaPeringatan.length} belanja saat saldo masih banyak</span>{' '}
+        <div data-panduan="peringatan-belanja" className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-xs text-amber-200">
+          <span className="font-bold">⚠ {belanjaPeringatan.length} belanja saat saldo masih banyak</span>{' '}<InfoIstilah k="peringatan_belanja" className="align-middle" />{' '}
           (saldo sebelum belanja &gt; jatah HPP 2 minggu terakhir):{' '}
           {belanjaPeringatan.slice(0, 5).map(m => `${m.jenis} ${tgl(m.tanggal)}`).join(', ')}
           {belanjaPeringatan.length > 5 && ', …'}.{' '}
@@ -70,7 +89,7 @@ export default function SaldoPembantuClient({ data, bolehUbah = false }: { data:
         </div>
       )}
 
-      <div className="flex flex-wrap gap-2">
+      <div data-panduan="tab-pembantu" className="flex flex-wrap gap-2">
         <button className={tabCls('saldo')} onClick={() => setTab('saldo')}>Saldo per Jenis</button>
         <button className={tabCls('awal')} onClick={() => setTab('awal')}>Barang Lama (Saldo Awal)</button>
         <button className={tabCls('penghematan')} onClick={() => setTab('penghematan')}>Penghematan</button>
@@ -79,17 +98,17 @@ export default function SaldoPembantuClient({ data, bolehUbah = false }: { data:
 
       {/* ─── SALDO PER JENIS ────────────────────────────────────────── */}
       {tab === 'saldo' && (
-        <div className="rounded-xl border border-[#2A2D31] overflow-hidden bg-[#16181A]">
+        <div data-panduan="tabel-saldo-jenis" className="rounded-xl border border-[#2A2D31] overflow-hidden bg-[#16181A]">
           <Table>
             <TableHeader className="bg-[#1A1C1E]">
               <TableRow className="border-[#2A2D31] hover:bg-transparent">
                 <TableHead className="text-[#9aa0a6]">Jenis Bahan</TableHead>
-                <TableHead className="text-[#9aa0a6] text-right">Pcs Dijahit</TableHead>
-                <TableHead className="text-[#9aa0a6] text-right">Barang Lama</TableHead>
-                <TableHead className="text-[#9aa0a6] text-right">Belanja</TableHead>
-                <TableHead className="text-[#9aa0a6] text-right">Jatah HPP</TableHead>
-                <TableHead className="text-[#9aa0a6] text-right">Saldo (catatan)</TableHead>
-                <TableHead className="text-[#9aa0a6] text-right">Penghematan</TableHead>
+                <TableHead className="text-[#9aa0a6] text-right"><KolomInfo judul="Pcs Dijahit" k="pcs_dijahit" /></TableHead>
+                <TableHead className="text-[#9aa0a6] text-right"><KolomInfo judul="Barang Lama" k="barang_lama" /></TableHead>
+                <TableHead className="text-[#9aa0a6] text-right"><KolomInfo judul="Belanja" k="belanja_pembantu" /></TableHead>
+                <TableHead className="text-[#9aa0a6] text-right"><KolomInfo judul="Jatah HPP" k="jatah_hpp" /></TableHead>
+                <TableHead className="text-[#9aa0a6] text-right"><KolomInfo judul="Saldo (catatan)" k="saldo_rak" /></TableHead>
+                <TableHead className="text-[#9aa0a6] text-right"><KolomInfo judul="Penghematan" k="penghematan_pembantu" /></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -304,10 +323,10 @@ export default function SaldoPembantuClient({ data, bolehUbah = false }: { data:
   );
 }
 
-function Kartu({ judul, nilai, warna, ket }: { judul: string; nilai: string; warna: string; ket: string }) {
+function Kartu({ judul, nilai, warna, ket, k }: { judul: string; nilai: string; warna: string; ket: string; k?: KunciIstilah }) {
   return (
     <div className="p-4 rounded-xl bg-[#1A1D1F] border border-[#2A2D31]">
-      <p className="text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold">{judul}</p>
+      <p className="flex items-center gap-1 text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold">{judul}{k && <InfoIstilah k={k} />}</p>
       <p className={`text-sm font-bold mt-1 ${warna}`}>{nilai}</p>
       <p className="text-[10px] text-[#5f6368] mt-1">{ket}</p>
     </div>
@@ -378,7 +397,7 @@ function SaldoAwal({ data, bolehUbah }: { data: SaldoPembantuData; bolehUbah: bo
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-        <Kartu judul="Total Barang Lama" nilai={idr(data.total_modal)} warna="text-sky-300" ket="nilai perkiraan saat dimasukkan" />
+        <Kartu judul="Total Barang Lama" k="barang_lama" nilai={idr(data.total_modal)} warna="text-sky-300" ket="nilai perkiraan saat dimasukkan" />
         <Kartu judul="Sudah Terpakai" nilai={idr(data.total_modal - data.total_sisa_modal)} warna="text-[#e8eaed]" ket="ditutup jatah HPP → jadi biaya" />
         <Kartu judul="Sisa (Aset)" nilai={idr(data.total_sisa_modal)} warna="text-green-400" ket="masih dianggap ada di rak" />
       </div>

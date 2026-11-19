@@ -9,6 +9,9 @@ import {
   ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, CartesianGrid,
 } from 'recharts';
 import { getRingkasanKeuangan, type RingkasanKeuanganData } from '@/lib/actions/keuangan/ringkasan.actions';
+import type { KunciIstilah } from '@/lib/keuangan/kamus';
+import { PanduanProvider, PanelPanduan, InfoIstilah, TombolPanduan } from '@/components/keuangan/panduan/Panduan';
+import { buatPanduanRingkasan } from './panduan-ringkasan';
 
 const idr = (n: number) => 'Rp ' + Math.round(n).toLocaleString('id-ID');
 const akt = (n: number) => (Math.round(n) < 0 ? `(${idr(-n)})` : idr(n));
@@ -17,17 +20,25 @@ const blnFmt = (ym: string) => new Date(`${ym}-01T00:00:00`).toLocaleDateString(
 const blnPendek = (ym: string) => new Date(`${ym}-01T00:00:00`).toLocaleDateString('id-ID', { month: 'short' });
 const warna = (n: number) => (n >= 0 ? 'text-green-400' : 'text-red-400');
 
-function Kartu({ judul, nilai, ket, kelas }: { judul: string; nilai: string; ket?: React.ReactNode; kelas?: string }) {
+function Kartu({ judul, nilai, ket, kelas, k }: { judul: string; nilai: string; ket?: React.ReactNode; kelas?: string; k?: KunciIstilah }) {
   return (
     <div className="p-4 rounded-xl bg-[#1A1D1F] border border-[#2A2D31]">
-      <p className="text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold mb-1">{judul}</p>
+      <p className="flex items-center gap-1 text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold mb-1">{judul}{k && <InfoIstilah k={k} />}</p>
       <p className={`text-lg font-bold font-mono ${kelas ?? 'text-[#e8eaed]'}`}>{nilai}</p>
       {ket && <p className="text-[11px] text-[#9aa0a6] mt-1">{ket}</p>}
     </div>
   );
 }
 
-export default function RingkasanClient({ initialData }: { initialData: RingkasanKeuanganData }) {
+export default function RingkasanClient(props: { initialData: RingkasanKeuanganData }) {
+  return (
+    <PanduanProvider>
+      <RingkasanIsi {...props} />
+    </PanduanProvider>
+  );
+}
+
+function RingkasanIsi({ initialData }: { initialData: RingkasanKeuanganData }) {
   const [data, setData] = useState(initialData);
   const [memuat, mulai] = useTransition();
   const k = data.kinerja;
@@ -41,14 +52,17 @@ export default function RingkasanClient({ initialData }: { initialData: Ringkasa
 
   const a = k.lr.aktual;
   const ob = k.orderBerjalan;
+  const kontenPanduan = React.useMemo(() => buatPanduanRingkasan(data), [data]);
   const tren = k.lrPerBulan.slice(-6).map(b => ({
     bulan: blnPendek(b.bulan), Pendapatan: b.pendapatan, HPP: b.hpp, 'Laba bersih': b.labaBersih,
   }));
 
   return (
     <div className="space-y-6">
+      <PanelPanduan konten={kontenPanduan} />
+      <div className="flex justify-end -mb-3"><TombolPanduan /></div>
       {/* Navigasi bulan */}
-      <div className="flex items-center justify-between">
+      <div data-panduan="navigasi-bulan" className="flex items-center justify-between">
         <Button variant="ghost" onClick={() => ke(bulanList[idx - 1])} disabled={memuat || idx <= 0}
           className="text-[#9aa0a6] hover:text-[#e8eaed] text-xs">
           <ChevronLeft className="h-4 w-4 mr-1" />Bulan lalu
@@ -64,27 +78,27 @@ export default function RingkasanClient({ initialData }: { initialData: Ringkasa
       </div>
 
       {/* Kinerja bulan ini (aktual) */}
-      <div>
+      <div data-panduan="kinerja-bulan">
         <p className="text-xs font-bold text-[#9aa0a6] uppercase tracking-widest mb-2">Kinerja bulan ini — barang yang sudah dikirim</p>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <Kartu judul="Pendapatan" nilai={idr(a.pendapatan)} kelas="text-green-400" ket={a.returReject ? `Nilai Surat Jalan + pendapatan lain − retur & reject ${idr(a.returReject)}` : "Nilai Surat Jalan + pendapatan lain"} />
-          <Kartu judul="HPP" nilai={idr(a.hpp)} ket={k.overheadSementara ? 'Bahan + upah + overhead (sementara) barang terkirim' : 'Bahan + upah + overhead barang terkirim'} />
-          <Kartu judul="Laba kotor" nilai={akt(a.labaKotor)} kelas={warna(a.labaKotor)} ket={`Margin ${pct(a.labaKotor, a.pendapatan)}`} />
-          <Kartu judul="Laba bersih" nilai={akt(a.labaBersih)} kelas={warna(a.labaBersih)} ket={`Margin ${pct(a.labaBersih, a.pendapatan)}`} />
+          <Kartu k="pendapatan" judul="Pendapatan" nilai={idr(a.pendapatan)} kelas="text-green-400" ket={a.returReject ? `Nilai Surat Jalan + pendapatan lain − retur & reject ${idr(a.returReject)}` : "Nilai Surat Jalan + pendapatan lain"} />
+          <Kartu k="hpp_lr" judul="HPP" nilai={idr(a.hpp)} ket={k.overheadSementara ? 'Bahan + upah + overhead (sementara) barang terkirim' : 'Bahan + upah + overhead barang terkirim'} />
+          <Kartu k="laba_kotor" judul="Laba kotor" nilai={akt(a.labaKotor)} kelas={warna(a.labaKotor)} ket={`Margin ${pct(a.labaKotor, a.pendapatan)}`} />
+          <Kartu k="laba_bersih" judul="Laba bersih" nilai={akt(a.labaBersih)} kelas={warna(a.labaBersih)} ket={`Margin ${pct(a.labaBersih, a.pendapatan)}`} />
         </div>
       </div>
 
       {/* Order berjalan & posisi */}
-      <div>
+      <div data-panduan="posisi-hari-ini">
         <p className="text-xs font-bold text-[#9aa0a6] uppercase tracking-widest mb-2">Posisi hari ini</p>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <Kartu judul="Order berjalan" nilai={idr(ob.pendapatan)}
+          <Kartu k="order_berjalan" judul="Order berjalan" nilai={idr(ob.pendapatan)}
             ket={<>Perkiraan laba <span className={warna(ob.labaKotor)}>{akt(ob.labaKotor)}</span> ({pct(ob.labaKotor, ob.pendapatan)})</>} />
           {k.posisi.uangMukaPelanggan > 0
-            ? <Kartu judul="Uang muka pelanggan" nilai={idr(k.posisi.uangMukaPelanggan)} kelas="text-sky-300" ket="DP untuk barang yang belum dikirim" />
-            : <Kartu judul="Piutang usaha" nilai={idr(k.posisi.piutang)} kelas="text-amber-300" ket="Sudah dikirim, belum dibayar" />}
-          <Kartu judul="Upah terutang" nilai={idr(k.posisi.upahTerutang)} kelas="text-orange-400" ket="Sudah dikerjakan, belum dibayar" />
-          <Kartu judul="Persediaan bahan" nilai={idr(k.posisi.persediaanBahan + k.posisi.persediaanPembantu)}
+            ? <Kartu k="uang_muka" judul="Uang muka pelanggan" nilai={idr(k.posisi.uangMukaPelanggan)} kelas="text-sky-300" ket="DP untuk barang yang belum dikirim" />
+            : <Kartu k="piutang" judul="Piutang usaha" nilai={idr(k.posisi.piutang)} kelas="text-amber-300" ket="Sudah dikirim, belum dibayar" />}
+          <Kartu k="upah_terutang" judul="Upah terutang" nilai={idr(k.posisi.upahTerutang)} kelas="text-orange-400" ket="Sudah dikerjakan, belum dibayar" />
+          <Kartu k="persediaan_bahan" judul="Persediaan bahan" nilai={idr(k.posisi.persediaanBahan + k.posisi.persediaanPembantu)}
             ket={k.posisi.persediaanPembantu > 0
               ? `Bahan baku ${idr(k.posisi.persediaanBahan)} + pembantu ${idr(k.posisi.persediaanPembantu)}`
               : 'Bahan dibeli, belum dipotong'} />
@@ -92,8 +106,8 @@ export default function RingkasanClient({ initialData }: { initialData: Ringkasa
       </div>
 
       {/* Tren */}
-      <div className="p-5 rounded-xl bg-[#1A1D1F] border border-[#2A2D31]">
-        <h4 className="text-xs font-bold text-[#9aa0a6] uppercase tracking-widest mb-4">Tren per bulan (aktual)</h4>
+      <div data-panduan="tren" className="p-5 rounded-xl bg-[#1A1D1F] border border-[#2A2D31]">
+        <h4 className="flex items-center gap-1 text-xs font-bold text-[#9aa0a6] uppercase tracking-widest mb-4">Tren per bulan (aktual) <InfoIstilah k="tren_bulanan" /></h4>
         {tren.length === 0 ? <p className="text-sm text-[#5f6368]">Belum ada data</p> : (
           <div className="w-full h-[280px]">
             <ResponsiveContainer width="100%" height="100%">
@@ -116,11 +130,12 @@ export default function RingkasanClient({ initialData }: { initialData: Ringkasa
 
       {/* PO melebihi patokan HPP */}
       {data.po_peringatan.length > 0 && (
-        <div className="p-5 rounded-xl bg-[#1A1D1F] border border-red-500/25">
+        <div data-panduan="po-peringatan" className="p-5 rounded-xl bg-[#1A1D1F] border border-red-500/25">
           <div className="flex items-center justify-between mb-1">
             <div className="flex items-center gap-2">
               <AlertTriangle className="h-4 w-4 text-red-400" />
               <h4 className="text-xs font-bold text-red-400 uppercase tracking-widest">PO perlu perhatian</h4>
+              <InfoIstilah k="peringatan" />
             </div>
             <Link href="/app/keuangan/laporan-po">
               <Button variant="ghost" className="h-7 text-xs text-[#9aa0a6] hover:text-[#e8eaed]">
@@ -149,11 +164,12 @@ export default function RingkasanClient({ initialData }: { initialData: Ringkasa
       )}
 
       {data.po_melebihi_patokan.length > 0 && (
-        <div className="p-5 rounded-xl bg-[#1A1D1F] border border-amber-500/20">
+        <div data-panduan="po-patokan" className="p-5 rounded-xl bg-[#1A1D1F] border border-amber-500/20">
           <div className="flex items-center justify-between mb-1">
             <div className="flex items-center gap-2">
               <AlertTriangle className="h-4 w-4 text-amber-400" />
               <h4 className="text-xs font-bold text-amber-400 uppercase tracking-widest">PO melebihi patokan HPP</h4>
+              <InfoIstilah k="melebihi_patokan" />
             </div>
             <Link href="/app/keuangan/laporan-po">
               <Button variant="ghost" className="h-7 text-xs text-[#9aa0a6] hover:text-[#e8eaed]">
@@ -182,7 +198,7 @@ export default function RingkasanClient({ initialData }: { initialData: Ringkasa
           { label: 'Kinerja Keuangan', href: '/app/keuangan/proyeksi-surplus' },
           { label: 'Laporan Per PO', href: '/app/keuangan/laporan-po' },
           { label: 'Laporan Gaji', href: '/app/keuangan/laporan-gaji' },
-          { label: 'Laporan Koreksi QTY', href: '/app/keuangan/laporan-reject' },
+          { label: 'Laporan Potongan Reject', href: '/app/keuangan/laporan-reject' },
           { label: 'Jurnal Produksi', href: '/app/keuangan/jurnal-produksi' },
         ].map(link => (
           <Link key={link.href} href={link.href}>

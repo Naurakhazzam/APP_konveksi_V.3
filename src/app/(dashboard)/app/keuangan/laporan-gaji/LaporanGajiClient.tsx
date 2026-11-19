@@ -10,6 +10,9 @@ import {
 } from '@/components/ui/table';
 import { getLaporanGaji, type LaporanGajiData } from '@/lib/actions/keuangan/laporan-gaji.actions';
 import TogglePoLama from '@/components/keuangan/TogglePoLama';
+import { PanduanProvider, PanelPanduan, InfoIstilah, TombolPanduan } from '@/components/keuangan/panduan/Panduan';
+import type { KunciIstilah } from '@/lib/keuangan/kamus';
+import { buatPanduanGaji } from './panduan-gaji';
 
 const BULAN = [
   'Januari','Februari','Maret','April','Mei','Juni',
@@ -23,13 +26,27 @@ const labelCls = 'block text-[10px] font-bold text-[#9aa0a6] uppercase tracking-
 
 interface Props { initialData: LaporanGajiData; defaultBulan: string; defaultTahun: string; }
 
-export default function LaporanGajiClient({ initialData, defaultBulan, defaultTahun }: Props) {
+export default function LaporanGajiClient(props: Props) {
+  return (
+    <PanduanProvider>
+      <LaporanGajiIsi {...props} />
+    </PanduanProvider>
+  );
+}
+
+/** Judul kolom + ikon ⓘ */
+const KolomInfo = ({ judul, k }: { judul: string; k: KunciIstilah }) => (
+  <span className="inline-flex items-center gap-1">{judul}<InfoIstilah k={k} /></span>
+);
+
+function LaporanGajiIsi({ initialData, defaultBulan, defaultTahun }: Props) {
   const [data, setData] = useState<LaporanGajiData>(initialData);
   const [filterBulan, setFilterBulan] = useState(defaultBulan);
   const [filterTahun, setFilterTahun] = useState(defaultTahun);
   const [loading, setLoading] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [tampilkanLama, setTampilkanLama] = useState(false);
+  const kontenPanduan = buatPanduanGaji(data);
 
   const handleFilter = async (lama = tampilkanLama) => {
     setLoading(true);
@@ -47,16 +64,17 @@ export default function LaporanGajiClient({ initialData, defaultBulan, defaultTa
     }
   };
 
-  const kpiCards = [
-    { label: 'Total Sudah Dibayar', value: idrFmt(data.total_upah_sudah_bayar), color: 'text-green-400', border: 'border-green-500/20' },
-    { label: 'Total Belum Dibayar', value: idrFmt(data.total_upah_belum_bayar), color: 'text-orange-400', border: 'border-orange-500/20' },
-    { label: 'Total Kasbon Outstanding', value: idrFmt(data.total_kasbon_outstanding), color: 'text-blue-400', border: 'border-blue-500/20' },
+  const kpiCards: { label: string; value: string; color: string; border: string; k: KunciIstilah }[] = [
+    { label: 'Total Sudah Dibayar', value: idrFmt(data.total_upah_sudah_bayar), color: 'text-green-400', border: 'border-green-500/20', k: 'upah_sudah_bayar' },
+    { label: 'Total Belum Dibayar', value: idrFmt(data.total_upah_belum_bayar), color: 'text-orange-400', border: 'border-orange-500/20', k: 'upah_belum_bayar' },
+    { label: 'Total Kasbon Outstanding', value: idrFmt(data.total_kasbon_outstanding), color: 'text-blue-400', border: 'border-blue-500/20', k: 'kasbon' },
   ];
 
   return (
     <div className="space-y-6">
+      <PanelPanduan konten={kontenPanduan} />
       {/* Filter */}
-      <div className="flex flex-wrap gap-3 items-end p-4 rounded-xl bg-[#1A1D1F] border border-[#2A2D31]">
+      <div data-panduan="filter-gaji" className="flex flex-wrap gap-3 items-end p-4 rounded-xl bg-[#1A1D1F] border border-[#2A2D31]">
         <div>
           <p className={labelCls}>Bulan</p>
           <select className="h-9 px-3 rounded-lg bg-[#1E2124] border border-[#2A2D31] text-sm text-[#e8eaed] outline-none focus:ring-1 focus:ring-[#e5c17b]"
@@ -84,27 +102,28 @@ export default function LaporanGajiClient({ initialData, defaultBulan, defaultTa
         <TogglePoLama className="ml-auto" checked={tampilkanLama}
           onChange={v => { setTampilkanLama(v); handleFilter(v); }}
           info="(kasbon selalu ditampilkan)" />
+        <div className="ml-auto"><TombolPanduan /></div>
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <div data-panduan="kartu-gaji" className="grid grid-cols-1 md:grid-cols-3 gap-3">
         {kpiCards.map(c => (
           <div key={c.label} className={`p-4 rounded-xl bg-[#1A1D1F] border ${c.border}`}>
-            <p className="text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold mb-1">{c.label}</p>
+            <p className="flex items-center gap-1 text-[10px] uppercase tracking-widest text-[#9aa0a6] font-bold mb-1">{c.label}<InfoIstilah k={c.k} /></p>
             <p className={`text-lg font-bold font-mono ${c.color}`}>{c.value}</p>
           </div>
         ))}
       </div>
 
       {/* Tabel per karyawan */}
-      <div className="rounded-xl border border-[#2A2D31] overflow-hidden bg-[#16181A]">
+      <div data-panduan="tabel-gaji" className="rounded-xl border border-[#2A2D31] overflow-hidden bg-[#16181A]">
         <Table>
           <TableHeader className="bg-[#1A1C1E]">
             <TableRow className="border-[#2A2D31] hover:bg-transparent">
               <TableHead className="text-[#9aa0a6]">Karyawan</TableHead>
-              <TableHead className="text-[#9aa0a6] text-right">Upah Sudah Dibayar</TableHead>
-              <TableHead className="text-[#9aa0a6] text-right">Upah Belum Dibayar</TableHead>
-              <TableHead className="text-[#9aa0a6] text-right">Kasbon Sisa</TableHead>
+              <TableHead className="text-[#9aa0a6] text-right"><KolomInfo judul="Upah Sudah Dibayar" k="upah_sudah_bayar" /></TableHead>
+              <TableHead className="text-[#9aa0a6] text-right"><KolomInfo judul="Upah Belum Dibayar" k="upah_belum_bayar" /></TableHead>
+              <TableHead className="text-[#9aa0a6] text-right"><KolomInfo judul="Kasbon Sisa" k="kasbon" /></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -126,7 +145,7 @@ export default function LaporanGajiClient({ initialData, defaultBulan, defaultTa
 
       {/* History Pembayaran (collapsible) */}
       {data.history_pembayaran.length > 0 && (
-        <div className="rounded-xl border border-[#2A2D31] bg-[#1A1D1F] overflow-hidden">
+        <div data-panduan="history-gaji" className="rounded-xl border border-[#2A2D31] bg-[#1A1D1F] overflow-hidden">
           <button
             onClick={() => setHistoryOpen(!historyOpen)}
             className="w-full flex items-center justify-between p-4 text-left hover:bg-[#1E2124] transition-colors"
